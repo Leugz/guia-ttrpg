@@ -51,3 +51,36 @@ _Note for Linux/Wayland users: The `tauri:dev` script automatically passes
   containing YAML frontmatter.
 - **Custom Character Sheets:** Automated step-dice calculations (d4 to d12) and
   resource tracking (PV/PD) for the Ordem Paranormal system.
+
+## 🏗️ Project Architecture & Organization
+
+G.U.I.A utilizes a desktop-web hybrid architecture, maintaining a strict separation of concerns between the OS-level file system and the reactive user interface. 
+
+### Directory Structure
+
+\`\`\`text
+guia-ttrpg/
+├── src-tauri/                 # ⚙️ Core Backend (Rust)
+│   ├── src/
+│   │   ├── main.rs            # Application shell and async server initialization
+│   │   ├── commands.rs        # Tauri IPC handlers (the bridge to React)
+│   │   ├── models.rs          # Strict data schemas mirroring the YAML contracts
+│   │   └── dice.rs            # Mathematical engine for step-dice and criticals
+│   └── capabilities/          # Strict security whitelists for IPC bridge access
+│
+├── src/                       # 🎨 Frontend UI (React + TypeScript)
+│   ├── components/            # Feature-based atomic components
+│   │   ├── canvas/            # React-Konva 2D mapping engine
+│   │   ├── character/         # Character sheet layout and logic
+│   │   └── chat/              # Event log and dice result rendering
+│   ├── store/                 # Zustand global state (characterStore, chatStore)
+│   ├── lib/                   # Static system rules and Typescript interfaces
+│   └── App.tsx                # Main layout orchestrator
+\`\`\`
+
+### Architectural Flow
+1. **Data Layer (Obsidian/YAML):** The source of truth. All data is persisted locally in `.md` files to ensure player ownership and offline resilience.
+2. **Backend Engine (Rust):** Parses local files via `gray_matter`, enforces data integrity through strict structs, calculates dice logic natively for maximum performance, and handles atomic disk writes.
+3. **IPC Bridge (Tauri):** Securely passes serialized data between the OS and the webview.
+4. **State Management (Zustand):** Caches the backend data in lightweight frontend stores, preventing expensive re-renders of the Konva canvas when sidebar UI changes.
+5. **Presentation (React/Tailwind):** Renders the UI based on state changes. Components are feature-isolated to prevent layout coupling.

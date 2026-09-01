@@ -6,7 +6,7 @@ ocupacao: Policial
 nivel: 5
 recursos:
   pv:
-    atual: 18
+    atual: 20
     max: 20
   pd:
     atual: 5
