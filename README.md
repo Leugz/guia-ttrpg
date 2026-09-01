@@ -1,14 +1,23 @@
 # G.U.I.A TTRPG Desktop Application
-An open-source, desktop-first Virtual Tabletop (VTT) and campaign manager engineered for a custom tabletop RPG system based on *Ordem Paranormal*. 
 
-This architecture prioritizes a highly optimized, lightweight, local-first experience running over LAN multiplayer, removing dependencies on externally hosted web services. A core architectural pillar is native interoperability with Obsidian, utilizing Markdown and YAML file storage for seamless data management.
+An open-source, desktop-first Virtual Tabletop (VTT) and campaign manager
+engineered for a custom tabletop RPG system based on _Ordem Paranormal_.
+
+This architecture prioritizes a highly optimized, lightweight, local-first
+experience running over LAN multiplayer, removing dependencies on externally
+hosted web services. A core architectural pillar is native interoperability with
+Obsidian, utilizing Markdown and YAML file storage for seamless data management.
 
 ## Tech Stack
-* **Frontend:** React 18+, TypeScript, Vite, Konva.js (Canvas Engine), Tailwind CSS
-* **Backend:** Rust, Tokio (Async Runtime), Axum (LAN Server/WebSockets), Serde, gray_matter (Markdown Parsing)
-* **Application Shell:** Tauri 2
+
+- **Frontend:** React 18+, TypeScript, Vite, Konva.js (Canvas Engine), Tailwind
+  CSS
+- **Backend:** Rust, Tokio (Async Runtime), Axum (LAN Server/WebSockets), Serde,
+  gray_matter (Markdown Parsing)
+- **Application Shell:** Tauri 2
 
 ## Prerequisites
+
 To build and run this project, you need the following installed on your system:
 
 1. **Node.js** and **pnpm**
@@ -19,19 +28,26 @@ To build and run this project, you need the following installed on your system:
    ```
 
 ## Getting Started
+
 1. **Install dependencies:**
+
 ```bash
 pnpm install
 ```
 
 2. **Run the development server:**
+
 ```bash
 pnpm tauri:dev
 ```
 
-*Note for Linux/Wayland users: The `tauri:dev` script automatically passes `WEBKIT_DISABLE_DMABUF_RENDERER=1` to prevent hardware acceleration conflicts.*
+_Note for Linux/Wayland users: The `tauri:dev` script automatically passes
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` to prevent hardware acceleration conflicts._
 
 ## Core Features (v1.0)
-* **LAN Multiplayer:** Transparent peer-to-peer syncing without port forwarding.
-* **Obsidian Integration:** Bidirectional syncing with local `.md` files containing YAML frontmatter.
-* **Custom Character Sheets:** Automated step-dice calculations (d4 to d12) and resource tracking (PV/PD) for the Ordem Paranormal system.
+
+- **LAN Multiplayer:** Transparent peer-to-peer syncing without port forwarding.
+- **Obsidian Integration:** Bidirectional syncing with local `.md` files
+  containing YAML frontmatter.
+- **Custom Character Sheets:** Automated step-dice calculations (d4 to d12) and
+  resource tracking (PV/PD) for the Ordem Paranormal system.
