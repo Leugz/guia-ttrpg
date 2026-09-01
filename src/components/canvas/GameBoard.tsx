@@ -18,7 +18,8 @@ export function GameBoard() {
 
   const isDeadOrDying =
     character &&
-    (character.recursos.pv.atual <= 0 || character.recursos.pd.atual <= 0);
+    (character.resources.pv.current <= 0 ||
+      character.resources.pd.current <= 0);
   const tokenColor = isDeadOrDying ? '#555555' : '#ef4444';
 
   return (

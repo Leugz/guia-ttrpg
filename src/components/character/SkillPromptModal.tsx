@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { ATRIBUTO_PERICIA_MAP, StepDice } from '../../lib/systemRules';
+import { ATTRIBUTE_SKILL_MAP, StepDice } from '../../lib/systemRules';
 
 interface SkillPromptModalProps {
   attributeName: string;
   attributeDice: string;
   onClose: () => void;
-  onConfirm: (periciaDie: StepDice, periciaName: string) => void;
+  onConfirm: (skillDie: StepDice, skillName: string) => void;
 }
 
 export function SkillPromptModal({
@@ -14,26 +14,31 @@ export function SkillPromptModal({
   onClose,
   onConfirm,
 }: SkillPromptModalProps) {
-  const [selectedPericia, setSelectedPericia] = useState<string | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [isTrained, setIsTrained] = useState(false);
 
-  // Safely get the mapped skills, defaulting to an empty array if something goes wrong
   const availableSkills =
-    ATRIBUTO_PERICIA_MAP[attributeName as keyof typeof ATRIBUTO_PERICIA_MAP] ||
+    ATTRIBUTE_SKILL_MAP[attributeName as keyof typeof ATTRIBUTE_SKILL_MAP] ||
     [];
 
   const handleRoll = () => {
-    // If they check "Trained", we upgrade the Perícia die to a D6 (or whatever your system baseline is)
-    // For now, untrained is D4, trained is D6
-    const periciaDie = isTrained ? StepDice.D6 : StepDice.D4;
-    onConfirm(periciaDie, selectedPericia || 'Untrained');
+    const skillDie = isTrained ? StepDice.D6 : StepDice.D4;
+    onConfirm(skillDie, selectedSkill || 'Untrained');
   };
+
+  // UI mapping for translation
+  const displayAttribute =
+    attributeName === 'physical'
+      ? 'Físico'
+      : attributeName === 'mind'
+        ? 'Mente'
+        : 'Emoção';
 
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm'>
       <div className='animate-fade-in w-[400px] rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-2xl'>
-        <h3 className='mb-1 text-xl font-bold capitalize text-white'>
-          Teste de {attributeName} ({attributeDice})
+        <h3 className='mb-1 text-xl font-bold text-white'>
+          Teste de {displayAttribute} ({attributeDice})
         </h3>
         <p className='mb-4 text-sm text-neutral-400'>
           Selecione a perícia correspondente para somar ao teste.
@@ -43,9 +48,9 @@ export function SkillPromptModal({
           {availableSkills.map((skill) => (
             <button
               key={skill}
-              onClick={() => setSelectedPericia(skill)}
+              onClick={() => setSelectedSkill(skill)}
               className={`rounded border px-3 py-2 text-sm transition-colors ${
-                selectedPericia === skill
+                selectedSkill === skill
                   ? 'border-blue-500 bg-blue-500/20 text-white'
                   : 'border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
               }`}

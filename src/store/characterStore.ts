@@ -2,53 +2,98 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface ResourceStat {
-  atual: number;
+  current: number;
   max: number;
 }
-export interface AtributosBase {
-  fisico: string;
-  mente: string;
-  emocao: string;
+export interface BaseAttributes {
+  physical: string;
+  mind: string;
+  emotion: string;
 }
-export interface Habilidade {
-  nome: string;
-  descricao: string;
-  ativa: boolean;
+export interface Ability {
+  name: string;
+  description: string;
+  active: boolean;
+}
+
+export interface ParsedDocument {
+  data: any;
+  body: string;
 }
 
 export interface CharacterSheet {
   type: string;
-  nome: string;
-  perfil: string;
-  ocupacao: string;
-  nivel: number;
-  recursos: { pv: ResourceStat; pd: ResourceStat };
-  atributos_base: AtributosBase;
-  habilidades: Habilidade[];
-}
-
-export interface ParsedDocument {
-  data: CharacterSheet;
-  body: string;
+  name: string;
+  profile: string;
+  occupation: string;
+  level: number;
+  resources: { pv: ResourceStat; pd: ResourceStat };
+  base_attributes: BaseAttributes;
+  abilities: Ability[];
 }
 
 interface CharacterStore {
   character: CharacterSheet | null;
   notes: string;
   activePath: string | null;
-  loadCharacter: (doc: ParsedDocument, path: string) => void;
+  loadCharacter: (rawPayload: ParsedDocument, path: string) => void;
   takeDamage: (amount: number) => Promise<void>;
 }
+
+// --- DTO ADAPTERS ---
+const toEnglish = (raw: any): CharacterSheet => ({
+  type: raw.type,
+  name: raw.nome,
+  profile: raw.perfil,
+  occupation: raw.ocupacao,
+  level: raw.nivel,
+  resources: {
+    pv: { current: raw.recursos.pv.atual, max: raw.recursos.pv.max },
+    pd: { current: raw.recursos.pd.atual, max: raw.recursos.pd.max },
+  },
+  base_attributes: {
+    physical: raw.atributos_base.fisico,
+    mind: raw.atributos_base.mente,
+    emotion: raw.atributos_base.emocao,
+  },
+  abilities: raw.habilidades.map((h: any) => ({
+    name: h.nome,
+    description: h.descricao,
+    active: h.ativa,
+  })),
+});
+
+const toPortuguese = (eng: CharacterSheet) => ({
+  type: eng.type,
+  nome: eng.name,
+  perfil: eng.profile,
+  ocupacao: eng.occupation,
+  nivel: eng.level,
+  recursos: {
+    pv: { atual: eng.resources.pv.current, max: eng.resources.pv.max },
+    pd: { atual: eng.resources.pd.current, max: eng.resources.pd.max },
+  },
+  atributos_base: {
+    fisico: eng.base_attributes.physical,
+    mente: eng.base_attributes.mind,
+    emocao: eng.base_attributes.emotion,
+  },
+  habilidades: eng.abilities.map((h) => ({
+    nome: h.name,
+    descricao: h.description,
+    ativa: h.active,
+  })),
+});
 
 export const useCharacterStore = create<CharacterStore>((set, get) => ({
   character: null,
   notes: '',
   activePath: null,
 
-  loadCharacter: (doc, path) =>
+  loadCharacter: (rawPayload, path) =>
     set({
-      character: doc.data,
-      notes: doc.body,
+      character: toEnglish(rawPayload.data),
+      notes: rawPayload.body,
       activePath: path,
     }),
 
@@ -56,29 +101,25 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     const { character, notes, activePath } = get();
     if (!character || !activePath) return;
 
-    // Mutate state
     const updatedCharacter = {
       ...character,
-      recursos: {
-        ...character.recursos,
+      resources: {
+        ...character.resources,
         pv: {
-          ...character.recursos.pv,
-          atual: character.recursos.pv.atual - amount,
+          ...character.resources.pv,
+          current: character.resources.pv.current - amount,
         },
       },
     };
 
-    // Update frontend immediately for responsiveness
     set({ character: updatedCharacter });
 
-    // Push to Rust for atomic disk save
     try {
       await invoke('save_character_sheet', {
         path: activePath,
-        data: updatedCharacter,
+        data: toPortuguese(updatedCharacter),
         body: notes,
       });
-      console.log('Saved atomically to disk.');
     } catch (error) {
       console.error('Failed to save to disk:', error);
     }
