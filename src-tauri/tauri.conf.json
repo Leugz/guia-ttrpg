@@ -14,7 +14,8 @@
       {
         "title": "G.U.I.A TTRPG",
         "width": 1280,
-        "height": 720
+        "height": 720,
+        "backgroundColor": "#171717"
       }
     ],
     "security": {
