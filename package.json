@@ -1,0 +1,30 @@
+{
+  "name": "guia-ttrpg",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "tauri": "tauri",
+    "tauri:dev": "WEBKIT_DISABLE_DMABUF_RENDERER=1 pnpm tauri dev"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "konva": "^9.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-konva": "^18.2.10",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  }
+}

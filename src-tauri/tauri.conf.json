@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/2/tauri.schema.json",
+  "productName": "guia-ttrpg",
+  "version": "1.0.0",
+  "identifier": "com.guia.ttrpg",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "G.U.I.A TTRPG",
+        "width": 1280,
+        "height": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

@@ -35,4 +35,3 @@ pnpm tauri:dev
 * **LAN Multiplayer:** Transparent peer-to-peer syncing without port forwarding.
 * **Obsidian Integration:** Bidirectional syncing with local `.md` files containing YAML frontmatter.
 * **Custom Character Sheets:** Automated step-dice calculations (d4 to d12) and resource tracking (PV/PD) for the Ordem Paranormal system.
-# guia-ttrpg
