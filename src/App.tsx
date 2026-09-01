@@ -37,8 +37,11 @@ export default function App() {
   const tokenColor = isDeadOrDying ? '#555555' : '#ef4444'; // Grayscale or Red
 
   const parseDiceString = (diceStr: string): StepDice => {
-    const num = parseInt(diceStr.toLowerCase().replace('d', ''), 10);
-    return [4, 6, 8, 10, 12].includes(num) ? (num as StepDice) : StepDice.D4;
+    const formatted = diceStr.toUpperCase();
+
+    return Object.values(StepDice).includes(formatted as StepDice)
+      ? (formatted as StepDice)
+      : StepDice.D4;
   };
 
   const handleAttributeRoll = async (attrName: string, attrDice: string) => {

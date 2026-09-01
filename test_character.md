@@ -6,7 +6,7 @@ ocupacao: Policial
 nivel: 5
 recursos:
   pv:
-    atual: 20
+    atual: 18
     max: 20
   pd:
     atual: 5
@@ -16,11 +16,10 @@ atributos_base:
   mente: d4
   emocao: d6
 habilidades:
-  - nome: Reflexos
-    descricao: Adiciona d4 em esquivas
-    ativa: true
+- nome: Reflexos
+  descricao: Adiciona d4 em esquivas
+  ativa: true
 ---
-
 # Histórico do Personagem
 
 Aqui o jogador pode escrever qualquer coisa no Obsidian e o software vai ignorar

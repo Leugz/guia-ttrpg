@@ -13,11 +13,11 @@ export const ATRIBUTO_PERICIA_MAP = {
 } as const;
 
 export enum StepDice {
-  D4 = 4,
-  D6 = 6,
-  D8 = 8,
-  D10 = 10,
-  D12 = 12,
+  D4 = "D4",
+  D6 = "D6",
+  D8 = "D8",
+  D10 = "D10",
+  D12 = "D12",
 }
 
 export interface RollResult {
