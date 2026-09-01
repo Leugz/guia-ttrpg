@@ -1,12 +1,12 @@
 # G.U.I.A TTRPG Desktop Application
-An open-source, desktop-first Virtual Tabletop (VTT) and campaign manager engineered for a custom tabletop RPG system based on *Ordem Paranormal*[cite: 1]. 
+An open-source, desktop-first Virtual Tabletop (VTT) and campaign manager engineered for a custom tabletop RPG system based on *Ordem Paranormal*. 
 
-This architecture prioritizes a highly optimized, lightweight, local-first experience running over LAN multiplayer, removing dependencies on externally hosted web services[cite: 1]. A core architectural pillar is native interoperability with Obsidian, utilizing Markdown and YAML file storage for seamless data management[cite: 1].
+This architecture prioritizes a highly optimized, lightweight, local-first experience running over LAN multiplayer, removing dependencies on externally hosted web services. A core architectural pillar is native interoperability with Obsidian, utilizing Markdown and YAML file storage for seamless data management.
 
 ## Tech Stack
-* **Frontend:** React 18+, TypeScript, Vite, Konva.js (Canvas Engine), Tailwind CSS[cite: 1]
-* **Backend:** Rust, Tokio (Async Runtime), Axum (LAN Server/WebSockets), Serde, gray_matter (Markdown Parsing)[cite: 1]
-* **Application Shell:** Tauri 2[cite: 1]
+* **Frontend:** React 18+, TypeScript, Vite, Konva.js (Canvas Engine), Tailwind CSS
+* **Backend:** Rust, Tokio (Async Runtime), Axum (LAN Server/WebSockets), Serde, gray_matter (Markdown Parsing)
+* **Application Shell:** Tauri 2
 
 ## Prerequisites
 To build and run this project, you need the following installed on your system:
