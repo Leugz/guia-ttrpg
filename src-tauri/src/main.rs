@@ -1,4 +1,3 @@
-// Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
@@ -12,15 +11,12 @@ use axum::{routing::get, Router};
 use std::net::SocketAddr;
 use tauri::Manager;
 
-/// LAN server port advertised on the hosting screen (§4.1).
 const LAN_PORT: u16 = 3000;
 
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            // Logging is configured first so the LAN server's own startup lines
-            // land in app.log (§14).
             init_logging(app.handle());
             tokio::spawn(serve_lan());
             let _window = app.get_webview_window("main").unwrap();
@@ -60,8 +56,6 @@ async fn main() {
         .expect("error while running tauri application");
 }
 
-/// Binds the Axum LAN server. A busy port is logged rather than allowed to take
-/// the desktop application down with it.
 async fn serve_lan() {
     let router = Router::new().route("/ws", get(ws_handler));
     let addr = SocketAddr::from(([0, 0, 0, 0], LAN_PORT));
@@ -76,10 +70,6 @@ async fn serve_lan() {
     }
 }
 
-/// Sets up the rolling `app.log` in the platform log directory (§14).
-///
-/// The worker guard is leaked on purpose: it has to outlive the application for
-/// buffered lines to keep reaching disk.
 fn init_logging(app: &tauri::AppHandle) {
     let Ok(log_dir) = app.path().app_log_dir() else {
         tracing_subscriber_fallback();
@@ -105,6 +95,4 @@ fn tracing_subscriber_fallback() {
     let _ = tracing::subscriber::set_global_default(tracing_subscriber::fmt().finish());
 }
 
-/// Placeholder for the LAN WebSocket endpoint. Real-time synchronization is
-/// tracked separately from the RPG rules engine.
 async fn ws_handler() {}

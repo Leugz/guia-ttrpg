@@ -1,20 +1,9 @@
-//! Markdown + YAML persistence for character documents.
-//!
-//! Spec references: §3.1 (Markdown is the canonical source of truth),
-//! §5 (atomic writes), §6 (path traversal protection).
-//!
-//! `gray_matter` splits the document; the frontmatter itself is deserialized
-//! with `serde_yaml` so the numeric dice representation and the lenient
-//! normalization rules in §3.2/§6 apply consistently.
-
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 use crate::models::{CharacterSheet, ParsedDocument};
 
-/// Rejects anything that is not a Markdown file or that tries to walk out of its
-/// directory with `..` (§6).
 pub fn safe_path(path: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(path);
 
@@ -31,8 +20,6 @@ pub fn safe_path(path: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Resolves a campaign-relative reference (such as an entry of
-/// `accessible_sheets`) against the campaign root, refusing to escape it.
 pub fn resolve_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
     let relative = PathBuf::from(reference);
     if relative.is_absolute()
@@ -52,7 +39,6 @@ pub fn resolve_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Splits a raw document into its frontmatter struct and Markdown body.
 pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     let parsed = matter.parse(raw);
@@ -64,7 +50,6 @@ pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
     let mut data: CharacterSheet = serde_yaml::from_str(&parsed.matter)
         .map_err(|e| format!("Invalid character sheet schema: {}", e))?;
 
-    // Repair what can be repaired before enforcing the hard rules (§6).
     let notes = data.normalize();
     data.validate()?;
 
@@ -75,14 +60,12 @@ pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
     })
 }
 
-/// Renders a sheet back into a Markdown document.
 pub fn render_document(sheet: &CharacterSheet, body: &str) -> Result<String, String> {
     let yaml = serde_yaml::to_string(sheet)
         .map_err(|e| format!("Failed to serialize YAML: {}", e))?;
     Ok(format!("---\n{}---\n{}", yaml, body))
 }
 
-/// Reads and parses a character document from disk.
 pub fn read_document(path: &str) -> Result<ParsedDocument, String> {
     let path = safe_path(path)?;
     let raw = fs::read_to_string(&path)
@@ -90,7 +73,6 @@ pub fn read_document(path: &str) -> Result<ParsedDocument, String> {
     parse_document(&raw)
 }
 
-/// Validates and writes a character document atomically.
 pub fn write_document(path: &str, sheet: &CharacterSheet, body: &str) -> Result<(), String> {
     sheet.validate()?;
     let path = safe_path(path)?;
@@ -98,8 +80,6 @@ pub fn write_document(path: &str, sheet: &CharacterSheet, body: &str) -> Result<
     write_atomic(&path, &contents)
 }
 
-/// Writes to a sibling temporary file, flushes it to disk, then renames over the
-/// target. A power loss mid-write leaves the original document intact (§5).
 pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     let parent = path
         .parent()
@@ -126,7 +106,6 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     }
 
     fs::rename(&temp_path, path).map_err(|e| {
-        // Leave no stray temporary files behind if the rename fails.
         let _ = fs::remove_file(&temp_path);
         format!("Failed to overwrite {}: {}", path.display(), e)
     })

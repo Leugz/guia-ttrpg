@@ -1,18 +1,9 @@
-//! Strict data schemas mirroring the YAML contracts.
-//!
-//! Spec references: §9 (YAML schema contract), §3.5 (naming convention),
-//! §4.4-§4.7 (sheet, attributes, skills, abilities), §4.13 (death saves),
-//! §6 (validation and graceful degradation).
-//!
-//! Structural keys are English; every user-facing value stays Portuguese.
-
 use serde::{Deserialize, Serialize};
 
 use crate::dice::StepDice;
 use crate::effects::Effect;
 use crate::rules;
 
-/// The three core attributes. The keys are fixed and English (§10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Attribute {
@@ -24,7 +15,6 @@ pub enum Attribute {
 impl Attribute {
     pub const ALL: [Attribute; 3] = [Attribute::Physical, Attribute::Mind, Attribute::Emotion];
 
-    /// Internal key as written in YAML.
     pub fn key(self) -> &'static str {
         match self {
             Attribute::Physical => "physical",
@@ -33,7 +23,6 @@ impl Attribute {
         }
     }
 
-    /// Portuguese label shown by the UI (§3.5).
     pub fn display_pt(self) -> &'static str {
         match self {
             Attribute::Physical => "Físico",
@@ -52,7 +41,6 @@ impl Attribute {
     }
 }
 
-/// The character's three attribute dice, stored as numeric die sizes (§3.2).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Attributes {
     pub physical: StepDice,
@@ -88,21 +76,16 @@ impl Attributes {
     }
 }
 
-/// A skill on the sheet. `id` is stable and internal, `name` is the Portuguese
-/// display value, `value` is a numeric die size (§10).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
     pub id: String,
     pub name: String,
     pub governed_by: Attribute,
     pub value: StepDice,
-    /// Set for the specializations under "Aptidão" (§4.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
 }
 
-/// Abilities and inventory items share one data model; only the list they live
-/// in differs (§4.7).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     #[serde(default)]
@@ -110,7 +93,6 @@ pub struct Entry {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    /// Toggle state for `unit: step` effects (§4.8).
     #[serde(default)]
     pub active: bool,
     #[serde(default)]
@@ -123,17 +105,14 @@ impl Entry {
     }
 }
 
-/// Where a standing effect came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectSource {
     Ability,
     Inventory,
-    /// One of the four fixed entries of the built-in library (§4.9).
     Builtin,
 }
 
-/// A standing effect currently applied to the character.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveEffect {
     pub id: String,
@@ -143,7 +122,6 @@ pub struct ActiveEffect {
     pub effects: Vec<Effect>,
 }
 
-/// Read-only view of one source of standing (toggle) effects.
 pub struct StandingEffect<'a> {
     pub id: &'a str,
     pub name: &'a str,
@@ -166,7 +144,6 @@ impl ResourceKind {
         }
     }
 
-    /// Portuguese label used by the sheet and HUD (§4.4).
     pub fn display_pt(self) -> &'static str {
         match self {
             ResourceKind::Hp => "PV",
@@ -203,12 +180,9 @@ impl Resources {
     }
 }
 
-/// Saving-throw state for one resource (§4.13).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SaveState {
-    /// Current difficulty class. Starts at 7 and rises by 3 per success.
     pub dc: i32,
-    /// Set once a save has been failed; drives the grayscale token/HUD state.
     pub failed: bool,
 }
 
@@ -249,7 +223,6 @@ fn default_sheet_type() -> String {
     "character".to_string()
 }
 
-/// The canonical character document (§9).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterSheet {
     #[serde(rename = "type", default = "default_sheet_type")]
@@ -262,8 +235,6 @@ pub struct CharacterSheet {
     #[serde(default = "default_level")]
     pub level: u32,
     pub resources: Resources,
-    /// `base_attributes` is accepted as a legacy alias for sheets written before
-    /// the v1.5 schema.
     #[serde(alias = "base_attributes")]
     pub attributes: Attributes,
     #[serde(default)]
@@ -274,7 +245,6 @@ pub struct CharacterSheet {
     pub inventory: Vec<Entry>,
     #[serde(default)]
     pub active_effects: Vec<ActiveEffect>,
-    /// Extra sheets the GM has granted this player access to (§4.6).
     #[serde(default)]
     pub accessible_sheets: Vec<String>,
     #[serde(default)]
@@ -285,21 +255,16 @@ fn default_level() -> u32 {
     1
 }
 
-/// Result of a resource change, so the caller can react to a character dropping
-/// to zero or being healed back up.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResourceChange {
     pub kind: ResourceKind,
     pub previous: i32,
     pub current: i32,
-    /// The resource just reached zero and a saving throw is now required.
     pub triggered_save: bool,
-    /// The resource came back above zero, so the DC was reset to 7.
     pub recovered: bool,
 }
 
 impl CharacterSheet {
-    /// A blank sheet seeded with the full default skill list at d4.
     pub fn new(name: &str, profile: &str, occupation: &str) -> Self {
         CharacterSheet {
             sheet_type: default_sheet_type(),
@@ -337,8 +302,6 @@ impl CharacterSheet {
             .find(|skill| skill.id.eq_ignore_ascii_case(&id))
     }
 
-    /// Sets a skill's die, inserting the skill from the default catalog when the
-    /// sheet does not carry it yet.
     pub fn set_skill_value(&mut self, id: &str, value: StepDice) -> Result<(), String> {
         if let Some(skill) = self.skill_mut(id) {
             skill.value = value;
@@ -355,7 +318,6 @@ impl CharacterSheet {
         }
     }
 
-    /// Looks an entry up in the abilities list first, then the inventory.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
         let id = id.trim();
         self.abilities
@@ -372,8 +334,6 @@ impl CharacterSheet {
             .find(|entry| entry.id.eq_ignore_ascii_case(&id))
     }
 
-    /// Every source of standing (toggle) effects: active abilities, active
-    /// inventory entries and applied built-ins.
     pub fn standing_effects(&self) -> Vec<StandingEffect<'_>> {
         let entries = self
             .abilities
@@ -393,13 +353,10 @@ impl CharacterSheet {
         entries.chain(applied).collect()
     }
 
-    /// `true` while the resource sits at zero (§4.13: HUD becomes grayscale).
     pub fn is_downed(&self, kind: ResourceKind) -> bool {
         self.resources.get(kind).current <= 0
     }
 
-    /// Applies a signed delta, clamping to `0..=max` and resetting the saving
-    /// throw DC when the character is healed back above zero (§4.13).
     pub fn apply_resource_delta(&mut self, kind: ResourceKind, delta: i32) -> ResourceChange {
         let stat = self.resources.get_mut(kind);
         let previous = stat.current;
@@ -420,8 +377,6 @@ impl CharacterSheet {
         }
     }
 
-    /// The attribute, skill and DC for the saving throw a depleted resource
-    /// demands: Vigor for PV, Disciplina for PD (§4.13).
     pub fn death_save_test(&self, kind: ResourceKind) -> Result<(&Skill, i32), String> {
         if !self.is_downed(kind) {
             return Err(format!(
@@ -436,8 +391,6 @@ impl CharacterSheet {
         Ok((skill, self.death_saves.get(kind).dc))
     }
 
-    /// Records the outcome of a saving throw: success raises the DC by 3,
-    /// failure flags the character (§4.13).
     pub fn register_death_save(&mut self, kind: ResourceKind, success: bool) -> SaveState {
         let state = self.death_saves.get_mut(kind);
         if success {
@@ -448,9 +401,6 @@ impl CharacterSheet {
         *state
     }
 
-    /// Repairs recoverable problems in a user-edited document instead of
-    /// rejecting it outright (§6). Returns the list of adjustments made so they
-    /// can be logged and surfaced to the user.
     pub fn normalize(&mut self) -> Vec<String> {
         let mut notes = Vec::new();
 
@@ -483,8 +433,6 @@ impl CharacterSheet {
             }
         }
 
-        // Guarantee the default skill catalog is present without overwriting
-        // values the player has already set (§4.5).
         for definition in rules::DEFAULT_SKILLS {
             if self.skill(definition.id).is_none() {
                 self.skills.push(definition.to_skill());
@@ -492,8 +440,6 @@ impl CharacterSheet {
             }
         }
 
-        // Backfill missing ids from the display name so references stay stable
-        // even for entries authored by hand (§10).
         for entry in self.abilities.iter_mut().chain(self.inventory.iter_mut()) {
             if entry.id.trim().is_empty() {
                 entry.id = slug(&entry.name);
@@ -523,7 +469,6 @@ impl CharacterSheet {
         notes
     }
 
-    /// Validates the business rules that must hold before a sheet is persisted.
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
             return Err("Character name cannot be empty.".into());
@@ -611,8 +556,6 @@ impl CharacterSheet {
             }
         }
 
-        // Accessible sheets are file references; they must never escape the
-        // campaign directory (§6, Path Traversal Protection).
         for reference in &self.accessible_sheets {
             if reference.contains("..")
                 || reference.starts_with('/')
@@ -644,18 +587,14 @@ impl CharacterSheet {
     }
 }
 
-/// Wraps a parsed document: the YAML frontmatter plus the free-form Markdown
-/// body exposed through the Annotations tab (§3.1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedDocument {
     pub data: CharacterSheet,
     pub body: String,
-    /// Adjustments applied while loading, so the UI can warn the player.
     #[serde(default)]
     pub notes: Vec<String>,
 }
 
-/// Builds a stable ASCII identifier from a Portuguese display name.
 pub fn slug(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut last_was_separator = false;
@@ -799,7 +738,6 @@ accessible_sheets: []
             sheet.skill("disciplina").unwrap().governed_by,
             Attribute::Emotion
         );
-        // Existing values are preserved.
         let mut sheet: CharacterSheet = serde_yaml::from_str(CANONICAL_SHEET).unwrap();
         sheet.normalize();
         assert_eq!(sheet.skill("crime").unwrap().value, StepDice::D8);
@@ -878,7 +816,6 @@ accessible_sheets: []
         assert_eq!(change.current, 0);
         assert!(change.triggered_save);
         assert!(sheet.is_downed(ResourceKind::Hp));
-        // A second hit at zero does not re-trigger the save.
         let change = sheet.apply_resource_delta(ResourceKind::Hp, -1);
         assert!(!change.triggered_save);
     }

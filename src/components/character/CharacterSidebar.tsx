@@ -13,7 +13,6 @@ export function CharacterSidebar() {
   const { character, loadCharacter, applyResourceChange } = useCharacterStore();
   const { addMessage } = useChatStore();
 
-  // The modal now handles the complex roll logic, so we only need to track the clicked attribute
   const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
 
   const TEST_PATH = '/home/leugz_/Projects/personal/guia/test_character.md';

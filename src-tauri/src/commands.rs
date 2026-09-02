@@ -1,10 +1,3 @@
-//! Tauri IPC handlers (the bridge to React).
-//!
-//! Handlers stay thin: they read a document, delegate to `models`, `effects`,
-//! `dice` or `rules`, persist atomically through `storage`, and hand the new
-//! state back to the frontend. All game math happens in the backend so the UI
-//! can never disagree with the sheet on disk.
-
 use serde::{Deserialize, Serialize};
 
 use crate::dice::{roll_freeform, roll_pool_entries, RollResult, StepDice};
@@ -15,8 +8,6 @@ use crate::models::{
 use crate::rules::{self, BuiltinDefinition, SkillDefinition};
 use crate::storage;
 
-/// Loads a document, applies it through `mutation`, then validates and writes it
-/// back atomically. The Markdown body is preserved untouched.
 fn mutate<F>(path: &str, mutation: F) -> Result<CharacterSheet, String>
 where
     F: FnOnce(&mut CharacterSheet) -> Result<(), String>,
@@ -50,7 +41,6 @@ pub fn save_character_sheet(
     storage::write_document(&path, &data, &body)
 }
 
-/// Scaffolds a canonical sheet seeded with the default skill catalog (§4.5).
 #[tauri::command]
 pub fn create_character_sheet(
     path: String,
@@ -76,34 +66,28 @@ pub fn create_character_sheet(
 // Dice
 // ---------------------------------------------------------------------------
 
-/// Rolls a bare pool of step dice. Kept for the original IPC contract.
 #[tauri::command]
 pub fn execute_roll(pool: Vec<StepDice>) -> Result<RollResult, String> {
     StepDice::roll_pool(&pool)
 }
 
-/// Free dice roller. Accepts any supported die size, including the d20 (§4.3).
 #[tauri::command]
 pub fn roll_dice(sides: Vec<u8>, secret: Option<bool>) -> Result<RollResult, String> {
     roll_freeform(&sides, secret.unwrap_or(false))
 }
 
-/// Builds the pool for a test without rolling it, so the UI can show the player
-/// exactly which dice and effects are about to be used.
 #[tauri::command]
 pub fn preview_test(path: String, request: TestRequest) -> Result<ResolvedPool, String> {
     let document = storage::read_document(&path)?;
     resolve_test(&document.data, &request)
 }
 
-/// A resolved test: the pool that was assembled and the result of rolling it.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestOutcome {
     pub pool: ResolvedPool,
     pub result: RollResult,
 }
 
-/// Rolls `Atributo + Perícia` plus any active or triggered effects (§4.10).
 #[tauri::command]
 pub fn roll_test(path: String, request: TestRequest) -> Result<TestOutcome, String> {
     let document = storage::read_document(&path)?;
@@ -116,10 +100,6 @@ pub fn roll_test(path: String, request: TestRequest) -> Result<TestOutcome, Stri
 // Resources and saving throws
 // ---------------------------------------------------------------------------
 
-/// Applies a signed delta to PV or PD and returns the new sheet.
-///
-/// The arithmetic and clamping happen here rather than in the UI so the resource
-/// bars and the HUD can never drift apart from the file (§4.4).
 #[tauri::command]
 pub fn modify_resource(
     path: String,
@@ -134,13 +114,10 @@ pub fn modify_resource(
     })
 }
 
-/// Same as [`modify_resource`], but also reports whether the change triggered a
-/// saving throw or reset an existing one.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResourceOutcome {
     pub character: CharacterSheet,
     pub change: ResourceChange,
-    /// Skill the player must now roll, when the resource hit zero.
     pub save_skill: Option<String>,
     pub save_dc: Option<i32>,
 }
@@ -168,22 +145,16 @@ pub fn apply_resource_change(
     })
 }
 
-/// Outcome of a death saving throw (§4.13).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeathSaveOutcome {
     pub resource: ResourceKind,
     pub result: RollResult,
-    /// DC that had to be beaten on this attempt.
     pub dc: i32,
     pub success: bool,
-    /// Saving throw state after the attempt, including the next DC.
     pub state: SaveState,
     pub character: CharacterSheet,
 }
 
-/// Rolls the saving throw a depleted resource demands: Vigor for PV, Disciplina
-/// for PD. On success the DC climbs by 3; on failure the character is flagged so
-/// the HUD and map token render the failed state.
 #[tauri::command]
 pub fn roll_death_save(path: String, resource: String) -> Result<DeathSaveOutcome, String> {
     let kind = ResourceKind::from_key(&resource)
@@ -223,7 +194,6 @@ pub fn roll_death_save(path: String, resource: String) -> Result<DeathSaveOutcom
 // Sheet editing
 // ---------------------------------------------------------------------------
 
-/// Sets an attribute die. Values outside the ladder are normalized on the way in.
 #[tauri::command]
 pub fn set_attribute(
     path: String,
@@ -238,7 +208,6 @@ pub fn set_attribute(
     })
 }
 
-/// Steps an attribute up or down the ladder, clamped to 4..=12 (§4.5).
 #[tauri::command]
 pub fn step_attribute(
     path: String,
@@ -274,7 +243,6 @@ pub fn step_skill(path: String, skill_id: String, steps: i32) -> Result<Characte
     })
 }
 
-/// Toggles a step-driven ability or inventory entry on or off (§4.8).
 #[tauri::command]
 pub fn toggle_entry(
     path: String,
@@ -300,19 +268,16 @@ pub fn toggle_entry(
 // Effects
 // ---------------------------------------------------------------------------
 
-/// The fixed built-in Buff/Debuff library (§4.9).
 #[tauri::command]
 pub fn list_builtin_effects() -> Vec<BuiltinDefinition> {
     rules::BUILTIN_EFFECTS.to_vec()
 }
 
-/// The default skill mappings, for sheet creation and the skill picker (§4.5).
 #[tauri::command]
 pub fn list_default_skills() -> Vec<SkillDefinition> {
     rules::DEFAULT_SKILLS.to_vec()
 }
 
-/// Applies one of the built-in standing effects to the character.
 #[tauri::command]
 pub fn apply_builtin_effect(
     path: String,
@@ -351,7 +316,6 @@ pub fn remove_active_effect(path: String, effect_id: String) -> Result<Character
     })
 }
 
-/// What the three-dot menu needs to render an entry and send it to chat (§4.7).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntrySummary {
     pub id: String,
@@ -359,7 +323,6 @@ pub struct EntrySummary {
     pub description: String,
     pub active: bool,
     pub behavior: EntryBehavior,
-    /// Portuguese one-liners describing each effect.
     pub effects: Vec<String>,
 }
 
@@ -414,7 +377,6 @@ mod tests {
     use crate::effects::{Effect, EffectOperation, EffectUnit};
     use crate::models::Entry;
 
-    /// Creates a scratch sheet on disk and returns its path.
     fn scratch(tag: &str) -> String {
         let dir = std::env::temp_dir().join(format!("guia-commands-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -618,7 +580,6 @@ mod tests {
             assert_eq!(outcome.state.dc, 7);
         }
 
-        // Healing above zero always resets the ladder (§4.13).
         modify_resource(path.clone(), "hp".into(), 5).unwrap();
         let sheet = load_character_sheet(path).unwrap().data;
         assert_eq!(sheet.death_saves.hp.dc, 7);
@@ -648,10 +609,8 @@ mod tests {
         let path = scratch("access");
         let sheet = grant_sheet_access(path.clone(), "personagens/joao.md".into()).unwrap();
         assert_eq!(sheet.accessible_sheets.len(), 1);
-        // Granting twice is idempotent.
         let sheet = grant_sheet_access(path.clone(), "personagens/joao.md".into()).unwrap();
         assert_eq!(sheet.accessible_sheets.len(), 1);
-        // A reference that escapes the campaign directory is rejected on save.
         assert!(grant_sheet_access(path.clone(), "../fora.md".into()).is_err());
         let sheet = revoke_sheet_access(path, "personagens/joao.md".into()).unwrap();
         assert!(sheet.accessible_sheets.is_empty());

@@ -19,16 +19,14 @@ export function SkillPromptModal({
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [preview, setPreview] = useState<ResolvedPool | null>(null);
 
-  // Generate the TestRequest object natively
   const buildRequest = (): TestRequest => ({
     attribute: attributeName,
     skill_id: selectedSkill || undefined,
-    triggered: [], // Would map checked abilities/inventory here
+    triggered: [],
     extra_dice: [],
     secret: false,
   });
 
-  // Fetch the preview from Rust whenever the selected skill changes
   useEffect(() => {
     if (!activePath) return;
     invoke<ResolvedPool>('preview_test', {
@@ -59,7 +57,6 @@ export function SkillPromptModal({
     }
   };
 
-  // Safe mapping of attributes to UI skills
   const availableSkills =
     character?.skills.filter((s) => s.governed_by === attributeName) || [];
 

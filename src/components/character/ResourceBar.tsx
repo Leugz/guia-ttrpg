@@ -1,6 +1,6 @@
 interface ResourceBarProps {
   label: string;
-  current: number; // renamed
+  current: number;
   max: number;
   colorClass: string;
   onClick?: () => void;

@@ -16,7 +16,6 @@ export function GameBoard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Check the strict backend saving throw states (Section 4.13)
   const isDead =
     character &&
     (character.death_saves.hp.failed || character.death_saves.dp.failed);
@@ -25,7 +24,6 @@ export function GameBoard() {
     (character.resources.hp.current <= 0 ||
       character.resources.dp.current <= 0);
 
-  // Black for dead, Gray for dying (0 HP/DP), Red for healthy
   const tokenColor = isDead ? '#1a1a1a' : isDying ? '#555555' : '#ef4444';
 
   return (

@@ -45,7 +45,6 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
 
       set({ character: outcome.character });
 
-      // Automatically log to chat if a death save is triggered
       if (outcome.change.triggered_save) {
         useChatStore.getState().addMessage({
           sender: 'System',

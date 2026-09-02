@@ -1,18 +1,3 @@
-//! Effect model and roll-pool resolution.
-//!
-//! Spec references: §4.7 (abilities & inventory), §4.8 (effect behavior),
-//! §4.9 (built-in library), §4.10 (core resolution system).
-//!
-//! Effects are fully user-authored. An effect is classified by its `unit`:
-//!
-//! * `unit: step`  -> toggle-driven. Persists while active and shifts the die of
-//!   its target up or down the ladder on every matching test.
-//! * `unit: 4|6|8|10|12` -> trigger-driven. Adds (or removes) dice from the pool
-//!   for one specific test.
-//!
-//! An entry holding both kinds is *mixed* and requires an explicit choice from
-//! the player when it is clicked.
-
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -20,19 +5,14 @@ use std::fmt;
 use crate::dice::{PoolEntry, StepDice, MAX_POOL_SIZE};
 use crate::models::{Attribute, CharacterSheet};
 
-/// What an effect does to its target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectOperation {
-    /// Adds dice to the pool, or advances the target die when the unit is `step`.
     Add,
-    /// Removes dice from the pool, or regresses the target die when the unit is `step`.
     Subtract,
-    /// Advances the target die along the ladder. Only meaningful with `unit: step`.
     Advance,
 }
 
-/// The unit an effect operates in: either a ladder step or a concrete die size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectUnit {
     Step,
@@ -100,7 +80,6 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<EffectUnit, E> {
         let normalized = value.trim().to_lowercase();
-        // "passo" is accepted so a sheet authored in Portuguese still parses.
         if normalized == "step" || normalized == "passo" {
             return Ok(EffectUnit::Step);
         }
@@ -114,20 +93,15 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
     }
 }
 
-/// A single mechanical effect belonging to an ability or inventory entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Effect {
     pub operation: EffectOperation,
     pub quantity: u32,
     pub unit: EffectUnit,
-    /// Attribute key (`physical`) or skill id (`furtividade`). `None` applies the
-    /// effect to any test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 }
 
-/// Highest quantity a single effect may declare. Guards against malformed sheets
-/// producing absurd pools; the pool itself is capped separately at 4 dice.
 pub const MAX_EFFECT_QUANTITY: u32 = 10;
 
 impl Effect {
@@ -139,7 +113,6 @@ impl Effect {
         !self.unit.is_step()
     }
 
-    /// Signed number of ladder steps this effect applies. Zero for die effects.
     pub fn signed_steps(&self) -> i32 {
         if !self.unit.is_step() {
             return 0;
@@ -150,7 +123,6 @@ impl Effect {
         }
     }
 
-    /// Whether this effect applies to a test on `attribute` using `skill_id`.
     pub fn matches(&self, attribute: Attribute, skill_id: Option<&str>) -> bool {
         match self.target.as_deref() {
             None => true,
@@ -162,9 +134,6 @@ impl Effect {
         }
     }
 
-    /// Whether the effect targets the skill die specifically rather than the
-    /// attribute die. Untargeted step effects fall on the attribute die, which
-    /// is the primary die of the test.
     pub fn targets_skill(&self, skill_id: Option<&str>) -> bool {
         match (self.target.as_deref(), skill_id) {
             (Some(target), Some(skill)) => target.trim().eq_ignore_ascii_case(skill),
@@ -190,7 +159,6 @@ impl Effect {
         Ok(())
     }
 
-    /// Portuguese summary used in chat and tooltips, e.g. "Adiciona 2 d6".
     pub fn describe(&self) -> String {
         let verb = match (self.operation, self.unit) {
             (EffectOperation::Add, EffectUnit::Step) | (EffectOperation::Advance, _) => "Avança",
@@ -215,21 +183,15 @@ impl Effect {
     }
 }
 
-/// How an entry behaves when the player clicks it (§4.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryBehavior {
-    /// No effects: the description can be sent to chat without automation.
     Informational,
-    /// Step effects only: toggling it on makes it apply to future tests.
     Toggle,
-    /// Die effects only: clicking it starts a roll using the bonus dice.
     Trigger,
-    /// Both kinds: the player must choose which behavior to invoke.
     Mixed,
 }
 
-/// Classifies an entry from its effects.
 pub fn classify(effects: &[Effect]) -> EntryBehavior {
     let has_toggle = effects.iter().any(Effect::is_toggle);
     let has_trigger = effects.iter().any(Effect::is_trigger);
@@ -241,49 +203,34 @@ pub fn classify(effects: &[Effect]) -> EntryBehavior {
     }
 }
 
-/// Everything the frontend sends to request a test roll.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TestRequest {
-    /// Governing attribute. When omitted it is derived from the selected skill
-    /// (§4.10: "Selecting a Perícia automatically selects its governing Atributo").
     #[serde(default)]
     pub attribute: Option<Attribute>,
     #[serde(default)]
     pub skill_id: Option<String>,
-    /// Ids of ability/inventory entries the player triggered for this test.
     #[serde(default)]
     pub triggered: Vec<String>,
-    /// Built-in "Ajuda": 1 or 2 extra steps applied to this test only (§4.9).
     #[serde(default)]
     pub help: Option<u32>,
-    /// Ad-hoc bonus dice, e.g. granted verbally by the GM.
     #[serde(default)]
     pub extra_dice: Vec<StepDice>,
-    /// Secret rolls are only shown to the roller and the GM (§4.3).
     #[serde(default)]
     pub secret: bool,
 }
 
-/// One die of a resolved (but not yet rolled) pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedDie {
     pub sides: u8,
-    /// Portuguese label shown under the die in the roll equation.
     pub source: String,
-    /// `true` for the attribute and skill dice of the test itself.
     pub base: bool,
 }
 
-/// A fully resolved pool, ready to roll, plus the reasoning behind it so the UI
-/// can explain the result to the player.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedPool {
     pub dice: Vec<ResolvedDie>,
-    /// Dice trimmed away by the four-die cap (§4.10).
     pub excluded: Vec<ResolvedDie>,
-    /// Descriptions of the effects that were applied.
     pub applied: Vec<String>,
-    /// Effects that were skipped, with the reason.
     pub ignored: Vec<String>,
     pub label: String,
     pub secret: bool,
@@ -295,8 +242,6 @@ impl ResolvedPool {
             .iter()
             .map(|die| {
                 PoolEntry::new(
-                    // Resolved dice always come from the step ladder, so this is
-                    // infallible; fall back to d4 rather than panicking.
                     crate::dice::Die::new(die.sides).unwrap_or_else(|_| StepDice::D4.into()),
                     die.source.clone(),
                 )
@@ -305,15 +250,6 @@ impl ResolvedPool {
     }
 }
 
-/// Builds the dice pool for a test from the sheet's attributes, skills and
-/// currently active or triggered effects.
-///
-/// Order of operations:
-/// 1. Attribute die (always present) and skill die (when a skill is selected).
-/// 2. Step effects shift those two dice along the ladder, clamped to 4..=12.
-/// 3. Die effects from triggered entries add or remove bonus dice.
-/// 4. The pool is capped at four dice, keeping the base dice and then the
-///    largest bonus dice.
 pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<ResolvedPool, String> {
     let skill = match request.skill_id.as_deref() {
         Some(id) => Some(
@@ -431,7 +367,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
                     }
                     used = true;
                 }
-                // Guarded by Effect::validate; kept explicit so the match stays total.
                 EffectOperation::Advance => {
                     ignored.push(format!(
                         "{}: operação 'advance' exige 'unit: step'",
@@ -472,8 +407,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
     }
 
     // --- Cap the pool at four dice -----------------------------------------
-    // Base dice are never dropped; surplus bonus dice are trimmed smallest-first
-    // so the player keeps the best of what their effects granted.
     bonus.sort_by(|a, b| b.sides.cmp(&a.sides));
     let room = MAX_POOL_SIZE.saturating_sub(dice.len());
     let excluded: Vec<ResolvedDie> = bonus.split_off(room.min(bonus.len()));
@@ -625,7 +558,6 @@ mod tests {
         let mut sheet = sheet();
         sheet.active_effects.push(rules::builtin("machucado", None).unwrap());
         let pool = resolve_test(&sheet, &request("furtividade")).unwrap();
-        // Físico d8 -1 step -> d6
         assert_eq!(pool.dice[0].sides, 6);
         assert_eq!(pool.dice[1].sides, 6);
         assert!(pool.applied.iter().any(|a| a.contains("Machucado")));

@@ -1,41 +1,15 @@
-//! Mathematical engine for step-dice, pool resolution and critical detection.
-//!
-//! Spec references: §3.2 (numeric dice representation), §4.10 (core resolution),
-//! §4.11 (RA/RB), §4.12 (criticals), §6 (graceful YAML degradation).
-//!
-//! Dice are stored as the *numeric size of the die* (4, 6, 8, 10, 12). They are
-//! never stored as strings such as `"d8"`. The UI is responsible for rendering
-//! the numeric value as conventional dice notation.
-
 use rand::Rng;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-/// The only valid step-dice sizes, in ascending order.
 pub const STEP_LADDER: [u8; 5] = [4, 6, 8, 10, 12];
-
-/// Every die the roller is allowed to produce (step dice plus the d20).
 pub const ROLLABLE_SIDES: [u8; 6] = [4, 6, 8, 10, 12, 20];
-
-/// Maximum number of dice in a single test pool (§4.10, final decision #8).
 pub const MAX_POOL_SIZE: usize = 4;
-
-/// Number of dice that actually contribute to the total (§4.10, final decision #9).
 pub const COUNTED_DICE: usize = 3;
-
-/// A single die is "high" for critical purposes at this value or above (§4.12).
 pub const CRITICAL_SUCCESS_THRESHOLD: u32 = 6;
-
-/// How many high dice are required for a critical success (§4.12).
 pub const CRITICAL_SUCCESS_COUNT: usize = 2;
 
-/// A step die as used by attributes, skills and step-based effects.
-///
-/// Serializes to a plain integer (`8`), and deserializes from an integer, a
-/// float, or a legacy string (`"D8"`, `"d8"`, `"8"`). Unsupported values are
-/// normalized to the nearest valid step instead of failing the whole document
-/// (§6, YAML Validation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StepDice {
     D4,
@@ -46,7 +20,6 @@ pub enum StepDice {
 }
 
 impl StepDice {
-    /// The step ladder in ascending order: 4 -> 6 -> 8 -> 10 -> 12.
     pub const LADDER: [StepDice; 5] = [
         StepDice::D4,
         StepDice::D6,
@@ -55,7 +28,6 @@ impl StepDice {
         StepDice::D12,
     ];
 
-    /// Numeric size of the die, i.e. the value stored in YAML.
     pub fn sides(self) -> u8 {
         match self {
             StepDice::D4 => 4,
@@ -66,7 +38,6 @@ impl StepDice {
         }
     }
 
-    /// Position on the step ladder (0..=4).
     pub fn index(self) -> usize {
         match self {
             StepDice::D4 => 0,
@@ -77,7 +48,6 @@ impl StepDice {
         }
     }
 
-    /// Strict conversion. Returns `None` for anything outside the ladder.
     pub fn from_sides(value: i64) -> Option<Self> {
         match value {
             4 => Some(StepDice::D4),
@@ -89,11 +59,6 @@ impl StepDice {
         }
     }
 
-    /// Lenient conversion used when reading user-authored YAML.
-    ///
-    /// Values below the ladder clamp to `D4`, values above clamp to `D12`, and
-    /// in-between values resolve to the nearest valid step. Ties resolve
-    /// downward so a malformed sheet never silently inflates a character.
     pub fn nearest(value: i64) -> Self {
         if value <= 4 {
             return StepDice::D4;
@@ -113,21 +78,17 @@ impl StepDice {
         best
     }
 
-    /// Parses the legacy string representation (`"D8"`, `"d8"`, `"8"`).
     pub fn from_legacy_str(raw: &str) -> Option<Self> {
         let trimmed = raw.trim();
         let digits = trimmed.trim_start_matches(['d', 'D']);
         digits.parse::<i64>().ok().and_then(Self::from_sides)
     }
 
-    /// Moves the die along the ladder, hard-clamping between `D4` and `D12`
-    /// (§4.5). Positive values advance, negative values regress.
     pub fn apply_steps(self, steps: i32) -> Self {
         let target = (self.index() as i32 + steps).clamp(0, (STEP_LADDER.len() - 1) as i32);
         StepDice::LADDER[target as usize]
     }
 
-    /// Conventional dice notation for display and log messages.
     pub fn notation(self) -> String {
         format!("d{}", self.sides())
     }
@@ -199,13 +160,10 @@ impl<'de> Visitor<'de> for StepDiceVisitor {
     }
 }
 
-/// Any die the roller can physically roll, including the d20 used by the free
-/// dice roller (§4.3). Character values always use [`StepDice`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Die(u8);
 
 impl Die {
-    /// Strict constructor. Rejects sizes outside [`ROLLABLE_SIDES`].
     pub fn new(sides: u8) -> Result<Self, String> {
         if ROLLABLE_SIDES.contains(&sides) {
             Ok(Die(sides))
@@ -245,28 +203,16 @@ impl<'de> Deserialize<'de> for Die {
     }
 }
 
-/// One die after it has been rolled, carrying everything the UI needs to render
-/// the equation without recomputing game rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RolledDie {
-    /// Die size, so hovering a value can identify its die type (§4.3).
     pub sides: u8,
     pub value: u32,
-    /// `false` for the dropped die of a four-die pool (§4.10).
     pub counted: bool,
-    /// Portuguese label of where the die came from ("Físico", "Furtividade", ...).
     pub source: String,
-    /// RA marker: this die holds the highest rolled value (§4.11).
     pub is_highest: bool,
-    /// RB marker: this die holds the lowest rolled value (§4.11).
     pub is_lowest: bool,
 }
 
-/// Result of a resolved roll.
-///
-/// `rolls`, `total_sum`, `highest`, `lowest` and the critical flags are kept as
-/// flat fields so existing frontend consumers keep working; `dice` carries the
-/// richer per-die detail required by §4.3 and §4.11.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RollResult {
     pub dice: Vec<RolledDie>,
@@ -274,21 +220,15 @@ pub struct RollResult {
     pub total_sum: u32,
     pub highest: u32,
     pub lowest: u32,
-    /// Index into `dice` of the RA die.
     pub highest_index: usize,
-    /// Index into `dice` of the RB die.
     pub lowest_index: usize,
-    /// Index into `dice` of the die excluded from the total, when the pool is full.
     pub dropped_index: Option<usize>,
     pub is_critical_success: bool,
     pub is_critical_failure: bool,
-    /// Portuguese description of the test, e.g. "Teste de Físico (Furtividade)".
     pub label: String,
-    /// Secret rolls are only broadcast to the roller and the GM (§4.3).
     pub secret: bool,
 }
 
-/// A die queued for rolling together with its Portuguese source label.
 #[derive(Debug, Clone)]
 pub struct PoolEntry {
     pub die: Die,
@@ -304,7 +244,6 @@ impl PoolEntry {
     }
 }
 
-/// Rolls a prepared pool using the thread RNG.
 pub fn roll_pool_entries(
     entries: &[PoolEntry],
     label: impl Into<String>,
@@ -314,7 +253,6 @@ pub fn roll_pool_entries(
     roll_pool_entries_with(&mut rng, entries, label, secret)
 }
 
-/// Rolls a prepared pool with an explicit RNG so results are reproducible in tests.
 pub fn roll_pool_entries_with<R: Rng + ?Sized>(
     rng: &mut R,
     entries: &[PoolEntry],
@@ -369,14 +307,9 @@ pub fn roll_pool_entries_with<R: Rng + ?Sized>(
     })
 }
 
-/// Everything the game rules derive from a set of rolled values, independent of
-/// which dice produced them. Kept separate from the RNG so the rules can be
-/// tested against exact values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
-    /// Indices of the dice that contribute to the total.
     pub counted: Vec<usize>,
-    /// Index of the die excluded from the total, when the pool is full.
     pub dropped: Option<usize>,
     pub total: u32,
     pub highest: u32,
@@ -387,22 +320,15 @@ pub struct Resolution {
     pub is_critical_failure: bool,
 }
 
-/// Applies §4.10 (highest three count), §4.11 (RA/RB) and §4.12 (criticals) to a
-/// set of rolled values.
 pub fn resolve_values(values: &[u32]) -> Resolution {
     assert!(!values.is_empty(), "cannot resolve an empty pool");
 
-    // Only the highest COUNTED_DICE results contribute to the total. Sorting by
-    // value descending, with the original index as tiebreaker, keeps the choice
-    // deterministic when two dice share a value.
     let mut ranked: Vec<usize> = (0..values.len()).collect();
     ranked.sort_by(|&a, &b| values[b].cmp(&values[a]).then(a.cmp(&b)));
     let counted: Vec<usize> = ranked.iter().copied().take(COUNTED_DICE).collect();
     let dropped = ranked.get(COUNTED_DICE).copied();
     let total: u32 = counted.iter().map(|&i| values[i]).sum();
 
-    // RA, RB and both criticals read every die in the pool, including one that
-    // was dropped from the total.
     let highest = *values.iter().max().expect("pool is non-empty");
     let lowest = *values.iter().min().expect("pool is non-empty");
     let high_dice = values
@@ -424,8 +350,6 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
 }
 
 impl StepDice {
-    /// Convenience wrapper kept for the original IPC contract: rolls a bare pool
-    /// of step dice with generic source labels.
     pub fn roll_pool(dice_pool: &[StepDice]) -> Result<RollResult, String> {
         let entries: Vec<PoolEntry> = dice_pool
             .iter()
@@ -435,7 +359,6 @@ impl StepDice {
     }
 }
 
-/// Rolls an arbitrary set of dice for the free dice roller, e.g. `[20]` or `[6, 6]`.
 pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
     let entries = sides
         .iter()
@@ -484,15 +407,12 @@ mod tests {
 
     #[test]
     fn invalid_die_values_normalize_to_nearest_step() {
-        // §6: "d14 / 14 must not be accepted as a valid step" and may be
-        // normalized rather than crashing the application.
         let die: StepDice = serde_yaml::from_str("14").unwrap();
         assert_eq!(die, StepDice::D12);
         let die: StepDice = serde_yaml::from_str("2").unwrap();
         assert_eq!(die, StepDice::D4);
         let die: StepDice = serde_yaml::from_str("9").unwrap();
         assert_eq!(die, StepDice::D8);
-        // Ties resolve downward.
         assert_eq!(StepDice::nearest(5), StepDice::D4);
         assert_eq!(StepDice::nearest(7), StepDice::D6);
     }
@@ -551,7 +471,6 @@ mod tests {
 
     #[test]
     fn critical_success_needs_two_dice_at_six_or_above() {
-        // §4.12: "At least 2 dice roll >= 6" — the values need not match.
         let mut rng = StdRng::seed_from_u64(3);
         for _ in 0..300 {
             let result =
@@ -579,14 +498,11 @@ mod tests {
 
     #[test]
     fn critical_detection_reads_every_die_including_the_dropped_one() {
-        // Four high dice: one of them is dropped from the total, yet the tally
-        // that decides the critical still sees it (§4.12).
         let resolution = resolve_values(&[6, 6, 6, 6]);
         assert_eq!(resolution.dropped, Some(3));
         assert_eq!(resolution.total, 18);
         assert!(resolution.is_critical_success);
 
-        // A critical failure needs the dropped die to be a 1 as well.
         let resolution = resolve_values(&[1, 1, 1, 1]);
         assert!(resolution.is_critical_failure);
         assert_eq!(resolution.total, 3);

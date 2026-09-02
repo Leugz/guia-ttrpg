@@ -26,6 +26,5 @@ export default tseslint.config(
       ],
     },
   },
-  // Prettier must always be the final object in the array to override formatting rules
   eslintConfigPrettier
 );

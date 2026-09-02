@@ -1,34 +1,15 @@
-//! Fixed rules of the Ordem Paranormal 2nd Edition playtest.
-//!
-//! Spec references: §4.5 (default skill mappings), §4.9 (built-in effects
-//! library), §4.13 (death saving throws).
-//!
-//! Nothing in this module is user-extensible. The built-in Buff/Debuff library
-//! is deliberately limited to the four fixed entries named by the spec; anything
-//! else a table wants goes through user-authored ability/inventory effects.
-
 use serde::Serialize;
 
 use crate::dice::StepDice;
 use crate::effects::{Effect, EffectOperation, EffectUnit};
 use crate::models::{ActiveEffect, Attribute, EffectSource, ResourceKind, Skill};
 
-/// Starting difficulty class for a saving throw (§4.13).
 pub const DEATH_SAVE_INITIAL_DC: i32 = 7;
-
-/// How much the DC climbs after each successful save (§4.13).
 pub const DEATH_SAVE_DC_INCREMENT: i32 = 3;
-
-/// Die every skill starts on when a sheet is created.
 pub const UNTRAINED_SKILL_DIE: StepDice = StepDice::D4;
-
-/// Skill rolled when PV reaches zero.
 pub const HP_SAVE_SKILL: &str = "vigor";
-
-/// Skill rolled when PD reaches zero.
 pub const DP_SAVE_SKILL: &str = "disciplina";
 
-/// Which skill a depleted resource is saved against.
 pub fn death_save_skill(kind: ResourceKind) -> &'static str {
     match kind {
         ResourceKind::Hp => HP_SAVE_SKILL,
@@ -36,13 +17,11 @@ pub fn death_save_skill(kind: ResourceKind) -> &'static str {
     }
 }
 
-/// A skill in the system catalog.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SkillDefinition {
     pub id: &'static str,
     pub name: &'static str,
     pub governed_by: Attribute,
-    /// Set for the specializations that sit under "Aptidão".
     pub parent: Option<&'static str>,
 }
 
@@ -84,8 +63,6 @@ const fn specialization(
     }
 }
 
-/// The default skill mappings (§4.5). Ids are stable ASCII; names are the
-/// Portuguese values shown by the UI.
 pub const DEFAULT_SKILLS: &[SkillDefinition] = &[
     // Físico
     skill("acrobacia", "Acrobacia", Attribute::Physical),
@@ -118,7 +95,6 @@ pub const DEFAULT_SKILLS: &[SkillDefinition] = &[
     skill("persuasao", "Persuasão", Attribute::Emotion),
 ];
 
-/// The catalog instantiated for a fresh sheet, every skill untrained.
 pub fn default_skills() -> Vec<Skill> {
     DEFAULT_SKILLS
         .iter()
@@ -133,7 +109,6 @@ pub fn skill_definition(id: &str) -> Option<&'static SkillDefinition> {
         .find(|definition| definition.id.eq_ignore_ascii_case(id))
 }
 
-/// Skills governed by a given attribute, in catalog order.
 pub fn skills_for(attribute: Attribute) -> Vec<&'static SkillDefinition> {
     DEFAULT_SKILLS
         .iter()
@@ -141,21 +116,15 @@ pub fn skills_for(attribute: Attribute) -> Vec<&'static SkillDefinition> {
         .collect()
 }
 
-/// One of the four fixed entries of the built-in library (§4.9).
 #[derive(Debug, Clone, Serialize)]
 pub struct BuiltinDefinition {
     pub id: &'static str,
     pub name: &'static str,
-    /// Portuguese summary shown in the library UI.
     pub description: &'static str,
-    /// Magnitudes the GM may choose from. "Ajuda" is the only one with a choice.
     pub magnitudes: &'static [u32],
-    /// `true` when the effect is applied to a single test rather than persisting.
     pub per_test: bool,
 }
 
-/// The complete built-in Buff/Debuff library. Fixed and not user-extensible
-/// (§4.9, final decision #15).
 pub const BUILTIN_EFFECTS: &[BuiltinDefinition] = &[
     BuiltinDefinition {
         id: "machucado",
@@ -194,10 +163,6 @@ pub fn builtin_definition(id: &str) -> Option<&'static BuiltinDefinition> {
         .find(|definition| definition.id.eq_ignore_ascii_case(id))
 }
 
-/// Instantiates a built-in effect ready to be pushed onto `active_effects`.
-///
-/// `magnitude` is only meaningful for "Ajuda"; the three debuffs are fixed at a
-/// single step. Passing `None` uses the first allowed magnitude.
 pub fn builtin(id: &str, magnitude: Option<u32>) -> Result<ActiveEffect, String> {
     let definition =
         builtin_definition(id).ok_or_else(|| format!("Unknown built-in effect: {}", id))?;
