@@ -23,7 +23,8 @@ async fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::load_character_sheet,
             commands::save_character_sheet,
-            commands::execute_roll
+            commands::execute_roll,
+            commands::modify_resource
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,7 +10,7 @@ import { CharacterHeader } from './CharacterHeader';
 import { AbilityList } from './AbilityList';
 
 export function CharacterSidebar() {
-  const { character, loadCharacter, takeDamage } = useCharacterStore();
+  const { character, loadCharacter, modifyResource } = useCharacterStore();
   const { addMessage } = useChatStore();
 
   const [activePrompt, setActivePrompt] = useState<{
@@ -106,13 +106,14 @@ export function CharacterSidebar() {
                 current={character.resources.hp.current}
                 max={character.resources.hp.max}
                 colorClass='text-red-500'
-                onClick={() => takeDamage(1)}
+                onClick={() => modifyResource('hp', -1)}
               />
               <ResourceBar
                 label='DP'
                 current={character.resources.dp.current}
                 max={character.resources.dp.max}
                 colorClass='text-blue-500'
+                onClick={() => modifyResource('dp', -1)}
               />
             </div>
 
