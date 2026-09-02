@@ -18,6 +18,8 @@ interface CharacterStore {
   stepAttribute: (attribute: string, steps: number) => Promise<void>;
   stepSkill: (skillId: string, steps: number) => Promise<void>;
   toggleEntry: (entryId: string, active: boolean) => Promise<void>;
+  applyBuiltinEffect: (effectId: string, magnitude?: number) => Promise<void>;
+  removeActiveEffect: (effectId: string) => Promise<void>;
 }
 
 export const useCharacterStore = create<CharacterStore>((set, get) => ({
@@ -96,13 +98,14 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     }
   },
 
-  stepSkill: async (skill_id, steps) => {
+  stepSkill: async (skillId, steps) => {
     const { activePath } = get();
     if (!activePath) return;
     try {
+      // Changed skill_id to skillId
       const updated = await invoke<CharacterSheet>('step_skill', {
         path: activePath,
-        skill_id,
+        skillId,
         steps,
       });
       set({ character: updated });
@@ -111,18 +114,50 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     }
   },
 
-  toggleEntry: async (entry_id, active) => {
+  toggleEntry: async (entryId, active) => {
     const { activePath } = get();
     if (!activePath) return;
     try {
+      // Changed entry_id to entryId
       const updated = await invoke<CharacterSheet>('toggle_entry', {
         path: activePath,
-        entry_id,
+        entryId,
         active,
       });
       set({ character: updated });
     } catch (error) {
       console.error(error);
+    }
+  },
+
+  applyBuiltinEffect: async (effectId, magnitude) => {
+    const { activePath } = get();
+    if (!activePath) return;
+    try {
+      // Changed effect_id to effectId
+      const updated = await invoke<CharacterSheet>('apply_builtin_effect', {
+        path: activePath,
+        effectId,
+        magnitude: magnitude ?? null,
+      });
+      set({ character: updated });
+    } catch (error) {
+      console.error('Failed to apply effect:', error);
+    }
+  },
+
+  removeActiveEffect: async (effectId) => {
+    const { activePath } = get();
+    if (!activePath) return;
+    try {
+      // Changed effect_id to effectId
+      const updated = await invoke<CharacterSheet>('remove_active_effect', {
+        path: activePath,
+        effectId,
+      });
+      set({ character: updated });
+    } catch (error) {
+      console.error('Failed to remove effect:', error);
     }
   },
 }));

@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useCharacterStore } from '../characterStore';
-import { ParsedDocument } from '../../../shared/types';
+import { ParsedDocument, Effect } from '../../../shared/types';
 import { useChatStore } from '../../chat/chatStore';
 
 import { ResourceBar } from './ResourceBar';
 import { SkillPromptModal } from './SkillPromptModal';
 import { CharacterHeader } from './CharacterHeader';
 import { AbilityList } from './AbilityList';
+import { ConditionsPanel } from './ConditionsPanel';
+
+const LADDER = [4, 6, 8, 10, 12];
 
 export function CharacterSidebar() {
   const { character, loadCharacter, applyResourceChange } = useCharacterStore();
@@ -40,6 +43,68 @@ export function CharacterSidebar() {
     physical: 'Físico',
     mind: 'Mente',
     emotion: 'Emoção',
+  };
+
+  // Calculates visual step shifts and assigns color boundaries
+  const getEffectiveAttribute = (attrKey: string, baseValue: number) => {
+    if (!character)
+      return {
+        value: baseValue,
+        colorClass: 'text-white border-neutral-800 bg-neutral-900',
+      };
+
+    let buffs = 0;
+    let debuffs = 0;
+
+    const applyEffect = (effect: Effect) => {
+      // Only step effects shift base attributes
+      if (effect.unit !== 'step' && effect.unit !== 'Step') return;
+
+      // If untargeted, it naturally applies to the base attribute. Otherwise, check for a match.
+      const targetMatch =
+        !effect.target || effect.target.toLowerCase() === attrKey.toLowerCase();
+
+      if (targetMatch) {
+        const qty = effect.quantity || 1;
+        if (effect.operation === 'add' || effect.operation === 'advance')
+          buffs += qty;
+        if (effect.operation === 'subtract') debuffs += qty;
+      }
+    };
+
+    // Scan Built-ins
+    character.active_effects?.forEach((active) =>
+      active.effects.forEach(applyEffect)
+    );
+
+    // Scan Toggle Abilities
+    [...(character.abilities || []), ...(character.inventory || [])]
+      .filter((entry) => entry.active)
+      .forEach((entry) => entry.effects.forEach(applyEffect));
+
+    const netSteps = buffs - debuffs;
+    const baseIndex = LADDER.indexOf(baseValue);
+    // Hard clamp to D4 (index 0) and D12 (index 4)
+    const clampedIndex = Math.max(
+      0,
+      Math.min(LADDER.length - 1, baseIndex + netSteps)
+    );
+
+    // Assign Colors: Red = Debuffed, Blue = Buffed, Purple = Both
+    let colorClass = 'text-white border-neutral-800 bg-neutral-900';
+    if (netSteps > 0) {
+      colorClass =
+        'text-blue-400 border-blue-500/50 bg-blue-500/10 shadow-[0_0_10px_rgba(59,130,246,0.2)]';
+    } else if (netSteps < 0) {
+      colorClass =
+        'text-red-400 border-red-500/50 bg-red-500/10 shadow-[0_0_10px_rgba(239,68,68,0.2)]';
+    } else if (buffs > 0 && debuffs > 0) {
+      // Mixed state where buffs and debuffs cancel out completely
+      colorClass =
+        'text-purple-400 border-purple-500/50 bg-purple-500/10 shadow-[0_0_10px_rgba(168,85,247,0.2)]';
+    }
+
+    return { value: LADDER[clampedIndex], colorClass, netSteps };
   };
 
   return (
@@ -78,21 +143,39 @@ export function CharacterSidebar() {
               />
             </div>
 
+            <ConditionsPanel />
+
             <div className='mt-2 flex gap-2'>
-              {Object.entries(character.attributes).map(([name, value]) => (
-                <div
-                  key={name}
-                  onClick={() => setActiveAttribute(name)}
-                  className='flex-1 cursor-pointer rounded border border-neutral-800 bg-neutral-900 p-2 text-center transition-colors hover:bg-neutral-700'
-                >
-                  <span className='block text-xs font-bold text-neutral-400'>
-                    {attributeDisplayMap[name]}
-                  </span>
-                  <span className='font-mono text-lg font-bold text-white'>
-                    d{value as number}
-                  </span>
-                </div>
-              ))}
+              {Object.entries(character.attributes).map(([name, baseValue]) => {
+                const effective = getEffectiveAttribute(
+                  name,
+                  baseValue as number
+                );
+
+                return (
+                  <div
+                    key={name}
+                    onClick={() => setActiveAttribute(name)}
+                    className={`flex-1 cursor-pointer rounded border p-2 text-center transition-all hover:brightness-125 ${effective.colorClass}`}
+                  >
+                    <span className='block text-xs font-bold uppercase tracking-wider opacity-80'>
+                      {attributeDisplayMap[name]}
+                    </span>
+                    <span className='font-mono text-lg font-bold'>
+                      d{effective.value}
+                    </span>
+
+                    {/* Small numeric indicator showing step shift */}
+                    {effective.netSteps !== 0 && (
+                      <span className='absolute ml-[20px] mt-[-35px] rounded-full bg-black/50 px-1 text-[10px] font-bold'>
+                        {effective.netSteps && effective.netSteps > 0
+                          ? `+${effective.netSteps}`
+                          : effective.netSteps}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <AbilityList
