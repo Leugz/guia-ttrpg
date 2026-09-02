@@ -23,7 +23,7 @@ export interface CharacterSheet {
   occupation: string;
   level: number;
   resources: { hp: ResourceStat; dp: ResourceStat };
-  base_attributes: BaseAttributes;
+  attributes: BaseAttributes;
   abilities: Ability[];
 }
 

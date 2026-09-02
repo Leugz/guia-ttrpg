@@ -15,7 +15,7 @@ export function CharacterSidebar() {
 
   const [activePrompt, setActivePrompt] = useState<{
     name: string;
-    dice: string;
+    dice: number;
   } | null>(null);
 
   const TEST_PATH = '/home/leugz_/Projects/personal/guia/test_character.md';
@@ -31,20 +31,12 @@ export function CharacterSidebar() {
     }
   };
 
-  const parseDiceString = (diceStr: string): StepDice => {
-    const formatted = diceStr.toUpperCase();
-    return Object.values(StepDice).includes(formatted as StepDice)
-      ? (formatted as StepDice)
-      : StepDice.D4;
-  };
-
   const executeFinalRoll = async (skillDie: StepDice, skillName: string) => {
     if (!activePrompt) return;
-    const baseDie = parseDiceString(activePrompt.dice);
 
     try {
       const result = await invoke<RollResult>('execute_roll', {
-        pool: [baseDie, skillDie],
+        pool: [activePrompt.dice, skillDie],
       });
       const displayAttribute =
         activePrompt.name === 'physical'
@@ -54,7 +46,7 @@ export function CharacterSidebar() {
             : 'Emoção';
 
       addMessage({
-        sender: character?.name || 'Unknown',
+        sender: character?.name || 'Guest',
         type: 'roll',
         rollLabel: `Teste de ${displayAttribute} (${skillName})`,
         rollResult: result,
@@ -118,24 +110,22 @@ export function CharacterSidebar() {
             </div>
 
             <div className='mt-2 flex gap-2'>
-              {Object.entries(character.base_attributes).map(
-                ([name, value]) => (
-                  <div
-                    key={name}
-                    onClick={() =>
-                      setActivePrompt({ name, dice: value as string })
-                    }
-                    className='flex-1 cursor-pointer rounded border border-neutral-800 bg-neutral-900 p-2 text-center transition-colors hover:bg-neutral-700'
-                  >
-                    <span className='block text-xs font-bold text-neutral-400'>
-                      {attributeDisplayMap[name]}
-                    </span>
-                    <span className='font-mono text-lg font-bold text-white'>
-                      {value as string}
-                    </span>
-                  </div>
-                )
-              )}
+              {Object.entries(character.attributes).map(([name, value]) => (
+                <div
+                  key={name}
+                  onClick={() =>
+                    setActivePrompt({ name, dice: value as number })
+                  }
+                  className='flex-1 cursor-pointer rounded border border-neutral-800 bg-neutral-900 p-2 text-center transition-colors hover:bg-neutral-700'
+                >
+                  <span className='block text-xs font-bold text-neutral-400'>
+                    {attributeDisplayMap[name]}
+                  </span>
+                  <span className='font-mono text-lg font-bold text-white'>
+                    {value as number}
+                  </span>
+                </div>
+              ))}
             </div>
 
             <AbilityList

@@ -3,7 +3,7 @@ import { ATTRIBUTE_SKILL_MAP, StepDice } from '../../lib/systemRules';
 
 interface SkillPromptModalProps {
   attributeName: string;
-  attributeDice: string;
+  attributeDice: number;
   onClose: () => void;
   onConfirm: (skillDie: StepDice, skillName: string) => void;
 }

@@ -62,10 +62,13 @@ G.U.I.A utilizes a desktop-web hybrid architecture, maintaining a strict separat
 guia-ttrpg/
 ├── src-tauri/                 # ⚙️ Core Backend (Rust)
 │   ├── src/
-│   │   ├── main.rs            # Application shell and async server initialization
+│   │   ├── main.rs            # Application shell, rolling app.log, async server initialization
 │   │   ├── commands.rs        # Tauri IPC handlers (the bridge to React)
 │   │   ├── models.rs          # Strict data schemas mirroring the YAML contracts
-│   │   └── dice.rs            # Mathematical engine for step-dice and criticals
+│   │   ├── dice.rs            # Mathematical engine for step-dice and criticals
+│   │   ├── effects.rs         # Ability/inventory effects and roll-pool resolution
+│   │   ├── rules.rs           # Fixed system rules: skill catalog, built-in buffs, save DCs
+│   │   └── storage.rs         # Markdown/YAML parsing and atomic disk writes
 │   └── capabilities/          # Strict security whitelists for IPC bridge access
 │
 ├── src/                       # 🎨 Frontend UI (React + TypeScript)
