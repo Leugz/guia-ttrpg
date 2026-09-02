@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useCharacterStore } from '../../store/characterStore';
-import { ParsedDocument } from '../../lib/types';
-import { useChatStore } from '../../store/chatStore';
+import { useCharacterStore } from '../characterStore';
+import { ParsedDocument } from '../../../shared/types';
+import { useChatStore } from '../../chat/chatStore';
 
 import { ResourceBar } from './ResourceBar';
 import { SkillPromptModal } from './SkillPromptModal';
@@ -12,7 +12,6 @@ import { AbilityList } from './AbilityList';
 export function CharacterSidebar() {
   const { character, loadCharacter, applyResourceChange } = useCharacterStore();
   const { addMessage } = useChatStore();
-
   const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
 
   const TEST_PATH = '/home/leugz_/Projects/personal/guia/test_character.md';
@@ -80,7 +79,6 @@ export function CharacterSidebar() {
             </div>
 
             <div className='mt-2 flex gap-2'>
-              {/* We map over character.attributes, which uses the new integer values */}
               {Object.entries(character.attributes).map(([name, value]) => (
                 <div
                   key={name}
@@ -90,7 +88,6 @@ export function CharacterSidebar() {
                   <span className='block text-xs font-bold text-neutral-400'>
                     {attributeDisplayMap[name]}
                   </span>
-                  {/* The UI safely renders the raw integer as standard dice notation */}
                   <span className='font-mono text-lg font-bold text-white'>
                     d{value as number}
                   </span>
@@ -107,7 +104,6 @@ export function CharacterSidebar() {
         )}
       </aside>
 
-      {/* Render the advanced prompt modal when an attribute is clicked */}
       {activeAttribute && (
         <SkillPromptModal
           attributeName={activeAttribute}

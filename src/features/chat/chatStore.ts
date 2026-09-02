@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { RollResult } from '../lib/types'; // Updated import path
+import { RollResult } from '../../shared/types';
 
 export interface ChatMessage {
   id: string;

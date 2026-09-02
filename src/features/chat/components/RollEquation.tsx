@@ -1,5 +1,5 @@
-import { RollResult } from '../../lib/types';
 import { FaArrowUp, FaArrowDown, FaSkull, FaStar } from 'react-icons/fa';
+import { RollResult } from '../../../shared/types';
 
 export function RollEquation({ result }: { result: RollResult }) {
   const isCritSuccess = result.is_critical_success;

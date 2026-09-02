@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useCharacterStore } from '../../store/characterStore';
-import { TestRequest, ResolvedPool, TestOutcome } from '../../lib/types';
-import { useChatStore } from '../../store/chatStore';
+import { useCharacterStore } from '../characterStore';
+import { TestRequest, ResolvedPool, TestOutcome } from '../../../shared/types';
+import { useChatStore } from '../../chat/chatStore';
 
 interface SkillPromptModalProps {
   attributeName: string;
@@ -83,7 +83,6 @@ export function SkillPromptModal({
           ))}
         </div>
 
-        {/* Dynamic Pool Preview */}
         {preview && (
           <div className='mb-6 rounded border border-neutral-800 bg-black p-3'>
             <span className='mb-2 block text-xs uppercase text-neutral-500'>

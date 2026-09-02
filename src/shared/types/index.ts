@@ -89,12 +89,41 @@ export interface DeathSaveOutcome {
 }
 
 // --- Character Sheet ---
-export interface ResourceStat { current: number; max: number; }
-export interface BaseAttributes { physical: number; mind: number; emotion: number; }
-export interface Skill { id: string; name: string; governed_by: string; value: number; parent?: string; }
-export interface Effect { operation: string; quantity: number; unit: any; target?: string; }
-export interface Entry { id: string; name: string; description: string; active: boolean; effects: Effect[]; }
-export interface ActiveEffect { id: string; name: string; source: string; effects: Effect[]; }
+export interface ResourceStat {
+  current: number;
+  max: number;
+}
+export interface BaseAttributes {
+  physical: number;
+  mind: number;
+  emotion: number;
+}
+export interface Skill {
+  id: string;
+  name: string;
+  governed_by: string;
+  value: number;
+  parent?: string;
+}
+export interface Effect {
+  operation: string;
+  quantity: number;
+  unit: any;
+  target?: string;
+}
+export interface Entry {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  effects: Effect[];
+}
+export interface ActiveEffect {
+  id: string;
+  name: string;
+  source: string;
+  effects: Effect[];
+}
 
 export interface CharacterSheet {
   sheet_type: string;
@@ -102,7 +131,7 @@ export interface CharacterSheet {
   profile: string;
   occupation: string;
   level: number;
-  resources: { hp: ResourceStat; dp: ResourceStat; };
+  resources: { hp: ResourceStat; dp: ResourceStat };
   attributes: BaseAttributes;
   skills: Skill[];
   abilities: Entry[];

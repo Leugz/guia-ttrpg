@@ -1,13 +1,33 @@
-import { GameBoard } from './components/canvas/GameBoard';
-import { CharacterSidebar } from './components/character/CharacterSidebar';
-import { ChatSidebar } from './components/chat/ChatSideBar';
+import { useState, useEffect } from 'react';
+import { ChatSidebar } from './features/chat/components/ChatSidebar';
+import { GameBoard } from './features/map/components/GameBoard';
+import { CharacterSidebar } from './features/character-sheet/components/CharacterSidebar';
+import { FreeDiceRoller } from './features/dice/components/FreeDiceRoller';
 
 export default function App() {
+  const [isRollerOpen, setIsRollerOpen] = useState(false);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        setIsRollerOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
   return (
     <div className='flex h-screen w-screen overflow-hidden bg-neutral-900 text-white'>
       <ChatSidebar />
       <GameBoard />
       <CharacterSidebar />
+
+      <FreeDiceRoller
+        isOpen={isRollerOpen}
+        onClose={() => setIsRollerOpen(false)}
+      />
     </div>
   );
 }

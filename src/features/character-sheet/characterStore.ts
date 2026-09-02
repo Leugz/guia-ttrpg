@@ -5,8 +5,8 @@ import {
   ParsedDocument,
   ResourceOutcome,
   DeathSaveOutcome,
-} from '../lib/types';
-import { useChatStore } from './chatStore';
+} from '../../shared/types';
+import { useChatStore } from '../chat/chatStore';
 
 interface CharacterStore {
   character: CharacterSheet | null;
