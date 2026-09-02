@@ -19,6 +19,8 @@ pub fn load_character_sheet(path: String) -> Result<ParsedDocument, String> {
         .deserialize()
         .map_err(|e| format!("Invalid character sheet schema: {}", e))?;
 
+    character_data.validate()?;
+
     Ok(ParsedDocument {
         data: character_data,
         body: parsed.content,

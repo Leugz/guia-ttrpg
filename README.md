@@ -58,7 +58,7 @@ G.U.I.A utilizes a desktop-web hybrid architecture, maintaining a strict separat
 
 ### Directory Structure
 
-\`\`\`text
+```text
 guia-ttrpg/
 ├── src-tauri/                 # ⚙️ Core Backend (Rust)
 │   ├── src/
@@ -76,7 +76,7 @@ guia-ttrpg/
 │   ├── store/                 # Zustand global state (characterStore, chatStore)
 │   ├── lib/                   # Static system rules and Typescript interfaces
 │   └── App.tsx                # Main layout orchestrator
-\`\`\`
+```
 
 ### Architectural Flow
 1. **Data Layer (Obsidian/YAML):** The source of truth. All data is persisted locally in `.md` files to ensure player ownership and offline resilience.

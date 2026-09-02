@@ -44,3 +44,44 @@ pub struct ParsedDocument {
     pub data: CharacterSheet,
     pub body: String,
 }
+
+impl CharacterSheet {
+    /// Validates the business logic constraints of the character sheet.
+    pub fn validate(&self) -> Result<(), String> {
+        // 1. Level Bounds
+        if self.level == 0 || self.level > 99 {
+            return Err(format!(
+                "Invalid level: {}. Must be between 1 and 99.",
+                self.level
+            ));
+        }
+
+        // 2. Resource Integrity
+        if self.resources.hp.current > self.resources.hp.max {
+            return Err("Current HP cannot exceed Max HP.".into());
+        }
+        if self.resources.dp.current > self.resources.dp.max {
+            return Err("Current DP cannot exceed Max DP.".into());
+        }
+
+        // 3. Step Dice Validation
+        let valid_dice = ["D4", "D6", "D8", "D10", "D12"];
+        let attrs = [
+            &self.base_attributes.physical,
+            &self.base_attributes.mind,
+            &self.base_attributes.emotion,
+        ];
+
+        for attr in attrs {
+            let upper_attr = attr.to_uppercase();
+            if !valid_dice.contains(&upper_attr.as_str()) {
+                return Err(format!(
+                    "Invalid step die: {}. Must be D4, D6, D8, D10, or D12.",
+                    attr
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
