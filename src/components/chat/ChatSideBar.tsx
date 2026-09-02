@@ -19,12 +19,26 @@ export function ChatSidebar() {
             <span className='text-sm font-bold text-neutral-300'>
               {msg.sender}
             </span>
+
+            {/* If it's a Roll */}
             {msg.type === 'roll' && msg.rollResult && (
               <>
                 <span className='mt-1 block text-xs uppercase tracking-wider text-neutral-500'>
                   {msg.rollLabel}
                 </span>
                 <RollEquation result={msg.rollResult} />
+              </>
+            )}
+
+            {/* If it's a Text/Ability Action */}
+            {msg.type === 'text' && (
+              <>
+                <span className='mt-1 block text-xs uppercase tracking-wider text-blue-400'>
+                  {msg.rollLabel}
+                </span>
+                <p className='mt-2 border-l-2 border-neutral-600 pl-2 text-sm text-neutral-200'>
+                  {msg.content}
+                </p>
               </>
             )}
           </div>

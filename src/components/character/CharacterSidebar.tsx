@@ -93,21 +93,22 @@ export function CharacterSidebar() {
             </div>
 
             <div className='flex gap-2'>
-              <ResourceBar 
-                label="PV (Take Dmg)"
-                current={character.resources.pv.current} // renamed
-                max={character.resources.pv.max}
-                colorClass="text-red-500"
+              <ResourceBar
+                label='PV'
+                current={character.resources.hp.current}
+                max={character.resources.hp.max}
+                colorClass='text-red-500'
                 onClick={() => takeDamage(1)}
               />
-              <ResourceBar 
-                label="PD"
-                current={character.resources.pd.current} // renamed
-                max={character.resources.pd.max}
-                colorClass="text-blue-500"
+              <ResourceBar
+                label='PD'
+                current={character.resources.dp.current}
+                max={character.resources.dp.max}
+                colorClass='text-blue-500'
               />
             </div>
 
+            {/* ... Attributes block ... */}
             <div className='mt-2 flex gap-2'>
               {Object.entries(character.base_attributes).map(
                 ([name, value]) => (
@@ -127,6 +128,41 @@ export function CharacterSidebar() {
                   </div>
                 )
               )}
+            </div>
+
+            {/* Abilities List */}
+            <div className='mt-2 flex flex-col gap-2'>
+              <h3 className='mb-1 border-b border-neutral-800 pb-1 text-xs font-bold uppercase tracking-wider text-neutral-500'>
+                Habilidades
+              </h3>
+              {character.abilities.map((ability, index) => (
+                <div
+                  key={index}
+                  onClick={() => {
+                    addMessage({
+                      sender: character.name,
+                      type: 'text',
+                      content: ability.description,
+                      rollLabel: `Usa Habilidade: ${ability.name}`, // Reusing rollLabel for the action title
+                    });
+                  }}
+                  className='cursor-pointer rounded border border-neutral-800 bg-neutral-900 p-3 transition-colors hover:border-neutral-600 hover:bg-neutral-800'
+                >
+                  <div className='mb-1 flex items-center justify-between'>
+                    <span className='text-sm font-bold text-white'>
+                      {ability.name}
+                    </span>
+                    {ability.active && (
+                      <span className='rounded bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-400'>
+                        Ativa
+                      </span>
+                    )}
+                  </div>
+                  <span className='block text-xs leading-relaxed text-neutral-400'>
+                    {ability.description}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}

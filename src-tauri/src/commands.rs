@@ -31,19 +31,14 @@ pub fn save_character_sheet(
     data: CharacterSheet,
     body: String,
 ) -> Result<(), String> {
-    // 1. Serialize the Rust struct back into a strict YAML string
     let yaml_str =
         serde_yaml::to_string(&data).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
 
-    // 2. Reconstruct the Obsidian Markdown format
     let full_content = format!("---\n{}---\n{}", yaml_str, body);
-
-    // 3. Atomic Write: Write to a .tmp file first
     let tmp_path = format!("{}.tmp", path);
+
     fs::write(&tmp_path, &full_content)
         .map_err(|e| format!("Failed to write temporary file: {}", e))?;
-
-    // 4. Atomic Write: Rename the .tmp file to overwrite the original instantly
     fs::rename(&tmp_path, &path)
         .map_err(|e| format!("Failed to overwrite original file: {}", e))?;
 

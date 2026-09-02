@@ -1,26 +1,23 @@
 ---
 type: character
-nome: John Doe
-perfil: Combatente
-ocupacao: Policial
-nivel: 5
-recursos:
-  pv:
-    atual: 19
+name: Elian Thorne
+profile: Combatente
+occupation: Mercenário
+level: 1
+resources:
+  hp:
+    current: 19
     max: 20
-  pd:
-    atual: 5
+  dp:
+    current: 10
     max: 10
-atributos_base:
-  fisico: d8
-  mente: d4
-  emocao: d6
-habilidades:
-- nome: Reflexos
-  descricao: Adiciona d4 em esquivas
-  ativa: true
+base_attributes:
+  physical: D8
+  mind: D6
+  emotion: D4
+abilities:
+- name: Ataque Especial
+  description: Adiciona +1d8 ao dano
+  active: false
 ---
-# Histórico do Personagem
-
-Aqui o jogador pode escrever qualquer coisa no Obsidian e o software vai ignorar
-ou mostrar em uma aba de 'Anotações'.
+Anotações do jogador sobre a campanha vão aqui.
