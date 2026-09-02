@@ -1,13 +1,13 @@
 import { create } from 'zustand';
-import { RollResult } from '../lib/systemRules';
+import { RollResult } from '../lib/types'; // Updated import path
 
 export interface ChatMessage {
   id: string;
   sender: string;
   type: 'text' | 'roll';
   content?: string;
-  rollResult?: RollResult;
   rollLabel?: string;
+  rollResult?: RollResult;
 }
 
 interface ChatStore {
@@ -19,7 +19,6 @@ export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
   addMessage: (msg) =>
     set((state) => ({
-      // Append the new message and generate a unique UUID for React mapping
       messages: [...state.messages, { ...msg, id: crypto.randomUUID() }],
     })),
 }));

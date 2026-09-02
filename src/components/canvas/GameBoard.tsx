@@ -16,11 +16,17 @@ export function GameBoard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const isDeadOrDying =
+  // Check the strict backend saving throw states (Section 4.13)
+  const isDead =
+    character &&
+    (character.death_saves.hp.failed || character.death_saves.dp.failed);
+  const isDying =
     character &&
     (character.resources.hp.current <= 0 ||
       character.resources.dp.current <= 0);
-  const tokenColor = isDeadOrDying ? '#555555' : '#ef4444';
+
+  // Black for dead, Gray for dying (0 HP/DP), Red for healthy
+  const tokenColor = isDead ? '#1a1a1a' : isDying ? '#555555' : '#ef4444';
 
   return (
     <Stage width={windowSize.width - 620} height={windowSize.height}>

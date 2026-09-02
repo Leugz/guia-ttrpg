@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ParsedDocument, useCharacterStore } from '../../store/characterStore';
-import { StepDice, RollResult } from '../../lib/systemRules';
+import { useCharacterStore } from '../../store/characterStore';
+import { ParsedDocument } from '../../lib/types';
 import { useChatStore } from '../../store/chatStore';
 
 import { ResourceBar } from './ResourceBar';
@@ -10,13 +10,11 @@ import { CharacterHeader } from './CharacterHeader';
 import { AbilityList } from './AbilityList';
 
 export function CharacterSidebar() {
-  const { character, loadCharacter, modifyResource } = useCharacterStore();
+  const { character, loadCharacter, applyResourceChange } = useCharacterStore();
   const { addMessage } = useChatStore();
 
-  const [activePrompt, setActivePrompt] = useState<{
-    name: string;
-    dice: number;
-  } | null>(null);
+  // The modal now handles the complex roll logic, so we only need to track the clicked attribute
+  const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
 
   const TEST_PATH = '/home/leugz_/Projects/personal/guia/test_character.md';
 
@@ -28,33 +26,6 @@ export function CharacterSidebar() {
       loadCharacter(result, TEST_PATH);
     } catch (error) {
       console.error('IPC Error:', error);
-    }
-  };
-
-  const executeFinalRoll = async (skillDie: StepDice, skillName: string) => {
-    if (!activePrompt) return;
-
-    try {
-      const result = await invoke<RollResult>('execute_roll', {
-        pool: [activePrompt.dice, skillDie],
-      });
-      const displayAttribute =
-        activePrompt.name === 'physical'
-          ? 'Físico'
-          : activePrompt.name === 'mind'
-            ? 'Mente'
-            : 'Emoção';
-
-      addMessage({
-        sender: character?.name || 'Guest',
-        type: 'roll',
-        rollLabel: `Teste de ${displayAttribute} (${skillName})`,
-        rollResult: result,
-      });
-    } catch (error) {
-      console.error('Roll failed:', error);
-    } finally {
-      setActivePrompt(null);
     }
   };
 
@@ -94,35 +65,35 @@ export function CharacterSidebar() {
 
             <div className='flex gap-2'>
               <ResourceBar
-                label='HP (Take Dmg)'
+                label='HP'
                 current={character.resources.hp.current}
                 max={character.resources.hp.max}
                 colorClass='text-red-500'
-                onClick={() => modifyResource('hp', -1)}
+                onClick={() => applyResourceChange('hp', -1)}
               />
               <ResourceBar
                 label='DP'
                 current={character.resources.dp.current}
                 max={character.resources.dp.max}
                 colorClass='text-blue-500'
-                onClick={() => modifyResource('dp', -1)}
+                onClick={() => applyResourceChange('dp', -1)}
               />
             </div>
 
             <div className='mt-2 flex gap-2'>
+              {/* We map over character.attributes, which uses the new integer values */}
               {Object.entries(character.attributes).map(([name, value]) => (
                 <div
                   key={name}
-                  onClick={() =>
-                    setActivePrompt({ name, dice: value as number })
-                  }
+                  onClick={() => setActiveAttribute(name)}
                   className='flex-1 cursor-pointer rounded border border-neutral-800 bg-neutral-900 p-2 text-center transition-colors hover:bg-neutral-700'
                 >
                   <span className='block text-xs font-bold text-neutral-400'>
                     {attributeDisplayMap[name]}
                   </span>
+                  {/* The UI safely renders the raw integer as standard dice notation */}
                   <span className='font-mono text-lg font-bold text-white'>
-                    {value as number}
+                    d{value as number}
                   </span>
                 </div>
               ))}
@@ -137,12 +108,11 @@ export function CharacterSidebar() {
         )}
       </aside>
 
-      {activePrompt && (
+      {/* Render the advanced prompt modal when an attribute is clicked */}
+      {activeAttribute && (
         <SkillPromptModal
-          attributeName={activePrompt.name}
-          attributeDice={activePrompt.dice}
-          onClose={() => setActivePrompt(null)}
-          onConfirm={executeFinalRoll}
+          attributeName={activeAttribute}
+          onClose={() => setActiveAttribute(null)}
         />
       )}
     </>
