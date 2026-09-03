@@ -6,7 +6,7 @@ occupation: Mercenário
 level: 1
 resources:
   hp:
-    current: 18
+    current: 15
     max: 20
   dp:
     current: 10

@@ -45,22 +45,20 @@ export function CharacterSidebar() {
     emotion: 'Emoção',
   };
 
-  // Calculates visual step shifts and assigns color boundaries
   const getEffectiveAttribute = (attrKey: string, baseValue: number) => {
     if (!character)
       return {
         value: baseValue,
         colorClass: 'text-white border-neutral-800 bg-neutral-900',
+        netSteps: 0,
       };
 
     let buffs = 0;
     let debuffs = 0;
 
     const applyEffect = (effect: Effect) => {
-      // Only step effects shift base attributes
       if (effect.unit !== 'step' && effect.unit !== 'Step') return;
 
-      // If untargeted, it naturally applies to the base attribute. Otherwise, check for a match.
       const targetMatch =
         !effect.target || effect.target.toLowerCase() === attrKey.toLowerCase();
 
@@ -72,25 +70,21 @@ export function CharacterSidebar() {
       }
     };
 
-    // Scan Built-ins
     character.active_effects?.forEach((active) =>
       active.effects.forEach(applyEffect)
     );
 
-    // Scan Toggle Abilities
     [...(character.abilities || []), ...(character.inventory || [])]
       .filter((entry) => entry.active)
       .forEach((entry) => entry.effects.forEach(applyEffect));
 
     const netSteps = buffs - debuffs;
     const baseIndex = LADDER.indexOf(baseValue);
-    // Hard clamp to D4 (index 0) and D12 (index 4)
     const clampedIndex = Math.max(
       0,
       Math.min(LADDER.length - 1, baseIndex + netSteps)
     );
 
-    // Assign Colors: Red = Debuffed, Blue = Buffed, Purple = Both
     let colorClass = 'text-white border-neutral-800 bg-neutral-900';
     if (netSteps > 0) {
       colorClass =
@@ -99,7 +93,6 @@ export function CharacterSidebar() {
       colorClass =
         'text-red-400 border-red-500/50 bg-red-500/10 shadow-[0_0_10px_rgba(239,68,68,0.2)]';
     } else if (buffs > 0 && debuffs > 0) {
-      // Mixed state where buffs and debuffs cancel out completely
       colorClass =
         'text-purple-400 border-purple-500/50 bg-purple-500/10 shadow-[0_0_10px_rgba(168,85,247,0.2)]';
     }
@@ -156,23 +149,32 @@ export function CharacterSidebar() {
                   <div
                     key={name}
                     onClick={() => setActiveAttribute(name)}
-                    className={`flex-1 cursor-pointer rounded border p-2 text-center transition-all hover:brightness-125 ${effective.colorClass}`}
+                    className={`relative flex-1 cursor-pointer overflow-hidden rounded border p-2 text-center transition-all hover:brightness-125 ${effective.colorClass}`}
                   >
-                    <span className='block text-xs font-bold uppercase tracking-wider opacity-80'>
-                      {attributeDisplayMap[name]}
-                    </span>
-                    <span className='font-mono text-lg font-bold'>
-                      d{effective.value}
-                    </span>
+                    {/* SVG Background Layer */}
+                    <img
+                      src={`/dice/d${effective.value}.svg`}
+                      alt=''
+                      className='pointer-events-none absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 opacity-15 mix-blend-screen'
+                    />
 
-                    {/* Small numeric indicator showing step shift */}
-                    {effective.netSteps !== 0 && (
-                      <span className='absolute ml-[20px] mt-[-35px] rounded-full bg-black/50 px-1 text-[10px] font-bold'>
-                        {effective.netSteps && effective.netSteps > 0
-                          ? `+${effective.netSteps}`
-                          : effective.netSteps}
+                    {/* Foreground Content Layer */}
+                    <div className='relative z-10'>
+                      <span className='block text-xs font-bold uppercase tracking-wider opacity-80'>
+                        {attributeDisplayMap[name]}
                       </span>
-                    )}
+                      <span className='font-mono text-2xl font-bold'>
+                        {effective.value}
+                      </span>
+
+                      {effective.netSteps !== 0 && (
+                        <span className='absolute ml-[18px] mt-[-38px] rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] font-bold'>
+                          {effective.netSteps > 0
+                            ? `+${effective.netSteps}`
+                            : effective.netSteps}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}

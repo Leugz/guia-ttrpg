@@ -19,22 +19,18 @@ export function SkillPromptModal({
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [isSecret, setIsSecret] = useState(false);
   const [helpSteps, setHelpSteps] = useState<number>(0);
-
-  // New state to track which Trigger abilities the player is using for this roll
   const [triggeredAbilities, setTriggeredAbilities] = useState<string[]>([]);
-
   const [preview, setPreview] = useState<ResolvedPool | null>(null);
 
   const buildRequest = (): TestRequest => ({
     attribute: attributeName,
     skill_id: selectedSkill || undefined,
-    triggered: triggeredAbilities, // Hooked up to our checkboxes
+    triggered: triggeredAbilities,
     help: helpSteps > 0 ? helpSteps : undefined,
     extra_dice: [],
     secret: isSecret,
   });
 
-  // Re-fetch the preview mathematically from Rust whenever any modifier changes
   useEffect(() => {
     if (!activePath) return;
     invoke<ResolvedPool>('preview_test', {
@@ -68,7 +64,6 @@ export function SkillPromptModal({
   const availableSkills =
     character?.skills.filter((s) => s.governed_by === attributeName) || [];
 
-  // Extract only abilities/inventory that act as "Triggers" (they add dice, not steps)
   const availableTriggers = [
     ...(character?.abilities || []),
     ...(character?.inventory || []),
@@ -88,18 +83,29 @@ export function SkillPromptModal({
             <button
               key={skill.id}
               onClick={() => setSelectedSkill(skill.id)}
-              className={`rounded border px-3 py-2 text-sm transition-colors ${
+              className={`relative flex items-center justify-between overflow-hidden rounded border px-3 py-2 text-sm transition-colors ${
                 selectedSkill === skill.id
                   ? 'border-blue-500 bg-blue-500/20 text-white'
-                  : 'border-neutral-700 bg-neutral-800 text-neutral-400'
+                  : 'border-neutral-700 bg-neutral-800 text-neutral-400 hover:brightness-125'
               }`}
             >
-              {skill.name} (d{skill.value})
+              <span className='relative z-10 font-bold'>{skill.name}</span>
+
+              {/* Numeric Value with SVG Background */}
+              <div className='relative z-10 flex h-7 w-7 items-center justify-center'>
+                <img
+                  src={`/dice/d${skill.value}.svg`}
+                  alt=''
+                  className='absolute inset-0 h-full w-full opacity-20 mix-blend-screen'
+                />
+                <span className='relative z-10 font-mono text-base font-bold text-white'>
+                  {skill.value}
+                </span>
+              </div>
             </button>
           ))}
         </div>
 
-        {/* Trigger Abilities Checkboxes */}
         {availableTriggers.length > 0 && (
           <div className='mb-4'>
             <span className='mb-2 block text-xs font-bold uppercase text-neutral-500'>
@@ -166,15 +172,19 @@ export function SkillPromptModal({
             </span>
             <div className='flex flex-wrap gap-2'>
               {preview.dice.map((die, i) => (
-                <span
+                <div
                   key={i}
-                  className='rounded bg-neutral-800 px-2 py-1 font-mono text-sm text-white'
+                  className='relative flex h-8 w-8 items-center justify-center rounded bg-neutral-800'
                 >
-                  d{die.sides}{' '}
-                  <span className='text-xs text-neutral-500'>
-                    ({die.source})
+                  <img
+                    src={`/dice/d${die.sides}.svg`}
+                    alt=''
+                    className='absolute inset-0 h-full w-full p-1 opacity-20 mix-blend-screen'
+                  />
+                  <span className='relative z-10 font-mono text-sm font-bold text-white'>
+                    {die.sides}
                   </span>
-                </span>
+                </div>
               ))}
             </div>
             {preview.applied.length > 0 && (
