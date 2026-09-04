@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useChatStore } from '../../chat/chatStore';
-import { useCharacterStore } from '../../character-sheet/characterStore';
+import {
+  useCharacterStore,
+  getProfileColor,
+} from '../../character-sheet/characterStore';
 import { RollResult } from '../../../shared/types';
 
 interface FreeDiceRollerProps {
@@ -54,7 +57,8 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
       });
 
       addMessage({
-        sender: character?.name || 'Jogador',
+        sender: character?.name || 'Guest',
+        color: getProfileColor(character?.profile || 'GM'),
         type: 'roll',
         rollLabel: isSecret ? 'Rolagem Secreta' : 'Rolagem Livre',
         rollResult: result,

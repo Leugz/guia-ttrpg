@@ -8,23 +8,40 @@ import {
 } from '../../shared/types';
 import { useChatStore } from '../chat/chatStore';
 
+// GLOBAL COLOR UTILITY FOR LAN SYNC
+export const getProfileColor = (profile?: string) => {
+  if (!profile) return '#71717a'; // Default Gray for System/Unassigned
+  switch (profile.toUpperCase()) {
+    case 'EXECUTOR':
+      return '#ae2c12';
+    case 'ANALISTA':
+      return '#4176ba';
+    case 'VIGILANTE':
+      return '#4b7e2f';
+    case 'MESTRE':
+    case 'GM':
+      return '#987c50'; // Tentative GM Color
+    default:
+      return '#71717a';
+  }
+};
+
 interface CharacterStore {
   character: CharacterSheet | null;
   notes: string;
   activePath: string | null;
 
-  // Real-time Ability Trackers
   impeto: number;
   avaliacao: number;
   activeImpetoBuff: string | null;
   pendingImpetoD4: boolean;
-  ajudado: boolean; // NEW: Transient Help Buff
+  ajudado: boolean;
 
   setImpeto: (val: number | ((prev: number) => number)) => void;
   setAvaliacao: (val: number | ((prev: number) => number)) => void;
   setActiveImpetoBuff: (attr: string | null) => void;
   setPendingImpetoD4: (val: boolean) => void;
-  setAjudado: (val: boolean) => void; // NEW
+  setAjudado: (val: boolean) => void;
 
   loadCharacter: (doc: ParsedDocument, path: string) => void;
   applyResourceChange: (resource: 'hp' | 'dp', delta: number) => Promise<void>;
@@ -87,6 +104,7 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
         useChatStore.getState().addMessage({
           sender: 'Sistema',
           type: 'text',
+          color: getProfileColor(character.profile), // INJECTS PLAYER COLOR FOR SYSTEM MESSAGE
           content: `${outcome.character.name} chegou a 0 ${resource.toUpperCase()}! Teste necessário.`,
           rollLabel: 'Aviso Crítico',
         });
@@ -97,8 +115,8 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   },
 
   rollDeathSave: async (resource) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activePath, character } = get();
+    if (!activePath || !character) return;
     try {
       const outcome = await invoke<DeathSaveOutcome>('roll_death_save', {
         path: activePath,
@@ -107,6 +125,7 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
       set({ character: outcome.character });
       useChatStore.getState().addMessage({
         sender: outcome.character.name,
+        color: getProfileColor(character.profile),
         type: 'roll',
         rollLabel: `Teste de Sobrevivência (${resource.toUpperCase()}) - DT ${outcome.dc}`,
         rollResult: outcome.result,

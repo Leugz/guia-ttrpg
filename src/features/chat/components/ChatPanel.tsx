@@ -4,7 +4,6 @@ import {
   MessageSquare,
   Dices,
   EyeOff,
-  Skull,
   Sparkles,
   Activity,
   AlertTriangle,
@@ -13,20 +12,22 @@ import {
   X,
 } from 'lucide-react';
 import { useChatStore } from '../chatStore';
-import { useCharacterStore } from '../../character-sheet/characterStore';
+import {
+  useCharacterStore,
+  getProfileColor,
+} from '../../character-sheet/characterStore';
 import { DieShape } from '../../../shared/components/DieShape';
 
 const TextMessage = ({ msg }: { msg: any }) => {
-  const isGM = msg.sender === 'GM' || msg.sender === 'MESTRE';
-  const themeStr = isGM ? 'border-zinc-500' : 'border-[var(--theme-color)]';
-
   return (
     <div
-      className={`mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3 ${themeStr}`}
+      className='mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3'
+      style={{ borderColor: msg.color }}
     >
       <div className='mb-1 flex items-baseline gap-2'>
         <span
-          className={`font-serif text-sm font-bold tracking-wider ${isGM ? 'text-zinc-300' : 'text-[var(--theme-color)]'}`}
+          className='font-serif text-sm font-bold tracking-wider'
+          style={{ color: msg.color }}
         >
           {msg.sender}
         </span>
@@ -55,26 +56,27 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
 
   return (
     <div
-      className={`group relative mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3 ${result.secret ? 'border-dashed border-zinc-700' : 'border-[var(--theme-color)]'}`}
+      className={`group relative mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3 ${result.secret ? 'border-dashed border-zinc-700' : ''}`}
+      style={{ borderColor: result.secret ? undefined : rollMsg.color }}
     >
       {result.secret && (
         <div className='absolute right-2 top-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-zinc-600'>
           <EyeOff size={12} /> Apenas Mestre
         </div>
       )}
-
       <div className='mb-2 flex items-baseline gap-2'>
-        <span className='font-serif text-sm font-bold tracking-wider text-[var(--theme-color)]'>
+        <span
+          className='font-serif text-sm font-bold tracking-wider'
+          style={{ color: rollMsg.color }}
+        >
           {rollMsg.sender}
         </span>
       </div>
-
       <div className='mb-4'>
         <div className='text-sm font-bold text-zinc-200'>
           {rollMsg.rollLabel}
         </div>
       </div>
-
       <div className='mb-5 flex flex-wrap items-center gap-4'>
         {result.dice.map((d: any, i: number) => (
           <DieShape
@@ -93,7 +95,6 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
           />
         ))}
       </div>
-
       <div className='flex items-center justify-between border-t border-zinc-800/50 pt-3'>
         <div className='font-mono text-sm text-zinc-500'>
           ({countedResults.join(' + ')})
@@ -121,7 +122,6 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
           </div>
         </div>
       </div>
-
       {result.is_critical_success && (
         <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-red-500'>
           <Sparkles size={14} /> Sucesso Crítico <Sparkles size={14} />
@@ -146,7 +146,6 @@ export function ChatPanel({
   const [inputText, setInputText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // FIXED: Only scroll if the panel is actively open to prevent browser layout shifts
   useEffect(() => {
     if (isOpen) {
       chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -163,7 +162,8 @@ export function ChatPanel({
   const handleSend = () => {
     if (!inputText.trim()) return;
     addMessage({
-      sender: character?.name || 'Jogador',
+      sender: character?.name || 'GM',
+      color: getProfileColor(character?.profile || 'GM'), // Embed exact hex
       type: 'text',
       content: inputText.trim(),
     });
@@ -207,7 +207,6 @@ export function ChatPanel({
           </button>
         </div>
       </div>
-
       <div className='scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent relative z-10 flex flex-1 flex-col gap-1 overflow-y-auto p-3'>
         {filteredMessages.length === 0 ? (
           <div className='flex h-full flex-col items-center justify-center text-zinc-600 opacity-50'>
@@ -227,7 +226,6 @@ export function ChatPanel({
         )}
         <div ref={chatEndRef} />
       </div>
-
       <div className='relative z-10 shrink-0 border-t border-zinc-800 bg-zinc-950 p-3'>
         <div className='group relative'>
           <textarea

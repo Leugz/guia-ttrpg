@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { HeartCrack, Brain, MessageSquare } from 'lucide-react';
-import { useCharacterStore } from '../characterStore';
+import { useCharacterStore, getProfileColor } from '../characterStore';
 import { useChatStore } from '../../chat/chatStore';
 import { DieShape } from '../../../shared/components/DieShape';
 import { SkillPromptModal } from './SkillPromptModal';
@@ -116,6 +116,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
   const handleUseAbility = (name: string, description: string) => {
     addMessage({
       sender: character.name,
+      color: getProfileColor(character.profile),
       type: 'text',
       content: description,
       rollLabel: `Usa Habilidade: ${name}`,
@@ -466,6 +467,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                   setPendingImpetoD4(true);
                                   addMessage({
                                     sender: character.name,
+                                    color: getProfileColor(character.profile),
                                     type: 'text',
                                     content:
                                       'Preparou 1 Ímpeto! O próximo teste receberá +d4.',
@@ -486,6 +488,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                   setImpeto((prev) => prev - 3);
                                   addMessage({
                                     sender: character.name,
+                                    color: getProfileColor(character.profile),
                                     type: 'text',
                                     content:
                                       'Gastou 3 Ímpeto para aumentar um atributo em um passo até o fim da cena.',
@@ -541,6 +544,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                   setAvaliacao(2);
                                   addMessage({
                                     sender: character.name,
+                                    color: getProfileColor(character.profile),
                                     type: 'text',
                                     content:
                                       'Gastou 2 PD para ativar Avaliação (Garantindo 2 usos de d4).',

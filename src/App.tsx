@@ -16,7 +16,10 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useChatStore } from './features/chat/chatStore';
-import { useCharacterStore } from './features/character-sheet/characterStore';
+import {
+  useCharacterStore,
+  getProfileColor,
+} from './features/character-sheet/characterStore';
 import { ParsedDocument } from './shared/types';
 
 import { ChatPanel } from './features/chat/components/ChatPanel';
@@ -32,20 +35,6 @@ const AVAILABLE_CHARACTERS = [
   { id: 'kenia', name: 'KÊNIA', profile: 'ANALISTA', file: 'kenia.md' },
   { id: 'victor', name: 'VICTOR', profile: 'VIGILANTE', file: 'victor.md' },
 ];
-
-const getProfileColor = (profile?: string) => {
-  if (!profile) return '#c0c0c0';
-  switch (profile.toUpperCase()) {
-    case 'EXECUTOR':
-      return '#ae2c12';
-    case 'ANALISTA':
-      return '#4176ba';
-    case 'VIGILANTE':
-      return '#4b7e2f';
-    default:
-      return '#c0c0c0';
-  }
-};
 
 const getConditionDesc = (id: string) => {
   switch (id) {
@@ -228,8 +217,6 @@ export default function App() {
 
   const themeColor = getProfileColor(character?.profile);
   const charName = character?.name || 'SELECIONAR FICHA';
-
-  // FIXED: Now reflects permanent DB conditions AND the local transient Ajudado state
   const hasConditions =
     (character && character.active_effects.length > 0) || ajudado;
 
@@ -366,7 +353,7 @@ export default function App() {
           >
             <span
               className='font-serif font-bold tracking-wider'
-              style={{ color: 'var(--theme-color)' }}
+              style={{ color: toast.color }}
             >
               {toast.sender}:{' '}
             </span>
@@ -379,7 +366,9 @@ export default function App() {
                     ?.filter((d: any) => d.counted)
                     .map((d: any) => `d${d.sides}[${d.value}]`)
                     .join(' + ')}
-                  <span className='mx-1 text-[var(--theme-color)]'>➔</span>
+                  <span className='mx-1' style={{ color: toast.color }}>
+                    ➔
+                  </span>
                   <span className='text-lg font-black text-white'>
                     {toast.rollResult?.total_sum}
                   </span>
@@ -436,7 +425,6 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {/* FIXED: Manually append 'Ajudado' if active in the local store */}
                 {ajudado && (
                   <div className='group relative'>
                     <span className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'>
@@ -456,16 +444,16 @@ export default function App() {
               label='PV'
               current={character?.resources.hp.current || 0}
               max={character?.resources.hp.max || 0}
-              colorClass='text-red-400'
-              activeColorClass='bg-red-400'
+              colorClass='text-red-500'
+              activeColorClass='bg-red-600'
               onUpdate={(delta: number) => applyResourceChange('hp', delta)}
             />
             <ResourceBar
               label='PD'
               current={character?.resources.dp.current || 0}
               max={character?.resources.dp.max || 0}
-              colorClass='text-indigo-500'
-              activeColorClass='bg-indigo-500'
+              colorClass='text-blue-500'
+              activeColorClass='bg-blue-600'
               onUpdate={(delta: number) => applyResourceChange('dp', delta)}
             />
           </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useCharacterStore } from '../characterStore';
+import { useCharacterStore, getProfileColor } from '../characterStore';
 import { TestRequest, ResolvedPool, TestOutcome } from '../../../shared/types';
 import { useChatStore } from '../../chat/chatStore';
 
@@ -168,6 +168,7 @@ export function SkillPromptModal({
 
       addMessage({
         sender: character.name,
+        color: getProfileColor(character.profile),
         type: 'roll',
         rollLabel: outcome.pool.label,
         rollResult: outcome.result,
@@ -182,6 +183,7 @@ export function SkillPromptModal({
           setImpeto((prev) => Math.min(3, prev + 1));
           addMessage({
             sender: 'Sistema',
+            color: getProfileColor(character.profile),
             type: 'text',
             content: `Falha no teste (Tirou ${outcome.result.total_sum} vs DT ${dt}). Preencheu 1 espaço de Ímpeto!`,
           });
