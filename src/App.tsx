@@ -444,16 +444,16 @@ export default function App() {
               label='PV'
               current={character?.resources.hp.current || 0}
               max={character?.resources.hp.max || 0}
-              colorClass='text-red-500'
-              activeColorClass='bg-red-600'
+              colorClass='text-red-400'
+              activeColorClass='bg-red-400'
               onUpdate={(delta: number) => applyResourceChange('hp', delta)}
             />
             <ResourceBar
               label='PD'
               current={character?.resources.dp.current || 0}
               max={character?.resources.dp.max || 0}
-              colorClass='text-blue-500'
-              activeColorClass='bg-blue-600'
+              colorClass='text-indigo-500'
+              activeColorClass='bg-indigo-500'
               onUpdate={(delta: number) => applyResourceChange('dp', delta)}
             />
           </div>
