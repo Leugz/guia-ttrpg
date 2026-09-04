@@ -6,14 +6,12 @@ use crate::models::{CharacterSheet, ParsedDocument};
 
 pub fn safe_path(path: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(path);
-
     if candidate
         .components()
         .any(|component| matches!(component, Component::ParentDir))
     {
         return Err("Path traversal is not allowed.".into());
     }
-
     match candidate.extension().and_then(|ext| ext.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("md") => Ok(candidate),
         _ => Err("Only Markdown (.md) documents can be read or written.".into()),
@@ -42,17 +40,13 @@ pub fn resolve_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
 pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     let parsed = matter.parse(raw);
-
     if parsed.data.is_none() || parsed.matter.trim().is_empty() {
         return Err("No YAML frontmatter found in document.".into());
     }
-
     let mut data: CharacterSheet = serde_yaml::from_str(&parsed.matter)
         .map_err(|e| format!("Invalid character sheet schema: {}", e))?;
-
     let notes = data.normalize();
     data.validate()?;
-
     Ok(ParsedDocument {
         data,
         body: parsed.content,
@@ -61,8 +55,8 @@ pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
 }
 
 pub fn render_document(sheet: &CharacterSheet, body: &str) -> Result<String, String> {
-    let yaml = serde_yaml::to_string(sheet)
-        .map_err(|e| format!("Failed to serialize YAML: {}", e))?;
+    let yaml =
+        serde_yaml::to_string(sheet).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
     Ok(format!("---\n{}---\n{}", yaml, body))
 }
 
@@ -86,16 +80,13 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         .filter(|parent| !parent.as_os_str().is_empty())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-
     fs::create_dir_all(&parent)
         .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
-
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or("Invalid destination file name.")?;
     let temp_path = parent.join(format!(".{}.tmp", file_name));
-
     {
         let mut file = File::create(&temp_path)
             .map_err(|e| format!("Failed to create temporary file: {}", e))?;
@@ -104,11 +95,25 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         file.sync_all()
             .map_err(|e| format!("Failed to flush temporary file: {}", e))?;
     }
-
     fs::rename(&temp_path, path).map_err(|e| {
         let _ = fs::remove_file(&temp_path);
         format!("Failed to overwrite {}: {}", path.display(), e)
     })
+}
+
+// --- NEW: Recursive folder clone logic ---
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -140,7 +145,6 @@ abilities:
   active: false
 ---
 # Histórico do Personagem
-
 Conteúdo livre do jogador.
 "#;
 
@@ -175,6 +179,7 @@ Conteúdo livre do jogador.
         let parsed = parse_document(DOCUMENT).unwrap();
         let rendered = render_document(&parsed.data, &parsed.body).unwrap();
         let reparsed = parse_document(&rendered).unwrap();
+
         assert_eq!(reparsed.data.name, parsed.data.name);
         assert_eq!(reparsed.data.attributes.mind, StepDice::D6);
         assert_eq!(reparsed.body.trim(), parsed.body.trim());
@@ -186,8 +191,8 @@ Conteúdo livre do jogador.
         let dir = scratch_dir("write");
         let path = dir.join("ficha.md");
         let parsed = parse_document(DOCUMENT).unwrap();
-
         write_document(path.to_str().unwrap(), &parsed.data, &parsed.body).unwrap();
+
         let reloaded = read_document(path.to_str().unwrap()).unwrap();
         assert_eq!(reloaded.data.name, "Elian Thorne");
 
@@ -204,6 +209,7 @@ Conteúdo livre do jogador.
         let dir = scratch_dir("invalid");
         let path = dir.join("ficha.md");
         let mut parsed = parse_document(DOCUMENT).unwrap();
+
         parsed.data.level = 0;
         assert!(write_document(path.to_str().unwrap(), &parsed.data, &parsed.body).is_err());
         assert!(!path.exists());
@@ -222,6 +228,7 @@ Conteúdo livre do jogador.
         let root = Path::new("/campanhas/ordem");
         assert!(resolve_within(root, "../secreto.md").is_err());
         assert!(resolve_within(root, "/etc/passwd.md").is_err());
+
         let resolved = resolve_within(root, "personagens/joao.md").unwrap();
         assert!(resolved.starts_with(root));
     }

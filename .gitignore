@@ -21,3 +21,16 @@ src-tauri/target/
 *.njsproj
 *.sln
 *.sw?
+
+# Local Game Instances & Campaign State
+campaigns/active/*
+!campaigns/active/.gitkeep
+
+# Databases & Logs
+*.db
+*.sqlite
+*.log
+app.log
+
+# Tauri / Rust Build Artifacts
+src-tauri/target/

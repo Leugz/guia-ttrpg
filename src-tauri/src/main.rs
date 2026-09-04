@@ -79,7 +79,8 @@ async fn main() {
             commands::remove_active_effect,
             commands::describe_entry,
             commands::grant_sheet_access,
-            commands::revoke_sheet_access
+            commands::revoke_sheet_access,
+            commands::create_game_instance // Cleanly namespaced!
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -162,6 +162,7 @@ pub fn roll_death_save(path: String, resource: String) -> Result<DeathSaveOutcom
 
     let mut document = storage::read_document(&path)?;
     let (skill, dc) = document.data.death_save_test(kind)?;
+
     let skill_id = skill.id.clone();
     let skill_name = skill.name.clone();
 
@@ -172,10 +173,11 @@ pub fn roll_death_save(path: String, resource: String) -> Result<DeathSaveOutcom
             ..Default::default()
         },
     )?;
+
     let label = format!("Salvamento de {} (CD {})", skill_name, dc);
     let result = roll_pool_entries(&pool.to_pool_entries(), label, false)?;
-
     let success = result.total_sum as i32 >= dc;
+
     let state = document.data.register_death_save(kind, success);
     document.data.validate()?;
     storage::write_document(&path, &document.data, &document.body)?;
@@ -344,7 +346,7 @@ pub fn describe_entry(path: String, entry_id: String) -> Result<EntrySummary, St
 }
 
 // ---------------------------------------------------------------------------
-// Multi-sheet access (§4.6)
+// Multi-sheet access ( 4.6)
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -371,6 +373,19 @@ pub fn revoke_sheet_access(path: String, reference: String) -> Result<CharacterS
     })
 }
 
+// --- NEW: Game Lifecycle ---
+#[tauri::command]
+pub fn create_game_instance(game_id: String, act_id: String) -> Result<String, String> {
+    let base_path = "/home/leugz_/Projects/personal/guia/campaigns";
+    let src = format!("{}/{}/templates", base_path, act_id);
+    let dst = format!("{}/active/{}_{}", base_path, game_id, act_id);
+
+    // Safely routes to the storage module we just updated!
+    storage::copy_dir_all(&src, &dst).map_err(|e| format!("Failed to copy templates: {}", e))?;
+
+    Ok(dst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +405,7 @@ mod tests {
             "Mercenário".into(),
         )
         .unwrap();
+
         set_attribute(path.clone(), "physical".into(), StepDice::D8).unwrap();
         set_skill_value(path.clone(), "furtividade".into(), StepDice::D6).unwrap();
         path
@@ -407,7 +423,10 @@ mod tests {
         let document = load_character_sheet(path).unwrap();
         assert_eq!(document.data.name, "Elian Thorne");
         assert_eq!(document.data.attributes.physical, StepDice::D8);
-        assert_eq!(document.data.skill("furtividade").unwrap().value, StepDice::D6);
+        assert_eq!(
+            document.data.skill("furtividade").unwrap().value,
+            StepDice::D6
+        );
         assert!(document.body.contains("Histórico do Personagem"));
     }
 
@@ -418,6 +437,7 @@ mod tests {
             skill_id: Some("furtividade".into()),
             ..Default::default()
         };
+
         let preview = preview_test(path.clone(), request.clone()).unwrap();
         assert_eq!(
             preview.dice.iter().map(|d| d.sides).collect::<Vec<_>>(),
@@ -435,6 +455,7 @@ mod tests {
     fn a_standing_debuff_changes_the_next_pool() {
         let path = scratch("debuff");
         apply_builtin_effect(path.clone(), "machucado".into(), None).unwrap();
+
         let preview = preview_test(
             path.clone(),
             TestRequest {
@@ -499,6 +520,7 @@ mod tests {
         );
 
         assert!(toggle_entry(path.clone(), "reflexos".into(), true).is_err());
+
         let sheet = toggle_entry(path.clone(), "postura".into(), true).unwrap();
         assert!(sheet.entry("postura").unwrap().active);
 
@@ -525,6 +547,7 @@ mod tests {
                 }],
             },
         );
+
         let outcome = roll_test(
             path,
             TestRequest {
@@ -534,6 +557,7 @@ mod tests {
             },
         )
         .unwrap();
+
         assert_eq!(outcome.result.dice.len(), 3);
         assert_eq!(outcome.result.dice[2].source, "Reflexos");
     }
@@ -543,6 +567,7 @@ mod tests {
         let path = scratch("resource");
         let sheet = modify_resource(path.clone(), "hp".into(), -3).unwrap();
         assert_eq!(sheet.resources.hp.current, 7);
+
         let reloaded = load_character_sheet(path.clone()).unwrap();
         assert_eq!(reloaded.data.resources.hp.current, 7);
 
@@ -573,6 +598,7 @@ mod tests {
         assert_eq!(outcome.dc, 7);
         assert_eq!(outcome.resource, ResourceKind::Hp);
         assert!(outcome.result.label.contains("Vigor"));
+
         if outcome.success {
             assert_eq!(outcome.state.dc, 10);
         } else {
@@ -599,8 +625,10 @@ mod tests {
         let path = scratch("step");
         let sheet = step_attribute(path.clone(), "physical".into(), 9).unwrap();
         assert_eq!(sheet.attributes.physical, StepDice::D12);
+
         let sheet = step_skill(path.clone(), "furtividade".into(), -9).unwrap();
         assert_eq!(sheet.skill("furtividade").unwrap().value, StepDice::D4);
+
         assert!(step_skill(path, "inexistente".into(), 1).is_err());
     }
 
@@ -609,9 +637,12 @@ mod tests {
         let path = scratch("access");
         let sheet = grant_sheet_access(path.clone(), "personagens/joao.md".into()).unwrap();
         assert_eq!(sheet.accessible_sheets.len(), 1);
+
         let sheet = grant_sheet_access(path.clone(), "personagens/joao.md".into()).unwrap();
         assert_eq!(sheet.accessible_sheets.len(), 1);
+
         assert!(grant_sheet_access(path.clone(), "../fora.md".into()).is_err());
+
         let sheet = revoke_sheet_access(path, "personagens/joao.md".into()).unwrap();
         assert!(sheet.accessible_sheets.is_empty());
     }

@@ -8,9 +8,8 @@ import {
 } from '../../shared/types';
 import { useChatStore } from '../chat/chatStore';
 
-// GLOBAL COLOR UTILITY FOR LAN SYNC
 export const getProfileColor = (profile?: string) => {
-  if (!profile) return '#71717a'; // Default Gray for System/Unassigned
+  if (!profile) return '#71717a';
   switch (profile.toUpperCase()) {
     case 'EXECUTOR':
       return '#ae2c12';
@@ -20,7 +19,7 @@ export const getProfileColor = (profile?: string) => {
       return '#4b7e2f';
     case 'MESTRE':
     case 'GM':
-      return '#987c50'; // Tentative GM Color
+      return '#987c50';
     default:
       return '#71717a';
   }
@@ -44,6 +43,8 @@ interface CharacterStore {
   setAjudado: (val: boolean) => void;
 
   loadCharacter: (doc: ParsedDocument, path: string) => void;
+  clearCharacter: () => void; // NEW: Wipes memory on logout
+
   applyResourceChange: (resource: 'hp' | 'dp', delta: number) => Promise<void>;
   rollDeathSave: (resource: 'hp' | 'dp') => Promise<void>;
   stepAttribute: (attribute: string, steps: number) => Promise<void>;
@@ -88,6 +89,19 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
       ajudado: false,
     }),
 
+  // Wipes all data to prevent bleed
+  clearCharacter: () =>
+    set({
+      character: null,
+      notes: '',
+      activePath: null,
+      impeto: 0,
+      avaliacao: 0,
+      activeImpetoBuff: null,
+      pendingImpetoD4: false,
+      ajudado: false,
+    }),
+
   applyResourceChange: async (resource, delta) => {
     const { activePath, character } = get();
     if (!activePath || !character) return;
@@ -103,8 +117,8 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
       if (outcome.change.triggered_save) {
         useChatStore.getState().addMessage({
           sender: 'Sistema',
+          color: getProfileColor(character.profile),
           type: 'text',
-          color: getProfileColor(character.profile), // INJECTS PLAYER COLOR FOR SYSTEM MESSAGE
           content: `${outcome.character.name} chegou a 0 ${resource.toUpperCase()}! Teste necessário.`,
           rollLabel: 'Aviso Crítico',
         });

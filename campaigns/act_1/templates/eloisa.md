@@ -146,6 +146,6 @@ death_saves:
     dc: 7
     failed: false
   dp:
-    dc: 7
-    failed: false
+    dc: 10
+    failed: true
 ---
