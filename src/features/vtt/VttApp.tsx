@@ -15,7 +15,7 @@ import {
   Dices,
   ChevronDown,
 } from 'lucide-react';
-import { useChatStore } from '../chat/chatStore';
+import { useChatStore, Player } from '../chat/chatStore';
 import {
   useCharacterStore,
   getProfileColor,
@@ -52,12 +52,17 @@ const getConditionDesc = (id: string) => {
   }
 };
 
+// NEW: Accepts Roster to lock out claimed sheets
 const CharacterSelectionModal = ({
   onClose,
   onSelect,
+  roster,
+  clientId,
 }: {
   onClose: () => void;
   onSelect: (fileName: string) => void;
+  roster: Player[];
+  clientId: string;
 }) => (
   <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
     <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
@@ -78,20 +83,28 @@ const CharacterSelectionModal = ({
         </p>
         {AVAILABLE_CHARACTERS.map((char) => {
           const profileColor = getProfileColor(char.profile);
+          // Check if another player's client_id has claimed this specific .md file
+          const isClaimedByOther = roster.some(
+            (p) => p.client_id !== clientId && p.claimed_sheet === char.file
+          );
+
           return (
             <button
               key={char.id}
               onClick={() => onSelect(char.file)}
-              className='group relative flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
+              disabled={isClaimedByOther}
+              className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByOther ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
             >
               <div
                 className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-                style={{ backgroundColor: profileColor }}
+                style={{
+                  backgroundColor: isClaimedByOther ? '#3f3f46' : profileColor,
+                }}
               />
               <div className='ml-2 flex flex-col items-start'>
                 <span
                   className='font-serif text-lg font-bold tracking-widest'
-                  style={{ color: profileColor }}
+                  style={{ color: isClaimedByOther ? '#71717a' : profileColor }}
                 >
                   {char.name}
                 </span>
@@ -99,8 +112,10 @@ const CharacterSelectionModal = ({
                   {char.profile}
                 </span>
               </div>
-              <span className='border border-zinc-800 bg-black px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-colors group-hover:border-zinc-600'>
-                Assumir
+              <span
+                className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByOther ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+              >
+                {isClaimedByOther ? 'Bloqueado' : 'Assumir'}
               </span>
             </button>
           );
@@ -145,12 +160,18 @@ const ResourceBar = ({
 };
 
 export function VttApp() {
-  const { connect, messages } = useChatStore();
+  const { connect, messages, roster, claimSheet, updateIdentity } =
+    useChatStore();
   const { character, loadCharacter, applyResourceChange, ajudado } =
     useCharacterStore();
-
-  // INJECT SESSION STATE FOR PATH ISOLATION AND LAN IDENTITY
-  const { leaveGame, activeGamePath, isHosting, username } = useSessionStore();
+  const {
+    leaveGame,
+    activeGamePath,
+    isHosting,
+    username,
+    clientId,
+    lanHostAddress,
+  } = useSessionStore();
 
   const [isRollerOpen, setIsRollerOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -159,14 +180,16 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isGM, setIsGM] = useState(true);
+  const [isGM, setIsGM] = useState(isHosting); // GM tools available if hosting
   const [isHandoutOpen, setIsHandoutOpen] = useState(false);
   const [isMapTransitioning, setIsMapTransitioning] = useState(false);
 
   const [toasts, setToasts] = useState<any[]>([]);
 
   const handleLoadCharacter = async (fileName: string) => {
-    // LAN PREP: If we are just a connected client, we don't have the files locally!
+    // Announce to the LAN server that we are claiming this file!
+    claimSheet(clientId, fileName);
+
     if (!isHosting) {
       console.log(
         'Joined as LAN Client. Need to fetch character from Host via WebSocket...'
@@ -175,7 +198,6 @@ export function VttApp() {
       return;
     }
 
-    // HOST/LOCAL: Target the isolated active game path!
     const fullPath = `${activeGamePath}/${fileName}`;
     try {
       const result = await invoke<ParsedDocument>('load_character_sheet', {
@@ -184,29 +206,18 @@ export function VttApp() {
       loadCharacter(result, fullPath);
       setIsSelectionModalOpen(false);
     } catch (error) {
-      console.warn(
-        `Isolated path ${fullPath} not found. Falling back to template for testing until Rust copy logic is implemented.`
+      console.error(
+        `Failed to load character at ${fullPath}. Make sure the Rust directory clone was successful!`,
+        error
       );
-
-      const fallbackPath = `/home/leugz_/Projects/personal/guia/campaigns/act_1/templates/${fileName}`;
-      try {
-        const fallbackResult = await invoke<ParsedDocument>(
-          'load_character_sheet',
-          { path: fallbackPath }
-        );
-        loadCharacter(fallbackResult, fallbackPath);
-        setIsSelectionModalOpen(false);
-      } catch (fallbackError) {
-        console.error('Failed to load character:', fallbackError);
-      }
     }
   };
 
+  // 1. Establish the LAN Connection
   useEffect(() => {
-    let hostIp = window.location.hostname;
-    if (hostIp === 'tauri.localhost' || hostIp === '' || hostIp === 'localhost')
-      hostIp = 'localhost';
-    connect(hostIp);
+    const hostIp = isHosting ? 'localhost' : lanHostAddress || 'localhost';
+    const initialColor = getProfileColor(character?.profile);
+    connect(hostIp, clientId, username || 'Unknown', initialColor);
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
@@ -216,7 +227,16 @@ export function VttApp() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [connect]);
+  }, [connect, isHosting, lanHostAddress, clientId, username]);
+
+  // 2. Update our identity on the Server whenever our selected character changes
+  useEffect(() => {
+    updateIdentity(
+      clientId,
+      username || 'Unknown',
+      getProfileColor(character?.profile)
+    );
+  }, [character?.profile, clientId, username, updateIdentity]);
 
   const prevMsgCount = useRef(messages.length);
   const isChatOpenRef = useRef(isChatOpen);
@@ -316,8 +336,9 @@ export function VttApp() {
           >
             <Wifi size={14} style={{ color: 'var(--theme-color)' }} />
             <span className='font-mono text-xs tracking-wider text-zinc-400'>
-              LAN HOST
+              {isHosting ? 'LAN HOST' : 'LAN CLIENT'}
             </span>
+
             <div className='relative'>
               <button
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -325,6 +346,7 @@ export function VttApp() {
               >
                 <Settings size={14} />
               </button>
+
               {isSettingsOpen && (
                 <div className='absolute right-0 top-full z-50 mt-3 w-48 rounded border border-zinc-800 bg-[#0a0a0a] py-1 shadow-2xl'>
                   <button
@@ -341,26 +363,18 @@ export function VttApp() {
             </div>
           </div>
 
+          {/* NEW: Dynamic Server Roster */}
           <div className='flex gap-2'>
-            <div
-              className='flex h-8 w-8 cursor-pointer items-center justify-center rounded-sm border border-zinc-700 bg-zinc-800 text-xs font-bold shadow-lg'
-              style={{
-                color: 'var(--theme-color)',
-                borderColor: 'var(--theme-color)',
-              }}
-              title={`${username} (Você)`}
-            >
-              {username ? username.substring(0, 2).toUpperCase() : 'P1'}
-            </div>
-
-            {isHosting && (
+            {roster.map((player) => (
               <div
-                className='flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-sm border border-dashed border-zinc-800 bg-zinc-900/50 text-xs font-bold text-zinc-700 shadow-lg'
-                title='Aguardando Jogadores...'
+                key={player.client_id}
+                className={`flex h-8 w-8 items-center justify-center rounded-sm border bg-zinc-800 text-xs font-bold shadow-lg transition-colors ${player.client_id === clientId ? 'shadow-[0_0_10px_currentColor]' : ''}`}
+                style={{ color: player.color, borderColor: player.color }}
+                title={`${player.username} ${player.client_id === clientId ? '(Você)' : ''}`}
               >
-                ...
+                {player.username.substring(0, 2).toUpperCase()}
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -499,8 +513,8 @@ export function VttApp() {
               label='PV'
               current={character?.resources.hp.current || 0}
               max={character?.resources.hp.max || 0}
-              colorClass='text-red-400'
-              activeColorClass='bg-red-400'
+              colorClass='text-red-500'
+              activeColorClass='bg-red-500'
               onUpdate={(delta: number) => applyResourceChange('hp', delta)}
             />
             <ResourceBar
@@ -536,6 +550,8 @@ export function VttApp() {
         <CharacterSelectionModal
           onClose={() => setIsSelectionModalOpen(false)}
           onSelect={handleLoadCharacter}
+          roster={roster}
+          clientId={clientId}
         />
       )}
 

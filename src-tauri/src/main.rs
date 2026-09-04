@@ -16,16 +16,28 @@ use axum::{
     Router,
 };
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Manager;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
 const LAN_PORT: u16 = 37373;
+
+// --- MULTIPLAYER ROSTER PROTOCOL ---
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Player {
+    pub client_id: String,
+    pub username: String,
+    pub claimed_sheet: Option<String>,
+    pub color: String,
+}
 
 struct AppState {
     tx: broadcast::Sender<String>,
     db_path: PathBuf,
+    roster: RwLock<HashMap<String, Player>>, // Thread-safe server state tracking
 }
 
 #[tokio::main]
@@ -37,7 +49,6 @@ async fn main() {
         .setup(move |app| {
             init_logging(app.handle());
 
-            // Resolve the system's standard application data directory
             let data_dir = app
                 .path()
                 .app_local_data_dir()
@@ -50,6 +61,7 @@ async fn main() {
             let app_state = Arc::new(AppState {
                 tx: tx_clone,
                 db_path,
+                roster: RwLock::new(HashMap::new()), // Initialize the empty server lobby
             });
 
             tokio::spawn(serve_lan(app_state));
@@ -80,7 +92,7 @@ async fn main() {
             commands::describe_entry,
             commands::grant_sheet_access,
             commands::revoke_sheet_access,
-            commands::create_game_instance // Cleanly namespaced!
+            commands::create_game_instance // Cleanly maps to commands.rs!
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -124,22 +136,64 @@ async fn ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+// --- WEBSOCKET INTERCEPTOR AND ROUTER ---
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
+
+    // Send the current roster to the newly connected client immediately
+    broadcast_roster(&state).await;
 
     loop {
         tokio::select! {
             Some(Ok(msg)) = socket.recv() => {
                 if let Message::Text(text) = msg {
-                    // Open the DB using the safe path provided by Tauri
-                    if let Ok(conn) = Connection::open(&state.db_path) {
-                        let id = uuid::Uuid::new_v4().to_string();
-                        let _ = conn.execute(
-                            "INSERT INTO chat_history (id, payload) VALUES (?1, ?2)",
-                            [&id, &text],
-                        );
+
+                    // Try to parse JSON to see if it's a structural command
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+                        match msg_type {
+                            "join" => {
+                                if let (Some(client_id), Some(username), Some(color)) = (
+                                    parsed.get("clientId").and_then(|v| v.as_str()),
+                                    parsed.get("username").and_then(|v| v.as_str()),
+                                    parsed.get("color").and_then(|v| v.as_str()),
+                                ) {
+                                    let player = Player {
+                                        client_id: client_id.to_string(),
+                                        username: username.to_string(),
+                                        claimed_sheet: None,
+                                        color: color.to_string(),
+                                    };
+                                    state.roster.write().await.insert(client_id.to_string(), player);
+                                    broadcast_roster(&state).await;
+                                }
+                            }
+                            "claim" => {
+                                if let (Some(client_id), Some(sheet_id)) = (
+                                    parsed.get("clientId").and_then(|v| v.as_str()),
+                                    parsed.get("sheetId").and_then(|v| v.as_str()),
+                                ) {
+                                    if let Some(player) = state.roster.write().await.get_mut(client_id) {
+                                        player.claimed_sheet = Some(sheet_id.to_string());
+                                    }
+                                    broadcast_roster(&state).await;
+                                }
+                            }
+                            "text" | "roll" => {
+                                // Standard Chat and Dice messages bypass the roster and hit the database
+                                if let Ok(conn) = Connection::open(&state.db_path) {
+                                    let id = uuid::Uuid::new_v4().to_string();
+                                    let _ = conn.execute(
+                                        "INSERT INTO chat_history (id, payload) VALUES (?1, ?2)",
+                                        [&id, &text],
+                                    );
+                                }
+                                let _ = state.tx.send(text);
+                            }
+                            _ => {}
+                        }
                     }
-                    let _ = state.tx.send(text);
                 }
             }
             Ok(msg) = rx.recv() => {
@@ -147,7 +201,23 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                     break;
                 }
             }
+            else => break,
         }
+    }
+}
+
+// Packages the HashMap into a flat Array and broadcasts it across the LAN
+async fn broadcast_roster(state: &Arc<AppState>) {
+    let roster_map = state.roster.read().await;
+    let players: Vec<Player> = roster_map.values().cloned().collect();
+
+    let roster_msg = serde_json::json!({
+        "type": "roster_sync",
+        "players": players
+    });
+
+    if let Ok(text) = serde_json::to_string(&roster_msg) {
+        let _ = state.tx.send(text);
     }
 }
 
