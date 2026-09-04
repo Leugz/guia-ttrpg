@@ -380,7 +380,21 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                       stroke='#3f3f46'
                       strokeWidth='2'
                     />
+                    <path
+                      d='M50,180 L100,220 L150,180'
+                      fill='none'
+                      stroke='var(--theme-color)'
+                      strokeWidth='2.5'
+                      opacity='0.35'
+                    />
+                    <path
+                      d='M80,135 L80,300 M120,135 L120,300'
+                      fill='none'
+                      stroke='#27272a'
+                      strokeWidth='2'
+                    />
                   </svg>
+
                   <div className='absolute bottom-0 h-1/3 w-full bg-gradient-to-t from-black to-transparent'></div>
                 </div>
               </div>
