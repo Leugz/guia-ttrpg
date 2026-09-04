@@ -31,6 +31,7 @@ export interface TestRequest {
   help?: number;
   extra_dice: number[];
   secret: boolean;
+  dt?: number; // Added DT for automatic failure detection
 }
 
 export interface ResolvedDie {
@@ -93,11 +94,13 @@ export interface ResourceStat {
   current: number;
   max: number;
 }
+
 export interface BaseAttributes {
   physical: number;
   mind: number;
   emotion: number;
 }
+
 export interface Skill {
   id: string;
   name: string;
@@ -105,12 +108,14 @@ export interface Skill {
   value: number;
   parent?: string;
 }
+
 export interface Effect {
   operation: string;
   quantity: number;
   unit: any;
   target?: string;
 }
+
 export interface Entry {
   id: string;
   name: string;
@@ -118,6 +123,7 @@ export interface Entry {
   active: boolean;
   effects: Effect[];
 }
+
 export interface ActiveEffect {
   id: string;
   name: string;
@@ -131,7 +137,12 @@ export interface CharacterSheet {
   profile: string;
   occupation: string;
   level: number;
-  resources: { hp: ResourceStat; dp: ResourceStat };
+  color?: string;
+  resources: {
+    hp: ResourceStat;
+    dp: ResourceStat;
+    impeto?: ResourceStat;
+  };
   attributes: BaseAttributes;
   skills: Skill[];
   abilities: Entry[];

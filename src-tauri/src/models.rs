@@ -234,6 +234,7 @@ pub struct CharacterSheet {
     pub occupation: String,
     #[serde(default = "default_level")]
     pub level: u32,
+    pub color: Option<String>,
     pub resources: Resources,
     #[serde(alias = "base_attributes")]
     pub attributes: Attributes,
@@ -272,6 +273,7 @@ impl CharacterSheet {
             profile: profile.to_string(),
             occupation: occupation.to_string(),
             level: 1,
+            color: Some("$dc2626".to_string()),
             resources: Resources {
                 hp: ResourceStat {
                     current: 10,
@@ -517,7 +519,11 @@ impl CharacterSheet {
                 return Err(format!("Duplicate skill id: {}", skill.id));
             }
             if let Some(parent) = &skill.parent {
-                if !self.skills.iter().any(|s| s.id.eq_ignore_ascii_case(parent)) {
+                if !self
+                    .skills
+                    .iter()
+                    .any(|s| s.id.eq_ignore_ascii_case(parent))
+                {
                     return Err(format!(
                         "Skill '{}' references unknown parent '{}'.",
                         skill.id, parent
@@ -714,7 +720,10 @@ accessible_sheets: []
         assert_eq!(sheet.attributes.physical, StepDice::D8);
         let notes = sheet.normalize();
         assert!(!notes.is_empty());
-        assert_eq!(sheet.entry("ataque_especial").unwrap().name, "Ataque Especial");
+        assert_eq!(
+            sheet.entry("ataque_especial").unwrap().name,
+            "Ataque Especial"
+        );
         sheet.validate().unwrap();
     }
 
@@ -733,7 +742,10 @@ accessible_sheets: []
         assert!(sheet.skills.is_empty());
         sheet.normalize();
         assert_eq!(sheet.skills.len(), rules::DEFAULT_SKILLS.len());
-        assert_eq!(sheet.skill("vigor").unwrap().governed_by, Attribute::Physical);
+        assert_eq!(
+            sheet.skill("vigor").unwrap().governed_by,
+            Attribute::Physical
+        );
         assert_eq!(
             sheet.skill("disciplina").unwrap().governed_by,
             Attribute::Emotion
@@ -856,7 +868,10 @@ accessible_sheets: []
 
         sheet.apply_resource_delta(ResourceKind::Hp, 5);
         assert_eq!(sheet.death_saves.hp.dc, 7);
-        assert_eq!(sheet.death_saves.dp.dc, 7, "PD save is unaffected by PV healing");
+        assert_eq!(
+            sheet.death_saves.dp.dc, 7,
+            "PD save is unaffected by PV healing"
+        );
     }
 
     #[test]

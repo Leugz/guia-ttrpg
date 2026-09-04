@@ -12,6 +12,20 @@ interface CharacterStore {
   character: CharacterSheet | null;
   notes: string;
   activePath: string | null;
+
+  // Real-time Ability Trackers
+  impeto: number;
+  avaliacao: number;
+  activeImpetoBuff: string | null;
+  pendingImpetoD4: boolean;
+  ajudado: boolean; // NEW: Transient Help Buff
+
+  setImpeto: (val: number | ((prev: number) => number)) => void;
+  setAvaliacao: (val: number | ((prev: number) => number)) => void;
+  setActiveImpetoBuff: (attr: string | null) => void;
+  setPendingImpetoD4: (val: boolean) => void;
+  setAjudado: (val: boolean) => void; // NEW
+
   loadCharacter: (doc: ParsedDocument, path: string) => void;
   applyResourceChange: (resource: 'hp' | 'dp', delta: number) => Promise<void>;
   rollDeathSave: (resource: 'hp' | 'dp') => Promise<void>;
@@ -27,16 +41,39 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   notes: '',
   activePath: null,
 
+  impeto: 0,
+  avaliacao: 0,
+  activeImpetoBuff: null,
+  pendingImpetoD4: false,
+  ajudado: false,
+
+  setImpeto: (val) =>
+    set((state) => ({
+      impeto: typeof val === 'function' ? val(state.impeto) : val,
+    })),
+  setAvaliacao: (val) =>
+    set((state) => ({
+      avaliacao: typeof val === 'function' ? val(state.avaliacao) : val,
+    })),
+  setActiveImpetoBuff: (attr) => set({ activeImpetoBuff: attr }),
+  setPendingImpetoD4: (val) => set({ pendingImpetoD4: val }),
+  setAjudado: (val) => set({ ajudado: val }),
+
   loadCharacter: (doc, path) =>
     set({
       character: doc.data,
       notes: doc.body,
       activePath: path,
+      impeto: 0,
+      avaliacao: 0,
+      activeImpetoBuff: null,
+      pendingImpetoD4: false,
+      ajudado: false,
     }),
 
   applyResourceChange: async (resource, delta) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activePath, character } = get();
+    if (!activePath || !character) return;
 
     try {
       const outcome = await invoke<ResourceOutcome>('apply_resource_change', {
@@ -44,15 +81,14 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
         resource,
         delta,
       });
-
       set({ character: outcome.character });
 
       if (outcome.change.triggered_save) {
         useChatStore.getState().addMessage({
-          sender: 'System',
+          sender: 'Sistema',
           type: 'text',
-          content: `${outcome.character.name} chegou a 0 ${resource.toUpperCase()}! Teste de ${outcome.save_skill} (CD ${outcome.save_dc}) necessário.`,
-          rollLabel: 'Aviso de Sobrevivência',
+          content: `${outcome.character.name} chegou a 0 ${resource.toUpperCase()}! Teste necessário.`,
+          rollLabel: 'Aviso Crítico',
         });
       }
     } catch (error) {
@@ -63,19 +99,16 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   rollDeathSave: async (resource) => {
     const { activePath } = get();
     if (!activePath) return;
-
     try {
       const outcome = await invoke<DeathSaveOutcome>('roll_death_save', {
         path: activePath,
         resource,
       });
-
       set({ character: outcome.character });
-
       useChatStore.getState().addMessage({
         sender: outcome.character.name,
         type: 'roll',
-        rollLabel: `Teste de Sobrevivência (${resource.toUpperCase()}) - CD ${outcome.dc}`,
+        rollLabel: `Teste de Sobrevivência (${resource.toUpperCase()}) - DT ${outcome.dc}`,
         rollResult: outcome.result,
       });
     } catch (error) {
@@ -102,7 +135,6 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     const { activePath } = get();
     if (!activePath) return;
     try {
-      // Changed skill_id to skillId
       const updated = await invoke<CharacterSheet>('step_skill', {
         path: activePath,
         skillId,
@@ -118,7 +150,6 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     const { activePath } = get();
     if (!activePath) return;
     try {
-      // Changed entry_id to entryId
       const updated = await invoke<CharacterSheet>('toggle_entry', {
         path: activePath,
         entryId,
@@ -134,7 +165,6 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     const { activePath } = get();
     if (!activePath) return;
     try {
-      // Changed effect_id to effectId
       const updated = await invoke<CharacterSheet>('apply_builtin_effect', {
         path: activePath,
         effectId,
@@ -142,7 +172,7 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
       });
       set({ character: updated });
     } catch (error) {
-      console.error('Failed to apply effect:', error);
+      console.error(error);
     }
   },
 
@@ -150,14 +180,13 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     const { activePath } = get();
     if (!activePath) return;
     try {
-      // Changed effect_id to effectId
       const updated = await invoke<CharacterSheet>('remove_active_effect', {
         path: activePath,
         effectId,
       });
       set({ character: updated });
     } catch (error) {
-      console.error('Failed to remove effect:', error);
+      console.error(error);
     }
   },
 }));
