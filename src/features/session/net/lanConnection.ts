@@ -8,6 +8,7 @@
 
 import {
   buildWsUrl,
+  HandoutForceOpenMessage,
   HandoutUpdateMessage,
   RpcMethod,
   type ConnectionStatus,
@@ -37,6 +38,7 @@ export interface LanEvents {
   chat: Record<string, unknown>;
   closed: string;
   handout: HandoutUpdateMessage;
+  handoutForceOpen: HandoutForceOpenMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -318,6 +320,9 @@ class LanConnection {
         return;
       case 'handout_update':
         this.emit('handout', message as HandoutUpdateMessage);
+        return;
+      case 'handout_force_open':
+        this.emit('handoutForceOpen', message as HandoutForceOpenMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);

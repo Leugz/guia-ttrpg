@@ -15,6 +15,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Send,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -31,6 +32,7 @@ import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
 import { GameBoard } from '../map/components/GameBoard';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -414,6 +416,40 @@ export function VttApp() {
       console.error(e);
     }
   };
+
+  const forcedOpens = useLanStore((state) => state.forcedOpens);
+  const clearForcedOpen = useLanStore((state) => state.clearForcedOpen);
+
+  // Consume anything the GM force-opened, on this client only if it's for me.
+  useEffect(() => {
+    forcedOpens.forEach((entry) => {
+      const forMe = entry.target === null || entry.target === clientId;
+      if (forMe && !openHandoutIds.includes(entry.handoutId)) {
+        setOpenHandoutIds((prev) => [...prev, entry.handoutId]);
+      }
+      clearForcedOpen(entry.handoutId);
+    });
+  }, [forcedOpens, clientId]);
+
+  const handleOpenHandoutForAll = async (id: string) => {
+    try {
+      await gameClient.openHandoutForAll(id);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleOpenHandoutForPlayer = async (
+    handoutId: string,
+    targetClientId: string
+  ) => {
+    try {
+      await gameClient.openHandoutForPlayer(handoutId, targetClientId);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // -------------------------------------------------------------------------
 
   const displayIp =
@@ -820,53 +856,80 @@ export function VttApp() {
                             )}
                           </button>
 
+                          <button
+                            onClick={() => handleOpenHandoutForAll(h.id)}
+                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
+                            title='Torna público (se necessário) e abre agora na tela de todos'
+                          >
+                            <Send size={10} /> Abrir para Todos
+                          </button>
+
                           {/* Targeted Sharing Toggles (Hidden if fully public) */}
                           {!h.is_public && (
-                            <div className='flex flex-wrap items-center gap-1'>
-                              <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
-                                Visível para:
-                              </span>
-                              {roster
-                                .filter(
+                            <>
+                              <div className='flex flex-wrap items-center gap-1'>
+                                <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
+                                  Visível para:
+                                </span>
+                                {roster
+                                  .filter(
+                                    (p) =>
+                                      p.connected &&
+                                      p.claimed_sheet !== '__GM__'
+                                  )
+                                  .map((p) => {
+                                    const isShared =
+                                      h.shared_with &&
+                                      h.shared_with.includes(p.client_id);
+                                    return (
+                                      <>
+                                        <button
+                                          key={p.client_id}
+                                          onClick={() =>
+                                            handleToggleHandoutShare(
+                                              h.id,
+                                              p.client_id
+                                            )
+                                          }
+                                          className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                          style={{
+                                            color: isShared
+                                              ? p.color
+                                              : undefined,
+                                            borderColor: isShared
+                                              ? p.color
+                                              : '#27272a',
+                                            borderWidth: '1px',
+                                          }}
+                                          title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
+                                        >
+                                          {getInitials(p.username)}
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleOpenHandoutForPlayer(
+                                              h.id,
+                                              p.client_id
+                                            )
+                                          }
+                                          className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 transition-colors hover:bg-amber-900 hover:text-amber-400'
+                                          title={`Abrir agora só para ${p.username}`}
+                                        >
+                                          <Send size={9} />
+                                        </button>
+                                      </>
+                                    );
+                                  })}
+                                {roster.filter(
                                   (p) =>
                                     p.connected && p.claimed_sheet !== '__GM__'
-                                )
-                                .map((p) => {
-                                  const isShared =
-                                    h.shared_with &&
-                                    h.shared_with.includes(p.client_id);
-                                  return (
-                                    <button
-                                      key={p.client_id}
-                                      onClick={() =>
-                                        handleToggleHandoutShare(
-                                          h.id,
-                                          p.client_id
-                                        )
-                                      }
-                                      className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
-                                      style={{
-                                        color: isShared ? p.color : undefined,
-                                        borderColor: isShared
-                                          ? p.color
-                                          : '#27272a',
-                                        borderWidth: '1px',
-                                      }}
-                                      title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
-                                    >
-                                      {getInitials(p.username)}
-                                    </button>
-                                  );
-                                })}
-                              {roster.filter(
-                                (p) =>
-                                  p.connected && p.claimed_sheet !== '__GM__'
-                              ).length === 0 && (
-                                <span className='text-[9px] text-zinc-600'>
-                                  Nenhum jogador
-                                </span>
-                              )}
-                            </div>
+                                ).length === 0 && (
+                                  <span className='text-[9px] text-zinc-600'>
+                                    Nenhum jogador
+                                  </span>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
                       )}
@@ -923,6 +986,14 @@ export function VttApp() {
                             )}
                           </button>
 
+                          <button
+                            onClick={() => handleOpenHandoutForAll(h.id)}
+                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
+                            title='Torna público (se necessário) e abre agora na tela de todos'
+                          >
+                            <Send size={10} /> Abrir para Todos
+                          </button>
+
                           {/* Targeted Sharing Toggles (Hidden if fully public) */}
                           {!h.is_public && (
                             <div className='flex flex-wrap items-center gap-1'>
@@ -939,26 +1010,40 @@ export function VttApp() {
                                     h.shared_with &&
                                     h.shared_with.includes(p.client_id);
                                   return (
-                                    <button
-                                      key={p.client_id}
-                                      onClick={() =>
-                                        handleToggleHandoutShare(
-                                          h.id,
-                                          p.client_id
-                                        )
-                                      }
-                                      className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
-                                      style={{
-                                        color: isShared ? p.color : undefined,
-                                        borderColor: isShared
-                                          ? p.color
-                                          : '#27272a',
-                                        borderWidth: '1px',
-                                      }}
-                                      title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
-                                    >
-                                      {getInitials(p.username)}
-                                    </button>
+                                    <>
+                                      <button
+                                        key={p.client_id}
+                                        onClick={() =>
+                                          handleToggleHandoutShare(
+                                            h.id,
+                                            p.client_id
+                                          )
+                                        }
+                                        className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                        style={{
+                                          color: isShared ? p.color : undefined,
+                                          borderColor: isShared
+                                            ? p.color
+                                            : '#27272a',
+                                          borderWidth: '1px',
+                                        }}
+                                        title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
+                                      >
+                                        {getInitials(p.username)}
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          handleOpenHandoutForPlayer(
+                                            h.id,
+                                            p.client_id
+                                          )
+                                        }
+                                        className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 transition-colors hover:bg-amber-900 hover:text-amber-400'
+                                        title={`Abrir agora só para ${p.username}`}
+                                      >
+                                        <Send size={9} />
+                                      </button>
+                                    </>
                                   );
                                 })}
                               {roster.filter(
@@ -1017,7 +1102,9 @@ export function VttApp() {
                 </div>
               ) : (
                 <img
-                  src={handout.content}
+                  src={convertFileSrc(
+                    `${gameClient.getGameContext().gameRoot}/${handout.content}`
+                  )}
                   alt={handout.title}
                   className='w-full rounded border border-zinc-800 object-contain'
                   draggable={false}

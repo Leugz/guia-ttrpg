@@ -697,3 +697,66 @@ pub fn toggle_handout_share(
 
     Ok(handout)
 }
+
+pub fn open_handout_for_all(root: &Path, handout_id: &str) -> Result<Handout, String> {
+    let path = campaign::resolve_handout(root, handout_id)?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut handout = storage::parse_handout(handout_id, &raw)?;
+
+    handout.is_public = true; // force — not a toggle
+
+    let out = storage::render_handout(&handout)?;
+    storage::write_atomic(&path, &out)?;
+
+    state::publish(
+        Target::All,
+        &ServerMessage::HandoutUpdate {
+            handout: handout.clone(),
+        },
+    );
+    state::publish(
+        Target::All,
+        &ServerMessage::HandoutForceOpen {
+            handout_id: handout.id.clone(),
+            target: None,
+        },
+    );
+
+    Ok(handout)
+}
+
+pub fn open_handout_for_player(
+    root: &Path,
+    handout_id: &str,
+    target_client_id: &str,
+) -> Result<Handout, String> {
+    let path = campaign::resolve_handout(root, handout_id)?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut handout = storage::parse_handout(handout_id, &raw)?;
+
+    let target = target_client_id.to_string();
+    if !handout.shared_with.contains(&target) {
+        handout.shared_with.push(target.clone()); // ensure — not a toggle
+    }
+
+    let out = storage::render_handout(&handout)?;
+    storage::write_atomic(&path, &out)?;
+
+    state::publish(
+        Target::All,
+        &ServerMessage::HandoutUpdate {
+            handout: handout.clone(),
+        },
+    );
+    // Only the target actually needs the "open now" instruction — this is
+    // exactly what Target::Only already exists for.
+    state::publish(
+        Target::Only(vec![target]),
+        &ServerMessage::HandoutForceOpen {
+            handout_id: handout.id.clone(),
+            target: Some(target_client_id.to_string()),
+        },
+    );
+
+    Ok(handout)
+}

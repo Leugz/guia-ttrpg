@@ -78,13 +78,20 @@ export interface HandoutUpdateMessage {
   handout: Handout;
 }
 
+export interface HandoutForceOpenMessage {
+  type: 'handout_force_open';
+  handoutId: string;
+  target: string | null;
+}
+
 export type ServerMessage =
   | RosterSyncMessage
   | SessionStateMessage
   | SheetUpdateMessage
   | RpcResultMessage
   | SessionClosedMessage
-  | HandoutUpdateMessage;
+  | HandoutUpdateMessage
+  | HandoutForceOpenMessage;
 
 // --- RPC --------------------------------------------------------------------
 
@@ -110,6 +117,8 @@ export const RpcMethod = {
   rollDice: 'roll_dice',
   toggleHandoutPublic: 'toggle_handout_public',
   toggleHandoutShare: 'toggle_handout_share',
+  openHandoutForAll: 'open_handout_for_all',
+  openHandoutForPlayer: 'open_handout_for_player',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -133,6 +142,8 @@ export interface RpcResults {
   [RpcMethod.rollDice]: RollResult;
   [RpcMethod.toggleHandoutPublic]: Handout;
   [RpcMethod.toggleHandoutShare]: Handout;
+  [RpcMethod.openHandoutForAll]: Handout;
+  [RpcMethod.openHandoutForPlayer]: Handout;
 }
 
 export interface TestRpcParams {

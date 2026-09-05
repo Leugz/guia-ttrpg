@@ -18,6 +18,7 @@ interface LanState {
   sheets: SheetSummary[];
   closedReason: string | null;
   handouts: Handout[];
+  forcedOpens: { handoutId: string; target: string | null }[];
 
   connect: (address: string, identity: Identity) => void;
   updateIdentity: (identity: Identity) => void;
@@ -26,6 +27,7 @@ interface LanState {
   releaseSheet: (clientId: string) => void;
   setSheets: (sheets: SheetSummary[]) => void;
   setHandouts: (handouts: Handout[]) => void;
+  clearForcedOpen: (handoutId: string) => void;
 }
 
 export const useLanStore = create<LanState>()((set) => ({
@@ -34,6 +36,7 @@ export const useLanStore = create<LanState>()((set) => ({
   sheets: [],
   handouts: [],
   closedReason: null,
+  forcedOpens: [],
 
   connect: (address, identity) => {
     set({ closedReason: null });
@@ -51,6 +54,10 @@ export const useLanStore = create<LanState>()((set) => ({
   releaseSheet: (clientId) => lan.releaseSheet(clientId),
   setSheets: (sheets) => set({ sheets }),
   setHandouts: (handouts) => set({ handouts }),
+  clearForcedOpen: (handoutId) =>
+    set((state) => ({
+      forcedOpens: state.forcedOpens.filter((f) => f.handoutId !== handoutId),
+    })),
 }));
 
 lan.on('status', (status) => useLanStore.setState({ status }));
@@ -71,6 +78,15 @@ lan.on('handout', (message) => {
     handouts: state.handouts.map((h) =>
       h.id === message.handout.id ? message.handout : h
     ),
+  }));
+});
+
+lan.on('handoutForceOpen', (message) => {
+  useLanStore.setState((state) => ({
+    forcedOpens: [
+      ...state.forcedOpens,
+      { handoutId: message.handoutId, target: message.target ?? null },
+    ],
   }));
 });
 

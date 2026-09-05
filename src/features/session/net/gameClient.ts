@@ -272,3 +272,28 @@ export const listHandouts = (): Promise<Handout[]> =>
     // Connected clients already receive handouts automatically via SessionState on join
     () => Promise.resolve([])
   );
+
+export const openHandoutForAll = (handoutId: string): Promise<Handout> =>
+  dispatch(
+    () =>
+      invoke<Handout>('open_handout_for_all', {
+        gameRoot: getGameContext().gameRoot,
+        handoutId,
+      }),
+    () => lan.request(RpcMethod.openHandoutForAll, { handoutId })
+  );
+
+export const openHandoutForPlayer = (
+  handoutId: string,
+  targetClientId: string
+): Promise<Handout> =>
+  dispatch(
+    () =>
+      invoke<Handout>('open_handout_for_player', {
+        gameRoot: getGameContext().gameRoot,
+        handoutId,
+        targetClientId,
+      }),
+    () =>
+      lan.request(RpcMethod.openHandoutForPlayer, { handoutId, targetClientId })
+  );

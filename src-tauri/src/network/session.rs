@@ -640,6 +640,31 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
             )?)
         }
 
+        method::OPEN_HANDOUT_FOR_ALL => {
+            #[derive(serde::Deserialize)]
+            struct Params {
+                #[serde(rename = "handoutId")]
+                handout_id: String,
+            }
+            let p: Params = parse(params)?;
+            to_value(api::open_handout_for_all(root, &p.handout_id)?)
+        }
+        method::OPEN_HANDOUT_FOR_PLAYER => {
+            #[derive(serde::Deserialize)]
+            struct Params {
+                #[serde(rename = "handoutId")]
+                handout_id: String,
+                #[serde(rename = "targetClientId")]
+                target_client_id: String,
+            }
+            let p: Params = parse(params)?;
+            to_value(api::open_handout_for_player(
+                root,
+                &p.handout_id,
+                &p.target_client_id,
+            )?)
+        }
+
         unknown => Err(format!("Unknown method: {}", unknown)),
     }
 }

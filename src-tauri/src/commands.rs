@@ -288,3 +288,24 @@ pub async fn toggle_handout_share(
 pub fn list_game_handouts(game_path: String) -> Result<Vec<crate::models::Handout>, String> {
     crate::campaign::list_handouts(std::path::Path::new(&game_path))
 }
+
+#[tauri::command]
+pub async fn open_handout_for_all(
+    game_root: String,
+    handout_id: String,
+) -> Result<crate::models::Handout, String> {
+    api::open_handout_for_all(std::path::Path::new(&game_root), &handout_id)
+}
+
+#[tauri::command]
+pub async fn open_handout_for_player(
+    game_root: String,
+    handout_id: String,
+    target_client_id: String,
+) -> Result<crate::models::Handout, String> {
+    api::open_handout_for_player(
+        std::path::Path::new(&game_root),
+        &handout_id,
+        &target_client_id,
+    )
+}

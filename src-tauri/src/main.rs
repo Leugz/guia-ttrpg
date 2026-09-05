@@ -84,6 +84,8 @@ async fn main() {
             commands::host_address,
             commands::toggle_handout_public,
             commands::toggle_handout_share,
+            commands::open_handout_for_all,
+            commands::open_handout_for_player,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

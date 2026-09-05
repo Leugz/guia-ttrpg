@@ -132,6 +132,12 @@ pub enum ServerMessage {
         // <-- ADDED
         handout: crate::models::Handout,
     },
+    HandoutForceOpen {
+        #[serde(rename = "handoutId")]
+        handout_id: String,
+        /// `None` reaches everyone; `Some(id)` reaches just that client.
+        target: Option<String>,
+    },
     /// Result of a `Rpc` request.
     RpcResult {
         #[serde(rename = "requestId")]
@@ -215,8 +221,10 @@ pub mod method {
     pub const GRANT_SHEET_ACCESS: &str = "grant_sheet_access";
     pub const REVOKE_SHEET_ACCESS: &str = "revoke_sheet_access";
     pub const ROLL_DICE: &str = "roll_dice";
-    pub const TOGGLE_HANDOUT_PUBLIC: &str = "toggle_handout_public"; // <-- ADDED
-    pub const TOGGLE_HANDOUT_SHARE: &str = "toggle_handout_share"; // <-- ADDED
+    pub const TOGGLE_HANDOUT_PUBLIC: &str = "toggle_handout_public";
+    pub const TOGGLE_HANDOUT_SHARE: &str = "toggle_handout_share";
+    pub const OPEN_HANDOUT_FOR_ALL: &str = "open_handout_for_all";
+    pub const OPEN_HANDOUT_FOR_PLAYER: &str = "open_handout_for_player";
 }
 
 #[cfg(test)]
