@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   X,
   ChevronDown,
+  Copy,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -58,6 +59,7 @@ const CharacterSelectionModal = ({
   sheets,
   roster,
   clientId,
+  isOfflineHost,
 }: {
   onClose: () => void;
   onSelect: (sheetId: string) => void;
@@ -65,6 +67,7 @@ const CharacterSelectionModal = ({
   sheets: SheetSummary[];
   roster: LanPlayer[];
   clientId: string;
+  isOfflineHost: boolean;
 }) => (
   <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
     <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
@@ -80,15 +83,14 @@ const CharacterSelectionModal = ({
         </button>
       </div>
       <div className='flex flex-col p-4'>
-        {/* Special Roles */}
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Opções do Sistema
         </p>
 
         <button
           onClick={() => onSelectSpecial('__GM__')}
-          disabled={isSheetTaken(roster, '__GM__', clientId)}
-          className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isSheetTaken(roster, '__GM__', clientId) ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
+          disabled={!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)}
+          className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${!isOfflineHost && isSheetTaken(roster, '__GM__', clientId) ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
         >
           <div
             className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
@@ -98,9 +100,10 @@ const CharacterSelectionModal = ({
             <span
               className='font-serif text-lg font-bold tracking-widest'
               style={{
-                color: isSheetTaken(roster, '__GM__', clientId)
-                  ? '#71717a'
-                  : GM_COLOR,
+                color:
+                  !isOfflineHost && isSheetTaken(roster, '__GM__', clientId)
+                    ? '#71717a'
+                    : GM_COLOR,
               }}
             >
               Mestre (GM)
@@ -110,9 +113,11 @@ const CharacterSelectionModal = ({
             </span>
           </div>
           <span
-            className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isSheetTaken(roster, '__GM__', clientId) ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+            className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${!isOfflineHost && isSheetTaken(roster, '__GM__', clientId) ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
           >
-            {isSheetTaken(roster, '__GM__', clientId) ? 'Bloqueado' : 'Assumir'}
+            {!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)
+              ? 'Bloqueado'
+              : 'Assumir'}
           </span>
         </button>
 
@@ -123,7 +128,7 @@ const CharacterSelectionModal = ({
           <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
           <div className='ml-2 flex flex-col items-start'>
             <span className='font-serif text-lg font-bold tracking-widest text-zinc-400'>
-              Guest
+              Convidado
             </span>
             <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
               Participar usando seu Nome de Usuário
@@ -134,14 +139,14 @@ const CharacterSelectionModal = ({
           </span>
         </button>
 
-        {/* Characters */}
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Ato 1: Personagens
         </p>
         <div className='flex flex-col gap-2'>
           {sheets.map((char) => {
             const profileColor = getProfileColor(char.profile);
-            const isClaimedByOther = isSheetTaken(roster, char.id, clientId);
+            const isClaimedByOther =
+              !isOfflineHost && isSheetTaken(roster, char.id, clientId);
 
             return (
               <button
@@ -185,7 +190,6 @@ const CharacterSelectionModal = ({
   </div>
 );
 
-// ... ResourceBar omitted for brevity, keep unchanged ...
 const ResourceBar = ({
   label,
   current,
@@ -197,7 +201,6 @@ const ResourceBar = ({
   const VISUAL_BLOCKS = 10;
   const percentage = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
   const activeCount = Math.round(percentage * VISUAL_BLOCKS);
-
   const blocks = Array.from(
     { length: VISUAL_BLOCKS },
     (_, i) => i < activeCount
@@ -230,27 +233,65 @@ export function VttApp() {
   const updateIdentity = useLanStore((state) => state.updateIdentity);
   const claimSheet = useLanStore((state) => state.claimSheet);
   const connectionStatus = useLanStore((state) => state.status);
+  const closedReason = useLanStore((state) => state.closedReason);
 
   const { character, loadCharacter, applyResourceChange, ajudado } =
     useCharacterStore();
 
-  const { leaveGame, isHosting, username, clientId, lanHostAddress } =
-    useSessionStore();
+  const {
+    leaveGame,
+    isHosting,
+    isLanOpen,
+    openLan,
+    closeLan,
+    username,
+    clientId,
+    lanHostAddress,
+    localClaim,
+    setLocalClaim,
+  } = useSessionStore();
 
-  const currentPlayer = roster.find((p) => p.client_id === clientId);
+  // AUTOMATED KICKING: Gracefully boot the client to Home when the host stops the server
+  useEffect(() => {
+    if (closedReason && !isHosting) {
+      leaveGame().then(() => {
+        useSessionStore.setState({ sessionError: closedReason });
+      });
+    }
+  }, [closedReason, isHosting, leaveGame]);
+
+  const isOfflineHost = isHosting && !isLanOpen;
+
+  // Fake the roster if the GM is offline
+  const currentPlayer = isOfflineHost
+    ? { claimed_sheet: localClaim }
+    : roster.find((p) => p.client_id === clientId);
+
   const claimedSheet = currentPlayer?.claimed_sheet;
+  const isTrueGM = claimedSheet === '__GM__';
 
   const identityColor = character
     ? getProfileColor(character.profile)
-    : claimedSheet === '__GM__'
+    : isTrueGM
       ? GM_COLOR
       : '#71717a';
 
   const charName = character
     ? character.name
-    : claimedSheet === '__GM__'
+    : isTrueGM
       ? 'Mestre'
-      : 'Guest';
+      : 'Convidado';
+
+  const displayRoster = isOfflineHost
+    ? [
+        {
+          client_id: clientId,
+          username: username || 'Mestre',
+          color: identityColor,
+          connected: true,
+        } as LanPlayer,
+      ]
+    : roster.filter((player) => player.connected);
 
   const [isRollerOpen, setIsRollerOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -259,23 +300,42 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isGM] = useState(isHosting);
   const [isHandoutOpen, setIsHandoutOpen] = useState(false);
   const [isMapTransitioning, setIsMapTransitioning] = useState(false);
   const [toasts, setToasts] = useState<any[]>([]);
 
+  // IP Parsing & Formatting (Strips the :37373 port for clean sharing)
+  const displayIp = lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '';
+
+  const handleCopyIp = () => {
+    if (displayIp) {
+      navigator.clipboard.writeText(displayIp);
+      pushToast({
+        sender: 'Sistema',
+        color: '#3b82f6',
+        type: 'text',
+        content: 'Endereço IP copiado para a área de transferência!',
+      });
+    }
+  };
+
   const handleSelectSpecial = (role: string | null) => {
-    if (role) {
-      claimSheet(clientId, role);
+    if (isOfflineHost) {
+      setLocalClaim(role);
     } else {
-      useLanStore.getState().releaseSheet(clientId);
+      if (role) claimSheet(clientId, role);
+      else useLanStore.getState().releaseSheet(clientId);
     }
     useCharacterStore.getState().clearCharacter();
     setIsSelectionModalOpen(false);
   };
 
   const handleLoadCharacter = async (sheetId: string) => {
-    claimSheet(clientId, sheetId);
+    if (isOfflineHost) {
+      setLocalClaim(sheetId);
+    } else {
+      claimSheet(clientId, sheetId);
+    }
     try {
       const document = await gameClient.loadSheet(sheetId);
       loadCharacter(document, sheetId);
@@ -291,14 +351,32 @@ export function VttApp() {
     }
   };
 
+  // Only connect socket if we are a guest, OR if we are the host and LAN is explicitly Open
   useEffect(() => {
-    const address = isHosting ? '127.0.0.1' : lanHostAddress || '127.0.0.1';
-    connect(address, {
-      clientId,
-      username: username || 'Unknown',
-      color: identityColor,
-    });
-  }, [connect, isHosting, lanHostAddress, clientId, username, identityColor]);
+    if (!isHosting || isLanOpen) {
+      const address = isHosting ? '127.0.0.1' : lanHostAddress || '127.0.0.1';
+      connect(address, {
+        clientId,
+        username: username || 'Unknown',
+        color: identityColor,
+      });
+    }
+  }, [
+    connect,
+    isHosting,
+    isLanOpen,
+    lanHostAddress,
+    clientId,
+    username,
+    identityColor,
+  ]);
+
+  // Synchronize Host local claims to the Network if they Open LAN
+  useEffect(() => {
+    if (isLanOpen && connectionStatus === 'online' && localClaim) {
+      claimSheet(clientId, localClaim);
+    }
+  }, [isLanOpen, connectionStatus, localClaim, clientId, claimSheet]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -372,7 +450,6 @@ export function VttApp() {
       className='fixed inset-0 select-none overflow-hidden bg-zinc-950 font-sans text-zinc-200'
       style={{ '--theme-color': themeColor } as React.CSSProperties}
     >
-      {/* CONNECTION VALIDATION OVERLAY */}
       {!isHosting && connectionStatus !== 'online' && (
         <div className='absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm'>
           <div className='flex flex-col items-center gap-6 rounded border border-zinc-800 bg-zinc-950 p-8 shadow-2xl'>
@@ -387,7 +464,7 @@ export function VttApp() {
               </h3>
               <p className='mt-2 text-sm text-zinc-500'>
                 {connectionStatus === 'connecting'
-                  ? `Tentando alcançar ${lanHostAddress}...`
+                  ? `Tentando alcançar ${displayIp}...`
                   : 'Não foi possível se comunicar com o servidor da mesa.'}
               </p>
             </div>
@@ -428,7 +505,7 @@ export function VttApp() {
             >
               <Ruler size={18} />
             </button>
-            {isGM && (
+            {isTrueGM && (
               <button
                 onClick={() => {
                   if (!isMapTransitioning) {
@@ -444,7 +521,7 @@ export function VttApp() {
             )}
             <button
               onClick={() => setIsHandoutOpen(!isHandoutOpen)}
-              className={`rounded-sm p-2 transition-colors hover:bg-zinc-900 ${!isGM ? 'mt-2' : ''}`}
+              className={`rounded-sm p-2 transition-colors hover:bg-zinc-900 ${!isTrueGM ? 'mt-2' : ''}`}
               style={{
                 color: isHandoutOpen ? 'var(--theme-color)' : '#71717a',
               }}
@@ -460,27 +537,68 @@ export function VttApp() {
             className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 shadow-xl backdrop-blur-sm'
             style={{ borderColor: 'var(--theme-color)' }}
           >
-            <Wifi size={14} style={{ color: 'var(--theme-color)' }} />
-            <span className='font-mono text-xs tracking-wider text-zinc-400'>
-              {lanHostAddress || (isHosting ? 'LAN HOST' : 'LAN CLIENT')}
-            </span>
-            <div className='relative'>
+            <div
+              onClick={isHosting && isLanOpen ? handleCopyIp : undefined}
+              className={`flex items-center gap-2 ${isHosting && isLanOpen ? 'cursor-pointer text-zinc-400 transition-colors hover:text-white' : 'text-zinc-400'}`}
+              title={
+                isHosting && isLanOpen ? 'Clique para copiar o IP' : undefined
+              }
+            >
+              <Wifi
+                size={14}
+                style={{
+                  color:
+                    isLanOpen || !isHosting ? 'var(--theme-color)' : '#71717a',
+                }}
+              />
+              <span className='font-mono text-xs tracking-wider'>
+                {!isHosting
+                  ? displayIp || 'LAN CLIENT'
+                  : isLanOpen
+                    ? displayIp || 'LAN HOST'
+                    : 'OFFLINE'}
+              </span>
+            </div>
+
+            <div className='relative ml-2 border-l border-zinc-700 pl-2'>
               <button
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                className='ml-2 text-zinc-500 transition-colors hover:text-white'
+                className='text-zinc-500 transition-colors hover:text-white'
               >
                 <Settings size={14} />
               </button>
               {isSettingsOpen && (
-                <div className='absolute right-0 top-full z-50 mt-3 w-48 rounded border border-zinc-800 bg-[#0a0a0a] py-1 shadow-2xl'>
+                <div className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-[#0a0a0a] py-1 shadow-2xl'>
+                  {isHosting && !isLanOpen && (
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        void openLan();
+                      }}
+                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-blue-400 transition-colors hover:bg-zinc-900 hover:text-blue-300'
+                    >
+                      Abrir para LAN
+                    </button>
+                  )}
+                  {isHosting && isLanOpen && (
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        void closeLan();
+                      }}
+                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-yellow-500 transition-colors hover:bg-zinc-900 hover:text-yellow-400'
+                    >
+                      Fechar LAN
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setIsSettingsOpen(false);
                       void leaveGame();
                     }}
-                    className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-red-500 transition-colors hover:bg-zinc-900 hover:text-red-400'
+                    className={`w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-red-500 transition-colors hover:bg-zinc-900 hover:text-red-400 ${isHosting ? 'border-t border-zinc-800/50' : ''}`}
                   >
-                    Desconectar / Sair
+                    Sair para o Menu
                   </button>
                 </div>
               )}
@@ -488,23 +606,53 @@ export function VttApp() {
           </div>
 
           <div className='flex gap-2'>
-            {roster
-              .filter((player) => player.connected)
-              .map((player) => (
-                <div
-                  key={player.client_id}
-                  className={`flex h-8 w-8 items-center justify-center rounded-sm border bg-zinc-800 text-xs font-bold shadow-lg transition-colors ${player.client_id === clientId ? 'shadow-[0_0_10px_currentColor]' : ''}`}
-                  style={{ color: player.color, borderColor: player.color }}
-                  title={`${player.username} ${player.client_id === clientId ? '(Você)' : ''}`}
-                >
-                  {getInitials(player.username)}
-                </div>
-              ))}
+            {displayRoster.map((player) => (
+              <div
+                key={player.client_id}
+                className={`flex h-8 w-8 items-center justify-center rounded-sm border bg-zinc-800 text-xs font-bold shadow-lg transition-colors ${player.client_id === clientId ? 'shadow-[0_0_10px_currentColor]' : ''}`}
+                style={{ color: player.color, borderColor: player.color }}
+                title={`${player.username} ${player.client_id === clientId ? '(Você)' : ''}`}
+              >
+                {getInitials(player.username)}
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Floating Elements / Handouts skipped for brevity */}
+      {isHandoutOpen && (
+        <div className='pointer-events-auto absolute right-20 top-24 z-20 flex w-72 flex-col gap-2 shadow-2xl'>
+          <div className='overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
+            <div className='flex cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'>
+              <span className='flex items-center gap-2 font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'>
+                <FileText size={14} style={{ color: 'var(--theme-color)' }} />{' '}
+                Handouts
+              </span>
+            </div>
+            <div className='flex max-h-[300px] flex-col overflow-y-auto'>
+              <div className='flex flex-col gap-2 border-b border-zinc-800/50 px-3 py-2.5 text-sm text-zinc-400'>
+                <div className='flex items-center gap-2'>
+                  <div className='h-1.5 w-1.5 rounded-full bg-zinc-600' />
+                  <span className='truncate'>Anotações do Paciente 42</span>
+                </div>
+                {isTrueGM && (
+                  <div className='ml-3 flex gap-1'>
+                    <button className='rounded bg-zinc-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:bg-zinc-700'>
+                      Público
+                    </button>
+                    <button className='rounded bg-zinc-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:bg-zinc-700'>
+                      Único
+                    </button>
+                    <button className='ml-auto rounded bg-red-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-300 hover:bg-red-900'>
+                      Ocultar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col gap-2'>
         {toasts.map((toast) => (
@@ -598,24 +746,26 @@ export function VttApp() {
             </div>
           )}
 
-          <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/80 p-4 shadow-2xl backdrop-blur-sm'>
-            <ResourceBar
-              label='PV'
-              current={character?.resources.hp.current || 0}
-              max={character?.resources.hp.max || 0}
-              colorClass='text-red-500'
-              activeColorClass='bg-red-500'
-              onUpdate={(delta: number) => applyResourceChange('hp', delta)}
-            />
-            <ResourceBar
-              label='PD'
-              current={character?.resources.dp.current || 0}
-              max={character?.resources.dp.max || 0}
-              colorClass='text-indigo-500'
-              activeColorClass='bg-indigo-500'
-              onUpdate={(delta: number) => applyResourceChange('dp', delta)}
-            />
-          </div>
+          {character && (
+            <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/80 p-4 shadow-2xl backdrop-blur-sm'>
+              <ResourceBar
+                label='PV'
+                current={character.resources.hp.current || 0}
+                max={character.resources.hp.max || 0}
+                colorClass='text-red-500'
+                activeColorClass='bg-red-500'
+                onUpdate={(delta: number) => applyResourceChange('hp', delta)}
+              />
+              <ResourceBar
+                label='PD'
+                current={character.resources.dp.current || 0}
+                max={character.resources.dp.max || 0}
+                colorClass='text-indigo-500'
+                activeColorClass='bg-indigo-500'
+                onUpdate={(delta: number) => applyResourceChange('dp', delta)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -644,6 +794,7 @@ export function VttApp() {
           sheets={sheets}
           roster={roster}
           clientId={clientId}
+          isOfflineHost={isOfflineHost}
         />
       )}
 

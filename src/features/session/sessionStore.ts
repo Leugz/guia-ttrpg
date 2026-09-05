@@ -23,20 +23,29 @@ interface HostInfo {
 interface SessionState {
   clientId: string;
   username: string | null;
+
+  activeGameId: string | null;
   activeGamePath: string | null;
-  /** Address to dial when joining, or the address to share when hosting. */
+  localClaim: string | null;
+
   lanHostAddress: string | null;
   isHosting: boolean;
+  isLanOpen: boolean;
+
   hostedGames: HostedGame[];
-  /** Set when hosting or joining fails, so the UI can stay honest. */
   sessionError: string | null;
 
   setUsername: (name: string) => void;
   createGame: (name: string, actId: string) => Promise<void>;
   deleteGame: (id: string) => Promise<void>;
-  hostGame: (gameId: string) => Promise<void>;
+  loadLocalGame: (gameId: string) => Promise<void>;
+
+  openLan: () => Promise<void>;
+  closeLan: () => Promise<void>;
+
   joinGame: (ipAddress: string) => void;
   leaveGame: () => Promise<void>;
+  setLocalClaim: (claim: string | null) => void;
 }
 
 const generateClientId = () => {
@@ -55,9 +64,12 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       clientId: generateClientId(),
       username: null,
+      activeGameId: null,
       activeGamePath: null,
+      localClaim: null,
       lanHostAddress: null,
       isHosting: false,
+      isLanOpen: false,
       hostedGames: [],
       sessionError: null,
 
@@ -66,8 +78,6 @@ export const useSessionStore = create<SessionState>()(
       createGame: async (name, actId) => {
         const id = Date.now().toString(36);
         try {
-          // Provisions an independent, mutable copy of the Act under the
-          // application data directory.
           const path = await invoke<string>('create_game_instance', {
             gameId: id,
             actId,
@@ -99,48 +109,70 @@ export const useSessionStore = create<SessionState>()(
             actId: game.actId,
           });
         } catch (error) {
-          // The entry is gone from the list either way; the folder is orphaned
-          // at worst, which is recoverable and not worth blocking the UI for.
           console.error('Failed to delete the game folder:', error);
         }
       },
 
-      hostGame: async (gameId) => {
+      loadLocalGame: async (gameId) => {
         const game = get().hostedGames.find((g) => g.id === gameId);
         if (!game) return;
 
         resetTableState();
 
         try {
-          // Re-provision if the folder is missing. Tables created by earlier
-          // builds recorded a path that only existed on one machine, so this
-          // also repairs them in place.
           const path = await invoke<string>('create_game_instance', {
             gameId: game.id,
             actId: game.actId,
           });
 
-          const info = await invoke<HostInfo>('start_hosting', {
-            gameId: game.id,
-            gamePath: path,
-            clientId: get().clientId,
-          });
-
           setGameContext({ mode: 'host', gameRoot: path });
           set({
+            activeGameId: game.id,
             activeGamePath: path,
             isHosting: true,
-            lanHostAddress: info.address,
+            isLanOpen: false,
+            lanHostAddress: null,
             sessionError: null,
+            localClaim: null,
             hostedGames: get().hostedGames.map((g) =>
               g.id === game.id ? { ...g, path } : g
             ),
           });
         } catch (error) {
-          console.error('Failed to start hosting:', error);
+          console.error('Failed to load local game:', error);
           setGameContext({ mode: 'offline', gameRoot: null });
           set({ sessionError: String(error) });
         }
+      },
+
+      openLan: async () => {
+        const { activeGameId, activeGamePath, clientId } = get();
+        if (!activeGameId || !activeGamePath) return;
+
+        try {
+          const info = await invoke<HostInfo>('start_hosting', {
+            gameId: activeGameId,
+            gamePath: activeGamePath,
+            clientId,
+          });
+          set({
+            lanHostAddress: info.address,
+            isLanOpen: true,
+          });
+        } catch (error) {
+          console.error('Failed to open LAN:', error);
+          set({ sessionError: String(error) });
+        }
+      },
+
+      closeLan: async () => {
+        try {
+          await invoke('stop_hosting');
+        } catch (error) {
+          console.error('Failed to stop hosting:', error);
+        }
+        set({ lanHostAddress: null, isLanOpen: false });
+        lan.disconnect();
       },
 
       joinGame: (ipAddress) => {
@@ -149,21 +181,22 @@ export const useSessionStore = create<SessionState>()(
         set({
           lanHostAddress: ipAddress.trim(),
           isHosting: false,
+          isLanOpen: true,
+          activeGameId: 'remote',
           activeGamePath: 'remote_session',
           sessionError: null,
         });
       },
 
       leaveGame: async () => {
-        const { isHosting, clientId } = get();
+        const { isHosting, isLanOpen, clientId } = get();
 
-        // Free the sheet before dropping the socket so nobody is locked out.
         if (!isHosting) lan.releaseSheet(clientId);
-
         useLanStore.getState().disconnect();
+
         setGameContext({ mode: 'offline', gameRoot: null });
 
-        if (isHosting) {
+        if (isHosting && isLanOpen) {
           try {
             await invoke('stop_hosting');
           } catch (error) {
@@ -174,11 +207,16 @@ export const useSessionStore = create<SessionState>()(
         resetTableState();
         set({
           activeGamePath: null,
+          activeGameId: null,
           isHosting: false,
+          isLanOpen: false,
           lanHostAddress: null,
           sessionError: null,
+          localClaim: null,
         });
       },
+
+      setLocalClaim: (claim) => set({ localClaim: claim }),
     }),
     {
       name: 'guia-user-identity',

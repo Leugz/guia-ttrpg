@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Server, LogIn, Edit3, Plus, Play, Trash2 } from 'lucide-react';
+import {
+  Server,
+  LogIn,
+  Edit3,
+  Plus,
+  Play,
+  Trash2,
+  AlertCircle,
+} from 'lucide-react';
 import { useSessionStore } from '../../session/sessionStore';
 
 export function HomeScreen() {
@@ -9,14 +17,14 @@ export function HomeScreen() {
     hostedGames,
     createGame,
     deleteGame,
-    hostGame,
+    loadLocalGame, // Replaced
     joinGame,
+    sessionError,
   } = useSessionStore();
 
   const [ipInput, setIpInput] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(username || '');
-
   const [isCreatingGame, setIsCreatingGame] = useState(false);
   const [newGameName, setNewGameName] = useState('');
 
@@ -37,6 +45,15 @@ export function HomeScreen() {
 
   return (
     <div className='fixed inset-0 flex flex-col items-center justify-center bg-[#050505] p-4 sm:p-8'>
+      {sessionError && (
+        <div className='absolute top-8 z-50 flex items-center gap-3 rounded border border-red-900 bg-red-950/80 px-6 py-4 shadow-2xl backdrop-blur-sm'>
+          <AlertCircle className='text-red-500' size={20} />
+          <span className='font-serif text-sm font-bold tracking-widest text-red-200'>
+            {sessionError}
+          </span>
+        </div>
+      )}
+
       <div className='absolute left-8 top-8 flex items-center gap-3'>
         <div className='flex flex-col'>
           <span className='text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -74,13 +91,12 @@ export function HomeScreen() {
       </div>
 
       <div className='relative z-10 grid w-full max-w-5xl grid-cols-1 gap-8 md:grid-cols-2'>
-        {/* HOST PANEL */}
         <div className='group relative flex h-[450px] flex-col overflow-hidden border border-zinc-800 bg-[#0a0a0a] p-8'>
           <div className='absolute left-0 top-0 h-1 w-full bg-red-900/50'></div>
           <div className='mb-6 flex shrink-0 items-center gap-3'>
             <Server size={24} className='text-red-600' />
             <h2 className='font-serif text-2xl font-black uppercase tracking-widest text-white'>
-              Hospedar Jogo
+              Acessar Mesa
             </h2>
           </div>
 
@@ -143,7 +159,7 @@ export function HomeScreen() {
                         <Trash2 size={16} />
                       </button>
                       <button
-                        onClick={() => hostGame(game.id)}
+                        onClick={() => loadLocalGame(game.id)}
                         className='rounded bg-zinc-800 p-2 text-zinc-300 transition-colors hover:bg-red-900 hover:text-white'
                       >
                         <Play size={16} fill='currentColor' />
