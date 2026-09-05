@@ -7,11 +7,13 @@ import {
   FileText,
   Settings,
   MessageSquare,
-  UserCircle,
   Wifi,
   ShieldAlert,
   X,
   ChevronDown,
+  Copy,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -51,6 +53,75 @@ const getConditionDesc = (id: string) => {
   }
 };
 
+// Custom Draggable Window Component
+const DraggableWindow = ({
+  title,
+  onClose,
+  children,
+  initialX = 100,
+  initialY = 100,
+  width = 'w-72',
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  initialX?: number;
+  initialY?: number;
+  width?: string;
+}) => {
+  const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX - pos.x, startY: e.clientY - pos.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    setPos({
+      x: e.clientX - dragRef.current.startX,
+      y: e.clientY - dragRef.current.startY,
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  return (
+    <div
+      className={`pointer-events-auto absolute z-50 flex ${width} flex-col gap-2 shadow-2xl`}
+      style={{ left: pos.x, top: pos.y }}
+    >
+      <div className='overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
+        <div
+          className='flex cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
+          <span className='flex select-none items-center gap-2 font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'>
+            <FileText size={14} style={{ color: 'var(--theme-color)' }} />{' '}
+            {title}
+          </span>
+          <button
+            onClick={onClose}
+            className='cursor-pointer text-zinc-500 transition-colors hover:text-white'
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className='flex flex-col'>{children}</div>
+      </div>
+    </div>
+  );
+};
+
 const CharacterSelectionModal = ({
   onClose,
   onSelect,
@@ -68,6 +139,7 @@ const CharacterSelectionModal = ({
   clientId: string;
   isOfflineHost: boolean;
 }) => (
+  // Modal implementation remains unchanged
   <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
     <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
       <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
@@ -85,7 +157,6 @@ const CharacterSelectionModal = ({
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Opções do Sistema
         </p>
-
         <button
           onClick={() => onSelectSpecial('__GM__')}
           disabled={!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)}
@@ -119,7 +190,6 @@ const CharacterSelectionModal = ({
               : 'Assumir'}
           </span>
         </button>
-
         <button
           onClick={() => onSelectSpecial(null)}
           className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
@@ -137,7 +207,6 @@ const CharacterSelectionModal = ({
             Assumir
           </span>
         </button>
-
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Ato 1: Personagens
         </p>
@@ -146,7 +215,6 @@ const CharacterSelectionModal = ({
             const profileColor = getProfileColor(char.profile);
             const isClaimedByOther =
               !isOfflineHost && isSheetTaken(roster, char.id, clientId);
-
             return (
               <button
                 key={char.id}
@@ -204,7 +272,6 @@ const ResourceBar = ({
     { length: VISUAL_BLOCKS },
     (_, i) => i < activeCount
   );
-
   return (
     <div className='flex items-center gap-1'>
       <div className={`w-8 font-serif text-lg font-bold ${colorClass}`}>
@@ -250,7 +317,6 @@ export function VttApp() {
     setLocalClaim,
   } = useSessionStore();
 
-  // AUTOMATED KICKING: Gracefully boot the client to Home when the host stops the server
   useEffect(() => {
     if (closedReason && !isHosting) {
       leaveGame().then(() => {
@@ -261,7 +327,6 @@ export function VttApp() {
 
   const isOfflineHost = isHosting && !isLanOpen;
 
-  // Fake the roster if the GM is offline
   const currentPlayer = isOfflineHost
     ? { claimed_sheet: localClaim }
     : roster.find((p) => p.client_id === clientId);
@@ -299,11 +364,46 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isHandoutOpen, setIsHandoutOpen] = useState(false);
   const [isMapTransitioning, setIsMapTransitioning] = useState(false);
   const [toasts, setToasts] = useState<any[]>([]);
 
-  // IP Parsing & Formatting (Strips the :37373 port for clean sharing)
+  // -------------------------------------------------------------------------
+  // Handouts State
+  // -------------------------------------------------------------------------
+  const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
+
+  // Mock Handout Data
+  const [handouts, setHandouts] = useState([
+    {
+      id: 'h1',
+      title: 'Carta Encontrada',
+      type: 'text',
+      content:
+        'A criatura se alimenta de medo. Não demonstre fraqueza.\n\n- Dr. Veríssimo',
+      isPublic: false,
+    },
+    {
+      id: 'h2',
+      title: 'Símbolo Misterioso',
+      type: 'image',
+      content:
+        'https://images.unsplash.com/photo-1596720426673-e4e14290f0cc?q=80&w=400&auto=format&fit=crop',
+      isPublic: true,
+    },
+  ]);
+  const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
+
+  const visibleHandouts = isTrueGM
+    ? handouts
+    : handouts.filter((h) => h.isPublic);
+
+  const toggleHandoutPublic = (id: string) => {
+    setHandouts((prev) =>
+      prev.map((h) => (h.id === id ? { ...h, isPublic: !h.isPublic } : h))
+    );
+  };
+  // -------------------------------------------------------------------------
+
   const displayIp = lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '';
 
   const handleCopyIp = () => {
@@ -350,7 +450,6 @@ export function VttApp() {
     }
   };
 
-  // Only connect socket if we are a guest, OR if we are the host and LAN is explicitly Open
   useEffect(() => {
     if (!isHosting || isLanOpen) {
       const address = isHosting ? '127.0.0.1' : lanHostAddress || '127.0.0.1';
@@ -370,7 +469,6 @@ export function VttApp() {
     identityColor,
   ]);
 
-  // Synchronize Host local claims to the Network if they Open LAN
   useEffect(() => {
     if (isLanOpen && connectionStatus === 'online' && localClaim) {
       claimSheet(clientId, localClaim);
@@ -519,11 +617,12 @@ export function VttApp() {
               </button>
             )}
             <button
-              onClick={() => setIsHandoutOpen(!isHandoutOpen)}
-              className={`rounded-sm p-2 transition-colors hover:bg-zinc-900 ${!isTrueGM ? 'mt-2' : ''}`}
-              style={{
-                color: isHandoutOpen ? 'var(--theme-color)' : '#71717a',
-              }}
+              onClick={() => setIsHandoutListOpen(!isHandoutListOpen)}
+              className={`rounded-sm p-2 transition-colors ${
+                isHandoutListOpen
+                  ? 'bg-zinc-900 text-[var(--theme-color)]'
+                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+              } ${!isTrueGM ? 'mt-2' : ''}`}
               title='Documentos'
             >
               <FileText size={18} />
@@ -619,39 +718,89 @@ export function VttApp() {
         </div>
       </div>
 
-      {isHandoutOpen && (
-        <div className='pointer-events-auto absolute right-20 top-24 z-20 flex w-72 flex-col gap-2 shadow-2xl'>
-          <div className='overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
-            <div className='flex cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'>
-              <span className='flex items-center gap-2 font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'>
-                <FileText size={14} style={{ color: 'var(--theme-color)' }} />{' '}
-                Handouts
-              </span>
-            </div>
-            <div className='flex max-h-[300px] flex-col overflow-y-auto'>
-              <div className='flex flex-col gap-2 border-b border-zinc-800/50 px-3 py-2.5 text-sm text-zinc-400'>
-                <div className='flex items-center gap-2'>
-                  <div className='h-1.5 w-1.5 rounded-full bg-zinc-600' />
-                  <span className='truncate'>Anotações do Paciente 42</span>
+      {/* DRAGGABLE HANDOUT LIST */}
+      {isHandoutListOpen && (
+        <DraggableWindow
+          title='Handouts'
+          onClose={() => setIsHandoutListOpen(false)}
+          initialX={window.innerWidth - 340}
+          initialY={80}
+          width='w-72'
+        >
+          <div className='flex max-h-[400px] flex-col overflow-y-auto'>
+            {visibleHandouts.map((h) => (
+              <div
+                key={h.id}
+                className='flex flex-col gap-2 border-b border-zinc-800/50 px-3 py-2.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-900/50'
+              >
+                <div
+                  className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
+                  onClick={() =>
+                    !openHandoutIds.includes(h.id) &&
+                    setOpenHandoutIds((prev) => [...prev, h.id])
+                  }
+                >
+                  <div
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : 'bg-zinc-600'}`}
+                  />
+                  <span className='truncate'>{h.title}</span>
                 </div>
                 {isTrueGM && (
                   <div className='ml-3 flex gap-1'>
-                    <button className='rounded bg-zinc-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:bg-zinc-700'>
-                      Público
-                    </button>
-                    <button className='rounded bg-zinc-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:bg-zinc-700'>
-                      Único
-                    </button>
-                    <button className='ml-auto rounded bg-red-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-300 hover:bg-red-900'>
-                      Ocultar
+                    <button
+                      onClick={() => toggleHandoutPublic(h.id)}
+                      className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                    >
+                      {h.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
+                      {h.isPublic ? 'Público' : 'Privado'}
                     </button>
                   </div>
                 )}
               </div>
-            </div>
+            ))}
+            {visibleHandouts.length === 0 && (
+              <div className='p-4 text-center text-xs uppercase tracking-widest text-zinc-600'>
+                Nenhum handout disponível
+              </div>
+            )}
           </div>
-        </div>
+        </DraggableWindow>
       )}
+
+      {/* DRAGGABLE OPEN HANDOUT CONTENT WINDOWS */}
+      {openHandoutIds.map((id, index) => {
+        const handout = handouts.find((h) => h.id === id);
+        if (!handout) return null;
+        if (!isTrueGM && !handout.isPublic) return null; // Fallback safety
+
+        return (
+          <DraggableWindow
+            key={id}
+            title={handout.title}
+            onClose={() =>
+              setOpenHandoutIds((prev) => prev.filter((i) => i !== id))
+            }
+            initialX={150 + index * 30}
+            initialY={150 + index * 30}
+            width='w-96'
+          >
+            <div className='max-h-[600px] overflow-y-auto bg-zinc-950 p-4 text-sm text-zinc-300'>
+              {handout.type === 'text' ? (
+                <p className='whitespace-pre-wrap leading-relaxed'>
+                  {handout.content}
+                </p>
+              ) : (
+                <img
+                  src={handout.content}
+                  alt={handout.title}
+                  className='w-full rounded border border-zinc-800 object-contain'
+                  draggable={false}
+                />
+              )}
+            </div>
+          </DraggableWindow>
+        );
+      })}
 
       <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col gap-2'>
         {toasts.map((toast) => (
@@ -689,15 +838,19 @@ export function VttApp() {
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
         <div className='flex flex-col gap-2'>
+          {/* UPDATED SHEET SELECTOR BUTTON */}
           <button
             onClick={() => setIsSelectionModalOpen(true)}
-            className='flex w-fit cursor-pointer items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 text-left transition-colors hover:border-zinc-600'
+            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/80 px-2 py-1.5 text-left transition-colors hover:border-zinc-600'
           >
-            <UserCircle size={16} style={{ color: 'var(--theme-color)' }} />
-            <span className='font-serif text-sm font-bold uppercase tracking-widest text-zinc-300'>
+            <span
+              className='truncate font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'
+              style={{ color: 'var(--theme-color)' }}
+              title={charName}
+            >
               {charName}
             </span>
-            <ChevronDown size={14} className='text-zinc-600' />
+            <ChevronDown size={14} className='shrink-0 text-zinc-600' />
           </button>
 
           <div
