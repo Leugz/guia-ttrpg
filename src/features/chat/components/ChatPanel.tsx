@@ -17,10 +17,15 @@ import {
   getProfileColor,
 } from '../../character-sheet/characterStore';
 import { useSessionStore } from '../../session/sessionStore';
+import { useLanStore } from '../../session/net/lanStore';
 import { DieShape } from '../../../shared/components/DieShape';
+import { GM_COLOR } from '../../character-sheet/characterStore';
 
 const TextMessage = ({ msg }: { msg: any }) => {
-  const showUsername = msg.username && msg.sender !== msg.username;
+  const isGuestOrGM = msg.sender === 'Guest' || msg.sender === 'Mestre';
+  const primaryName = isGuestOrGM && msg.username ? msg.username : msg.sender;
+  const secondaryName = isGuestOrGM && msg.username ? msg.sender : msg.username;
+
   const timeString = msg.timestamp
     ? new Date(msg.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
@@ -38,11 +43,11 @@ const TextMessage = ({ msg }: { msg: any }) => {
           className='font-serif text-sm font-bold tracking-wider'
           style={{ color: msg.color }}
         >
-          {msg.sender}
+          {primaryName}
         </span>
-        {showUsername && (
+        {secondaryName && primaryName !== secondaryName && (
           <span className='font-mono text-xs text-zinc-600'>
-            ({msg.username})
+            ({secondaryName})
           </span>
         )}
         <span className='ml-auto text-[10px] text-zinc-700'>{timeString}</span>
@@ -65,7 +70,12 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
     .filter((d: any) => d.counted)
     .map((d: any) => d.value);
 
-  const showUsername = rollMsg.username && rollMsg.sender !== rollMsg.username;
+  const isGuestOrGM = rollMsg.sender === 'Guest' || rollMsg.sender === 'Mestre';
+  const primaryName =
+    isGuestOrGM && rollMsg.username ? rollMsg.username : rollMsg.sender;
+  const secondaryName =
+    isGuestOrGM && rollMsg.username ? rollMsg.sender : rollMsg.username;
+
   const timeString = rollMsg.timestamp
     ? new Date(rollMsg.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
@@ -88,11 +98,11 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
           className='font-serif text-sm font-bold tracking-wider'
           style={{ color: rollMsg.color }}
         >
-          {rollMsg.sender}
+          {primaryName}
         </span>
-        {showUsername && (
+        {secondaryName && primaryName !== secondaryName && (
           <span className='font-mono text-xs text-zinc-600'>
-            ({rollMsg.username})
+            ({secondaryName})
           </span>
         )}
         <span className='ml-auto text-[10px] text-zinc-700'>{timeString}</span>
@@ -167,15 +177,19 @@ export function ChatPanel({
 }) {
   const { messages, addMessage } = useChatStore();
   const { character } = useCharacterStore();
-  const { username, isHosting } = useSessionStore();
+  const { username, clientId } = useSessionStore();
+  const { roster } = useLanStore();
 
   const [filter, setFilter] = useState('default');
   const [inputText, setInputText] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // FIX: Replace scrollIntoView with direct scrollTop to prevent horizontal shifting
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    if (isOpen && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight;
     }
   }, [messages, filter, isOpen]);
 
@@ -186,17 +200,26 @@ export function ChatPanel({
     return true;
   });
 
+  const currentPlayer = roster.find((p) => p.client_id === clientId);
+  const claimedSheet = currentPlayer?.claimed_sheet;
+
   const identityColor = character
     ? getProfileColor(character.profile)
-    : isHosting
-      ? '#987c50'
+    : claimedSheet === '__GM__'
+      ? GM_COLOR
       : '#71717a';
+
+  const charName = character
+    ? character.name
+    : claimedSheet === '__GM__'
+      ? 'Mestre'
+      : 'Guest';
 
   const handleSend = () => {
     if (!inputText.trim()) return;
 
     addMessage({
-      sender: character?.name || username || 'Convidado',
+      sender: charName,
       username: username || undefined,
       color: identityColor,
       type: 'text',
@@ -208,9 +231,8 @@ export function ChatPanel({
 
   return (
     <div
-      className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a] shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'invisible translate-x-full sm:visible'}`}
+      className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a] shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
     >
-      {/* (Headers & Filter buttons remain identical, skipping for brevity but they stay exactly the same here) */}
       <div className='relative z-10 flex shrink-0 flex-col gap-3 border-b border-zinc-800/80 bg-zinc-950 p-4'>
         <div className='flex items-center justify-between'>
           <h2 className='font-serif text-lg font-black uppercase tracking-widest text-zinc-200'>
@@ -244,7 +266,12 @@ export function ChatPanel({
           </button>
         </div>
       </div>
-      <div className='scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent relative z-10 flex flex-1 flex-col gap-1 overflow-y-auto p-3'>
+
+      {/* Container utilizing the new scroll fix */}
+      <div
+        ref={scrollContainerRef}
+        className='scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent relative z-10 flex flex-1 flex-col gap-1 overflow-y-auto p-3'
+      >
         {filteredMessages.length === 0 ? (
           <div className='flex h-full flex-col items-center justify-center text-zinc-600 opacity-50'>
             <AlertTriangle size={32} className='mb-2' />
@@ -261,8 +288,8 @@ export function ChatPanel({
             )
           )
         )}
-        <div ref={chatEndRef} />
       </div>
+
       <div className='relative z-10 shrink-0 border-t border-zinc-800 bg-zinc-950 p-3'>
         <div className='group relative'>
           <textarea

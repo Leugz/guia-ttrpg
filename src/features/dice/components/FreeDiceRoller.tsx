@@ -4,8 +4,10 @@ import * as gameClient from '../../session/net/gameClient';
 import {
   useCharacterStore,
   getProfileColor,
+  GM_COLOR,
 } from '../../character-sheet/characterStore';
 import { useSessionStore } from '../../session/sessionStore';
+import { useLanStore } from '../../session/net/lanStore';
 
 interface FreeDiceRollerProps {
   isOpen: boolean;
@@ -17,24 +19,32 @@ const AVAILABLE_DICE = [4, 6, 8, 10, 12, 20];
 export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
   const { addMessage } = useChatStore();
   const { character } = useCharacterStore();
-  const { username, isHosting } = useSessionStore();
+  const { username, clientId } = useSessionStore();
+  const { roster } = useLanStore();
 
   const [pool, setPool] = useState<number[]>([]);
   const [isSecret, setIsSecret] = useState(false);
 
+  const currentPlayer = roster.find((p) => p.client_id === clientId);
+  const claimedSheet = currentPlayer?.claimed_sheet;
+
   const identityColor = character
     ? getProfileColor(character?.profile)
-    : isHosting
-      ? '#987c50'
+    : claimedSheet === '__GM__'
+      ? GM_COLOR
       : '#71717a';
 
-  // Global Keyboard Shortcut (Ctrl+R / Cmd+R)
+  const charName = character
+    ? character.name
+    : claimedSheet === '__GM__'
+      ? 'Mestre'
+      : 'Guest';
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
         e.preventDefault();
         if (isOpen) onClose();
-        // If you need a way to open it from anywhere, that state should live in a global UI store or App.tsx
       }
       if (e.key === 'Escape' && isOpen) {
         onClose();
@@ -61,7 +71,7 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
       const result = await gameClient.rollDice(pool, isSecret);
 
       addMessage({
-        sender: character?.name || username || 'Guest',
+        sender: charName,
         username: username || undefined,
         color: identityColor,
         type: 'roll',
@@ -78,7 +88,7 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
   };
 
   return (
-    <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm'>
+    <div className='fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm'>
       <div className='w-[400px] rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-2xl'>
         <h3 className='mb-4 text-xl font-bold text-white'>Rolagem Livre</h3>
 

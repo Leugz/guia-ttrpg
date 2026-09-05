@@ -54,14 +54,14 @@ const getConditionDesc = (id: string) => {
 const CharacterSelectionModal = ({
   onClose,
   onSelect,
-  onSelectGm,
+  onSelectSpecial,
   sheets,
   roster,
   clientId,
 }: {
   onClose: () => void;
   onSelect: (sheetId: string) => void;
-  onSelectGm: () => void;
+  onSelectSpecial: (role: string | null) => void;
   sheets: SheetSummary[];
   roster: LanPlayer[];
   clientId: string;
@@ -70,7 +70,7 @@ const CharacterSelectionModal = ({
     <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
       <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
         <h2 className='font-serif text-xl font-black uppercase tracking-widest text-zinc-200'>
-          Selecionar Ficha
+          Selecionar Identidade
         </h2>
         <button
           onClick={onClose}
@@ -79,13 +79,16 @@ const CharacterSelectionModal = ({
           <X size={20} />
         </button>
       </div>
-      <div className='flex flex-col gap-2 p-4'>
+      <div className='flex flex-col p-4'>
+        {/* Special Roles */}
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Opções do Sistema
         </p>
+
         <button
-          onClick={onSelectGm}
-          className='group relative mb-4 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
+          onClick={() => onSelectSpecial('__GM__')}
+          disabled={isSheetTaken(roster, '__GM__', clientId)}
+          className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isSheetTaken(roster, '__GM__', clientId) ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
         >
           <div
             className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
@@ -94,12 +97,36 @@ const CharacterSelectionModal = ({
           <div className='ml-2 flex flex-col items-start'>
             <span
               className='font-serif text-lg font-bold tracking-widest'
-              style={{ color: GM_COLOR }}
+              style={{
+                color: isSheetTaken(roster, '__GM__', clientId)
+                  ? '#71717a'
+                  : GM_COLOR,
+              }}
             >
-              Sem Ficha
+              Mestre (GM)
             </span>
             <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-              Participar usando apenas seu Nome de Usuário
+              Apenas um mestre por mesa
+            </span>
+          </div>
+          <span
+            className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isSheetTaken(roster, '__GM__', clientId) ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+          >
+            {isSheetTaken(roster, '__GM__', clientId) ? 'Bloqueado' : 'Assumir'}
+          </span>
+        </button>
+
+        <button
+          onClick={() => onSelectSpecial(null)}
+          className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
+        >
+          <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
+          <div className='ml-2 flex flex-col items-start'>
+            <span className='font-serif text-lg font-bold tracking-widest text-zinc-400'>
+              Guest
+            </span>
+            <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+              Participar usando seu Nome de Usuário
             </span>
           </div>
           <span className='border border-zinc-800 bg-black px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-colors group-hover:border-zinc-600'>
@@ -107,51 +134,58 @@ const CharacterSelectionModal = ({
           </span>
         </button>
 
+        {/* Characters */}
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
-          Ato 1: Disponíveis
+          Ato 1: Personagens
         </p>
-        {sheets.map((char) => {
-          const profileColor = getProfileColor(char.profile);
-          const isClaimedByOther = isSheetTaken(roster, char.id, clientId);
+        <div className='flex flex-col gap-2'>
+          {sheets.map((char) => {
+            const profileColor = getProfileColor(char.profile);
+            const isClaimedByOther = isSheetTaken(roster, char.id, clientId);
 
-          return (
-            <button
-              key={char.id}
-              onClick={() => onSelect(char.id)}
-              disabled={isClaimedByOther}
-              className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByOther ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
-            >
-              <div
-                className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-                style={{
-                  backgroundColor: isClaimedByOther ? '#3f3f46' : profileColor,
-                }}
-              />
-              <div className='ml-2 flex flex-col items-start'>
-                <span
-                  className='font-serif text-lg font-bold tracking-widest'
-                  style={{ color: isClaimedByOther ? '#71717a' : profileColor }}
-                >
-                  {char.name}
-                </span>
-                <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                  {char.profile}
-                </span>
-              </div>
-              <span
-                className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByOther ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+            return (
+              <button
+                key={char.id}
+                onClick={() => onSelect(char.id)}
+                disabled={isClaimedByOther}
+                className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByOther ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
               >
-                {isClaimedByOther ? 'Bloqueado' : 'Assumir'}
-              </span>
-            </button>
-          );
-        })}
+                <div
+                  className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
+                  style={{
+                    backgroundColor: isClaimedByOther
+                      ? '#3f3f46'
+                      : profileColor,
+                  }}
+                />
+                <div className='ml-2 flex flex-col items-start'>
+                  <span
+                    className='font-serif text-lg font-bold tracking-widest'
+                    style={{
+                      color: isClaimedByOther ? '#71717a' : profileColor,
+                    }}
+                  >
+                    {char.name}
+                  </span>
+                  <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+                    {char.profile}
+                  </span>
+                </div>
+                <span
+                  className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByOther ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+                >
+                  {isClaimedByOther ? 'Bloqueado' : 'Assumir'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   </div>
 );
 
-// ... ResourceBar component remains the same ...
+// ... ResourceBar omitted for brevity, keep unchanged ...
 const ResourceBar = ({
   label,
   current,
@@ -195,6 +229,7 @@ export function VttApp() {
   const connect = useLanStore((state) => state.connect);
   const updateIdentity = useLanStore((state) => state.updateIdentity);
   const claimSheet = useLanStore((state) => state.claimSheet);
+  const connectionStatus = useLanStore((state) => state.status);
 
   const { character, loadCharacter, applyResourceChange, ajudado } =
     useCharacterStore();
@@ -202,11 +237,20 @@ export function VttApp() {
   const { leaveGame, isHosting, username, clientId, lanHostAddress } =
     useSessionStore();
 
+  const currentPlayer = roster.find((p) => p.client_id === clientId);
+  const claimedSheet = currentPlayer?.claimed_sheet;
+
   const identityColor = character
     ? getProfileColor(character.profile)
-    : isHosting
+    : claimedSheet === '__GM__'
       ? GM_COLOR
-      : getProfileColor(undefined);
+      : '#71717a';
+
+  const charName = character
+    ? character.name
+    : claimedSheet === '__GM__'
+      ? 'Mestre'
+      : 'Guest';
 
   const [isRollerOpen, setIsRollerOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -215,10 +259,20 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isGM] = useState(isHosting); // GM tools available if hosting
+  const [isGM] = useState(isHosting);
   const [isHandoutOpen, setIsHandoutOpen] = useState(false);
   const [isMapTransitioning, setIsMapTransitioning] = useState(false);
   const [toasts, setToasts] = useState<any[]>([]);
+
+  const handleSelectSpecial = (role: string | null) => {
+    if (role) {
+      claimSheet(clientId, role);
+    } else {
+      useLanStore.getState().releaseSheet(clientId);
+    }
+    useCharacterStore.getState().clearCharacter();
+    setIsSelectionModalOpen(false);
+  };
 
   const handleLoadCharacter = async (sheetId: string) => {
     claimSheet(clientId, sheetId);
@@ -282,7 +336,9 @@ export function VttApp() {
   }, [isHosting, setSheets]);
 
   const pushToast = (toast: any) =>
-    setToasts((prev) => [...prev, { ...toast, toastId: Date.now() }].slice(-3));
+    setToasts((prev) =>
+      [...prev, { ...toast, toastId: Date.now() + Math.random() }].slice(-3)
+    );
 
   const prevMsgCount = useRef(messages.length);
   const isChatOpenRef = useRef(isChatOpen);
@@ -293,7 +349,7 @@ export function VttApp() {
 
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
-      if (!isChatOpenRef.current) {
+      if (!isChatOpenRef.current && prevMsgCount.current > 0) {
         pushToast(messages[messages.length - 1]);
       }
     }
@@ -308,7 +364,6 @@ export function VttApp() {
   }, [toasts]);
 
   const themeColor = getProfileColor(character?.profile);
-  const charName = character?.name || username || 'SELECIONAR FICHA';
   const hasConditions =
     (character && character.active_effects.length > 0) || ajudado;
 
@@ -317,6 +372,35 @@ export function VttApp() {
       className='fixed inset-0 select-none overflow-hidden bg-zinc-950 font-sans text-zinc-200'
       style={{ '--theme-color': themeColor } as React.CSSProperties}
     >
+      {/* CONNECTION VALIDATION OVERLAY */}
+      {!isHosting && connectionStatus !== 'online' && (
+        <div className='absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm'>
+          <div className='flex flex-col items-center gap-6 rounded border border-zinc-800 bg-zinc-950 p-8 shadow-2xl'>
+            {connectionStatus === 'connecting' && (
+              <div className='h-10 w-10 animate-spin rounded-full border-4 border-zinc-700 border-t-blue-500'></div>
+            )}
+            <div className='text-center'>
+              <h3 className='font-serif text-xl font-bold tracking-widest text-white'>
+                {connectionStatus === 'connecting'
+                  ? 'CONECTANDO'
+                  : 'CONEXÃO PERDIDA'}
+              </h3>
+              <p className='mt-2 text-sm text-zinc-500'>
+                {connectionStatus === 'connecting'
+                  ? `Tentando alcançar ${lanHostAddress}...`
+                  : 'Não foi possível se comunicar com o servidor da mesa.'}
+              </p>
+            </div>
+            <button
+              onClick={() => leaveGame()}
+              className='mt-4 rounded bg-zinc-800 px-6 py-2 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-zinc-700 hover:text-red-400'
+            >
+              Cancelar / Sair
+            </button>
+          </div>
+        </div>
+      )}
+
       <div
         className={`absolute inset-0 z-0 transition-opacity duration-1000 ${isMapTransitioning ? 'opacity-0' : 'opacity-100'}`}
       >
@@ -324,7 +408,6 @@ export function VttApp() {
       </div>
 
       <div className='pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4'>
-        {/* Toolbar Left */}
         <div className='pointer-events-auto flex gap-2'>
           <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-[#0a0a0a] p-1.5 shadow-xl'>
             <button
@@ -372,20 +455,14 @@ export function VttApp() {
           </div>
         </div>
 
-        {/* Toolbar Right */}
         <div className='pointer-events-auto flex flex-col items-end gap-2'>
           <div
             className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 shadow-xl backdrop-blur-sm'
             style={{ borderColor: 'var(--theme-color)' }}
-            title={
-              isHosting
-                ? `Compartilhe este endereço: ${lanHostAddress ?? '...'}`
-                : `Conectado a ${lanHostAddress ?? '...'}`
-            }
           >
             <Wifi size={14} style={{ color: 'var(--theme-color)' }} />
             <span className='font-mono text-xs tracking-wider text-zinc-400'>
-              {isHosting ? 'LAN HOST' : 'LAN CLIENT'}
+              {lanHostAddress || (isHosting ? 'LAN HOST' : 'LAN CLIENT')}
             </span>
             <div className='relative'>
               <button
@@ -427,8 +504,41 @@ export function VttApp() {
         </div>
       </div>
 
-      {/* Floating Elements / Alerts remain the same */}
-      {/* ... [Handout and Toast elements left identical] ... */}
+      {/* Floating Elements / Handouts skipped for brevity */}
+
+      <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col gap-2'>
+        {toasts.map((toast) => (
+          <div
+            key={toast.toastId}
+            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/90 p-3 text-sm shadow-2xl backdrop-blur-sm'
+          >
+            <span
+              className='font-serif font-bold tracking-wider'
+              style={{ color: toast.color }}
+            >
+              {toast.sender}:{' '}
+            </span>
+            <span className='text-zinc-200'>
+              {toast.type === 'text' ? (
+                toast.content
+              ) : (
+                <span className='ml-1 inline-flex items-center gap-1.5'>
+                  {toast.rollResult?.dice
+                    ?.filter((d: any) => d.counted)
+                    .map((d: any) => `d${d.sides}[${d.value}]`)
+                    .join(' + ')}
+                  <span className='mx-1' style={{ color: toast.color }}>
+                    =
+                  </span>
+                  <span className='text-lg font-black text-white'>
+                    {toast.rollResult?.total_sum}
+                  </span>
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
         <div className='flex flex-col gap-2'>
@@ -530,11 +640,7 @@ export function VttApp() {
         <CharacterSelectionModal
           onClose={() => setIsSelectionModalOpen(false)}
           onSelect={handleLoadCharacter}
-          onSelectGm={() => {
-            lan.releaseSheet(clientId);
-            useCharacterStore.getState().clearCharacter();
-            setIsSelectionModalOpen(false);
-          }}
+          onSelectSpecial={handleSelectSpecial}
           sheets={sheets}
           roster={roster}
           clientId={clientId}
