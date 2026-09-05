@@ -7,6 +7,8 @@ export type { LanPlayer as Player } from '../session/net/protocol';
 export interface ChatMessage {
   id: string;
   sender: string;
+  username?: string;
+  timestamp?: number;
   color: string;
   type: 'text' | 'roll';
   content?: string;
@@ -17,7 +19,10 @@ export interface ChatMessage {
 interface ChatStore {
   messages: ChatMessage[];
   addMessage: (
-    msg: Omit<ChatMessage, 'id' | 'color'> & { color?: string }
+    msg: Omit<ChatMessage, 'id' | 'color' | 'timestamp'> & {
+      color?: string;
+      timestamp?: number;
+    }
   ) => void;
   /** Replace the log, used when the host sends the backlog on (re)connect. */
   setHistory: (messages: ChatMessage[]) => void;
@@ -39,14 +44,13 @@ const appendUnique = (messages: ChatMessage[], incoming: ChatMessage) =>
 
 export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
-
   addMessage: (msg) => {
     const fullMsg: ChatMessage = {
       ...msg,
       color: msg.color || '#71717a',
       id: generateId(),
+      timestamp: msg.timestamp || Date.now(),
     };
-
     // Shown locally straight away; the host echoes it back to everyone else and
     // the id keeps that echo from duplicating.
     set((state) => ({ messages: appendUnique(state.messages, fullMsg) }));
@@ -57,7 +61,6 @@ export const useChatStore = create<ChatStore>((set) => ({
       );
     }
   },
-
   setHistory: (messages) => set({ messages }),
   clear: () => set({ messages: [] }),
 }));
@@ -83,6 +86,7 @@ lan.on('chat', (payload) => {
 lan.on('session', (session) => {
   const restored = session.history.filter(isChatMessage);
   if (restored.length === 0) return;
+
   useChatStore.setState((state) => {
     const merged = [...restored];
     for (const message of state.messages) {

@@ -5,6 +5,7 @@ import {
   useCharacterStore,
   getProfileColor,
 } from '../../character-sheet/characterStore';
+import { useSessionStore } from '../../session/sessionStore';
 
 interface FreeDiceRollerProps {
   isOpen: boolean;
@@ -16,9 +17,16 @@ const AVAILABLE_DICE = [4, 6, 8, 10, 12, 20];
 export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
   const { addMessage } = useChatStore();
   const { character } = useCharacterStore();
+  const { username, isHosting } = useSessionStore();
 
   const [pool, setPool] = useState<number[]>([]);
   const [isSecret, setIsSecret] = useState(false);
+
+  const identityColor = character
+    ? getProfileColor(character?.profile)
+    : isHosting
+      ? '#987c50'
+      : '#71717a';
 
   // Global Keyboard Shortcut (Ctrl+R / Cmd+R)
   useEffect(() => {
@@ -53,8 +61,9 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
       const result = await gameClient.rollDice(pool, isSecret);
 
       addMessage({
-        sender: character?.name || 'Guest',
-        color: getProfileColor(character?.profile || 'GM'),
+        sender: character?.name || username || 'Guest',
+        username: username || undefined,
+        color: identityColor,
         type: 'roll',
         rollLabel: isSecret ? 'Rolagem Secreta' : 'Rolagem Livre',
         rollResult: result,

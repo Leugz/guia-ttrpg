@@ -4,6 +4,7 @@ import { useCharacterStore, getProfileColor } from '../characterStore';
 import { useChatStore } from '../../chat/chatStore';
 import { DieShape } from '../../../shared/components/DieShape';
 import { SkillPromptModal } from './SkillPromptModal';
+import { useSessionStore } from '../../session/sessionStore';
 
 const BUILTIN_CONDITIONS = [
   {
@@ -100,6 +101,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
   } = useCharacterStore();
 
   const { addMessage } = useChatStore();
+  const { username } = useSessionStore();
   const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
 
@@ -113,6 +115,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
   const handleUseAbility = (name: string, description: string) => {
     addMessage({
       sender: character.name,
+      username: username || undefined,
       color: getProfileColor(character.profile),
       type: 'text',
       content: description,

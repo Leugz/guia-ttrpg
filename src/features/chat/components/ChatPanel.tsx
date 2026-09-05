@@ -16,9 +16,18 @@ import {
   useCharacterStore,
   getProfileColor,
 } from '../../character-sheet/characterStore';
+import { useSessionStore } from '../../session/sessionStore';
 import { DieShape } from '../../../shared/components/DieShape';
 
 const TextMessage = ({ msg }: { msg: any }) => {
+  const showUsername = msg.username && msg.sender !== msg.username;
+  const timeString = msg.timestamp
+    ? new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Agora';
+
   return (
     <div
       className='mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3'
@@ -31,10 +40,12 @@ const TextMessage = ({ msg }: { msg: any }) => {
         >
           {msg.sender}
         </span>
-        <span className='font-mono text-xs text-zinc-600'>
-          ({msg.sender.toLowerCase().replace(/\s+/g, '')})
-        </span>
-        <span className='ml-auto text-[10px] text-zinc-700'>Agora</span>
+        {showUsername && (
+          <span className='font-mono text-xs text-zinc-600'>
+            ({msg.username})
+          </span>
+        )}
+        <span className='ml-auto text-[10px] text-zinc-700'>{timeString}</span>
       </div>
       {msg.rollLabel && (
         <span className='mb-1 block text-xs uppercase tracking-wider text-blue-400'>
@@ -54,6 +65,14 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
     .filter((d: any) => d.counted)
     .map((d: any) => d.value);
 
+  const showUsername = rollMsg.username && rollMsg.sender !== rollMsg.username;
+  const timeString = rollMsg.timestamp
+    ? new Date(rollMsg.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Agora';
+
   return (
     <div
       className={`group relative mb-2 rounded-sm border-l-2 bg-[#121212] px-4 py-3 ${result.secret ? 'border-dashed border-zinc-700' : ''}`}
@@ -71,6 +90,12 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
         >
           {rollMsg.sender}
         </span>
+        {showUsername && (
+          <span className='font-mono text-xs text-zinc-600'>
+            ({rollMsg.username})
+          </span>
+        )}
+        <span className='ml-auto text-[10px] text-zinc-700'>{timeString}</span>
       </div>
       <div className='mb-4'>
         <div className='text-sm font-bold text-zinc-200'>
@@ -142,6 +167,8 @@ export function ChatPanel({
 }) {
   const { messages, addMessage } = useChatStore();
   const { character } = useCharacterStore();
+  const { username, isHosting } = useSessionStore();
+
   const [filter, setFilter] = useState('default');
   const [inputText, setInputText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -159,14 +186,23 @@ export function ChatPanel({
     return true;
   });
 
+  const identityColor = character
+    ? getProfileColor(character.profile)
+    : isHosting
+      ? '#987c50'
+      : '#71717a';
+
   const handleSend = () => {
     if (!inputText.trim()) return;
+
     addMessage({
-      sender: character?.name || 'GM',
-      color: getProfileColor(character?.profile || 'GM'), // Embed exact hex
+      sender: character?.name || username || 'Convidado',
+      username: username || undefined,
+      color: identityColor,
       type: 'text',
       content: inputText.trim(),
     });
+
     setInputText('');
   };
 
@@ -174,6 +210,7 @@ export function ChatPanel({
     <div
       className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a] shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'invisible translate-x-full sm:visible'}`}
     >
+      {/* (Headers & Filter buttons remain identical, skipping for brevity but they stay exactly the same here) */}
       <div className='relative z-10 flex shrink-0 flex-col gap-3 border-b border-zinc-800/80 bg-zinc-950 p-4'>
         <div className='flex items-center justify-between'>
           <h2 className='font-serif text-lg font-black uppercase tracking-widest text-zinc-200'>

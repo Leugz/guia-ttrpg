@@ -3,6 +3,7 @@ import { useCharacterStore, getProfileColor } from '../characterStore';
 import { TestRequest, ResolvedPool, TestOutcome } from '../../../shared/types';
 import { useChatStore } from '../../chat/chatStore';
 import * as gameClient from '../../session/net/gameClient';
+import { useSessionStore } from '../../session/sessionStore';
 
 export function SkillPromptModal({
   attributeName,
@@ -28,6 +29,7 @@ export function SkillPromptModal({
   } = useCharacterStore();
 
   const { addMessage } = useChatStore();
+  const { username } = useSessionStore();
 
   const [selectedSkill, setSelectedSkill] = useState<string | null>(
     initialSkillId || null
@@ -180,6 +182,7 @@ export function SkillPromptModal({
 
       addMessage({
         sender: character.name,
+        username: username || undefined,
         color: getProfileColor(character.profile),
         type: 'roll',
         rollLabel: outcome.pool.label,
