@@ -8,6 +8,7 @@
 
 import {
   buildWsUrl,
+  HandoutUpdateMessage,
   RpcMethod,
   type ConnectionStatus,
   type LanPlayer,
@@ -35,6 +36,7 @@ export interface LanEvents {
   /** A chat or roll payload, forwarded verbatim. */
   chat: Record<string, unknown>;
   closed: string;
+  handout: HandoutUpdateMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -313,6 +315,9 @@ class LanConnection {
       case 'text':
       case 'roll':
         this.emit('chat', message as Record<string, unknown>);
+        return;
+      case 'handout_update':
+        this.emit('handout', message as HandoutUpdateMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);

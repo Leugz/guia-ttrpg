@@ -17,22 +17,26 @@ use crate::storage;
 /// resource directory is the target folder, so we fall back to the repository
 /// checkout to keep the dev loop working without a rebuild.
 pub fn templates_root(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("campaigns");
-        if bundled.is_dir() {
-            return Ok(bundled);
-        }
-    }
-
+    // PRIORIDADE 1: Em modo de desenvolvimento, ler direto da pasta raiz do seu código.
+    // Isso impede que o Tauri use um cache defasado quando você adiciona arquivos novos.
     #[cfg(debug_assertions)]
     {
         let checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .map(|root| root.join("campaigns"));
+
         if let Some(checkout) = checkout {
             if checkout.is_dir() {
                 return Ok(checkout);
             }
+        }
+    }
+
+    // PRIORIDADE 2: Ler dos recursos compilados (usado apenas no app de produção final).
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("campaigns");
+        if bundled.is_dir() {
+            return Ok(bundled);
         }
     }
 
@@ -151,8 +155,8 @@ pub fn resolve_sheet(root: &Path, sheet_id: &str) -> Result<PathBuf, String> {
 /// Summarise every character file in a game instance, sorted by file name so
 /// the selection list is stable between launches and identical for everyone.
 pub fn list_sheets(root: &Path) -> Result<Vec<SheetSummary>, String> {
-    let entries = std::fs::read_dir(root)
-        .map_err(|e| format!("Failed to read {}: {}", root.display(), e))?;
+    let entries =
+        std::fs::read_dir(root).map_err(|e| format!("Failed to read {}: {}", root.display(), e))?;
 
     let mut files: Vec<PathBuf> = entries
         .filter_map(Result::ok)
@@ -254,4 +258,82 @@ mod tests {
         assert_eq!(sheets.len(), 1);
         assert_eq!(sheets[0].id, "alan.md");
     }
+}
+
+use crate::models::Handout;
+
+pub fn resolve_handout(root: &Path, handout_id: &str) -> Result<PathBuf, String> {
+    let trimmed = handout_id.trim();
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(format!("Invalid handout id: {}", handout_id));
+    }
+    let mut path = root.join("handouts").join(trimmed);
+    path.set_extension("md");
+    Ok(path)
+}
+
+pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
+    let dir = root.join("handouts");
+    let mut handouts = Vec::new();
+
+    if !dir.is_dir() {
+        // DETECTOR DE ERRO 1: A PASTA NÃO FOI COPIADA OU NÃO EXISTE
+        handouts.push(crate::models::Handout {
+            id: "error_folder".to_string(),
+            title: "⚠️ ERRO: Pasta Não Encontrada".to_string(),
+            category: "regras".to_string(),
+            content_type: "text".to_string(),
+            is_public: true,
+            shared_with: vec![],
+            content: format!("O G.U.I.A tentou procurar a pasta de handouts no seguinte caminho:\n\n{}\n\nSe você acabou de criar a pasta no seu código, certifique-se de clicar em 'Nova Campanha' na tela inicial para que o sistema copie a pasta.", dir.display()),
+        });
+        return Ok(handouts);
+    }
+
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Failed to read handouts: {}", e))?;
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Some(id) = path.file_stem().and_then(|n| n.to_str()) {
+                if let Ok(raw) = std::fs::read_to_string(&path) {
+                    match crate::storage::parse_handout(id, &raw) {
+                        Ok(handout) => handouts.push(handout),
+                        Err(e) => {
+                            // DETECTOR DE ERRO 2: O ARQUIVO ESTÁ ESCRITO ERRADO
+                            handouts.push(crate::models::Handout {
+                                id: format!("error_{}", id),
+                                title: format!("⚠️ ERRO: {}", id),
+                                category: "documentos".to_string(),
+                                content_type: "text".to_string(),
+                                is_public: true,
+                                shared_with: vec![],
+                                content: format!(
+                                    "Falha ao ler o arquivo {}.md.\n\nMotivo:\n{}",
+                                    id, e
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if handouts.is_empty() {
+        // DETECTOR DE ERRO 3: A PASTA EXISTE, MAS ESTÁ VAZIA
+        handouts.push(crate::models::Handout {
+            id: "error_empty".to_string(),
+            title: "⚠️ ERRO: Pasta Vazia".to_string(),
+            category: "documentos".to_string(),
+            content_type: "text".to_string(),
+            is_public: true,
+            shared_with: vec![],
+            content: format!(
+                "A pasta existe em:\n{}\n\nMas não há nenhum arquivo .md dentro dela.",
+                dir.display()
+            ),
+        });
+    }
+
+    Ok(handouts)
 }

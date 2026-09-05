@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::campaign;
 use crate::dice::{roll_freeform, roll_pool_entries, RollResult, StepDice};
 use crate::effects::{resolve_test, EntryBehavior, ResolvedPool, TestRequest};
 use crate::models::{
@@ -220,8 +221,8 @@ pub fn set_attribute(
     attribute: &str,
     value: StepDice,
 ) -> Result<CharacterSheet, String> {
-    let attribute =
-        Attribute::from_key(attribute).ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
+    let attribute = Attribute::from_key(attribute)
+        .ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
     mutate(path, |sheet| {
         sheet.attributes.set(attribute, value);
         Ok(())
@@ -229,8 +230,8 @@ pub fn set_attribute(
 }
 
 pub fn step_attribute(path: &str, attribute: &str, steps: i32) -> Result<CharacterSheet, String> {
-    let attribute =
-        Attribute::from_key(attribute).ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
+    let attribute = Attribute::from_key(attribute)
+        .ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
     mutate(path, |sheet| {
         let stepped = sheet.attributes.get(attribute).apply_steps(steps);
         sheet.attributes.set(attribute, stepped);
@@ -644,4 +645,55 @@ mod tests {
         assert!(result.secret);
         assert!((1..=20).contains(&result.rolls[0]));
     }
+}
+
+use crate::models::Handout;
+
+pub fn toggle_handout_public(root: &Path, handout_id: &str) -> Result<Handout, String> {
+    let path = campaign::resolve_handout(root, handout_id)?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut handout = storage::parse_handout(handout_id, &raw)?;
+
+    handout.is_public = !handout.is_public;
+
+    let out = storage::render_handout(&handout)?;
+    storage::write_atomic(&path, &out)?;
+
+    state::publish(
+        Target::All,
+        &ServerMessage::HandoutUpdate {
+            handout: handout.clone(),
+        },
+    );
+
+    Ok(handout)
+}
+
+pub fn toggle_handout_share(
+    root: &Path,
+    handout_id: &str,
+    target_client_id: &str,
+) -> Result<Handout, String> {
+    let path = campaign::resolve_handout(root, handout_id)?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut handout = storage::parse_handout(handout_id, &raw)?;
+
+    let target = target_client_id.to_string();
+    if handout.shared_with.contains(&target) {
+        handout.shared_with.retain(|c| c != &target);
+    } else {
+        handout.shared_with.push(target);
+    }
+
+    let out = storage::render_handout(&handout)?;
+    storage::write_atomic(&path, &out)?;
+
+    state::publish(
+        Target::All,
+        &ServerMessage::HandoutUpdate {
+            handout: handout.clone(),
+        },
+    );
+
+    Ok(handout)
 }

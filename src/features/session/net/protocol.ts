@@ -6,6 +6,7 @@
 import type {
   CharacterSheet,
   DeathSaveOutcome,
+  Handout,
   ParsedDocument,
   ResolvedPool,
   ResourceOutcome,
@@ -50,6 +51,7 @@ export interface SessionStateMessage {
   history: unknown[];
   players: LanPlayer[];
   gameId: string;
+  handouts: Handout[];
 }
 
 export interface SheetUpdateMessage {
@@ -71,12 +73,18 @@ export interface SessionClosedMessage {
   reason: string;
 }
 
+export interface HandoutUpdateMessage {
+  type: 'handout_update';
+  handout: Handout;
+}
+
 export type ServerMessage =
   | RosterSyncMessage
   | SessionStateMessage
   | SheetUpdateMessage
   | RpcResultMessage
-  | SessionClosedMessage;
+  | SessionClosedMessage
+  | HandoutUpdateMessage;
 
 // --- RPC --------------------------------------------------------------------
 
@@ -100,6 +108,8 @@ export const RpcMethod = {
   grantSheetAccess: 'grant_sheet_access',
   revokeSheetAccess: 'revoke_sheet_access',
   rollDice: 'roll_dice',
+  toggleHandoutPublic: 'toggle_handout_public',
+  toggleHandoutShare: 'toggle_handout_share',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -121,6 +131,8 @@ export interface RpcResults {
   [RpcMethod.grantSheetAccess]: CharacterSheet;
   [RpcMethod.revokeSheetAccess]: CharacterSheet;
   [RpcMethod.rollDice]: RollResult;
+  [RpcMethod.toggleHandoutPublic]: Handout;
+  [RpcMethod.toggleHandoutShare]: Handout;
 }
 
 export interface TestRpcParams {

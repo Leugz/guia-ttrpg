@@ -10,13 +10,14 @@ import { create } from 'zustand';
 
 import { lan, type Identity } from './lanConnection';
 import type { ConnectionStatus, LanPlayer, SheetSummary } from './protocol';
+import { Handout } from '../../../shared/types';
 
 interface LanState {
   status: ConnectionStatus;
   roster: LanPlayer[];
   sheets: SheetSummary[];
-  /** Set when the host closes the table, so the UI can explain why. */
   closedReason: string | null;
+  handouts: Handout[];
 
   connect: (address: string, identity: Identity) => void;
   updateIdentity: (identity: Identity) => void;
@@ -24,12 +25,14 @@ interface LanState {
   claimSheet: (clientId: string, sheetId: string) => void;
   releaseSheet: (clientId: string) => void;
   setSheets: (sheets: SheetSummary[]) => void;
+  setHandouts: (handouts: Handout[]) => void;
 }
 
 export const useLanStore = create<LanState>()((set) => ({
   status: 'idle',
   roster: [],
   sheets: [],
+  handouts: [],
   closedReason: null,
 
   connect: (address, identity) => {
@@ -47,6 +50,7 @@ export const useLanStore = create<LanState>()((set) => ({
   claimSheet: (clientId, sheetId) => lan.claimSheet(clientId, sheetId),
   releaseSheet: (clientId) => lan.releaseSheet(clientId),
   setSheets: (sheets) => set({ sheets }),
+  setHandouts: (handouts) => set({ handouts }),
 }));
 
 lan.on('status', (status) => useLanStore.setState({ status }));
@@ -57,8 +61,17 @@ lan.on('session', (session) => {
   useLanStore.setState({
     sheets: session.sheets,
     roster: session.players,
+    handouts: session.handouts,
     closedReason: null,
   });
+});
+
+lan.on('handout', (message) => {
+  useLanStore.setState((state) => ({
+    handouts: state.handouts.map((h) =>
+      h.id === message.handout.id ? message.handout : h
+    ),
+  }));
 });
 
 lan.on('closed', (reason) => useLanStore.setState({ closedReason: reason }));

@@ -233,3 +233,69 @@ Conteúdo livre do jogador.
         assert!(resolved.starts_with(root));
     }
 }
+
+use crate::models::Handout;
+
+pub fn parse_handout(id: &str, raw: &str) -> Result<Handout, String> {
+    let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
+    let parsed = matter.parse(raw);
+
+    if parsed.data.is_none() || parsed.matter.trim().is_empty() {
+        return Err(
+            "Nenhum YAML Frontmatter encontrado no topo do arquivo (certifique-se de usar ---)."
+                .into(),
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Frontmatter {
+        title: String,
+        #[serde(default)]
+        category: String,
+        #[serde(default = "crate::models::default_content_type")]
+        content_type: String,
+        #[serde(default)]
+        is_public: bool,
+        #[serde(default)]
+        shared_with: Vec<String>,
+    }
+
+    let fm: Frontmatter = serde_yaml::from_str(&parsed.matter)
+        .map_err(|e| format!("Erro no formato do YAML: {}", e))?;
+
+    Ok(Handout {
+        id: id.to_string(),
+        title: fm.title,
+        category: fm.category,
+        content_type: fm.content_type,
+        is_public: fm.is_public,
+        shared_with: fm.shared_with,
+        content: parsed.content,
+    })
+}
+
+pub fn render_handout(handout: &Handout) -> Result<String, String> {
+    #[derive(serde::Serialize)]
+    struct Frontmatter<'a> {
+        #[serde(rename = "type")]
+        doc_type: &'a str,
+        title: &'a str,
+        category: &'a str,
+        content_type: &'a str,
+        is_public: bool,
+        shared_with: &'a [String],
+    }
+
+    let fm = Frontmatter {
+        doc_type: "handout",
+        title: &handout.title,
+        category: &handout.category,
+        content_type: &handout.content_type,
+        is_public: handout.is_public,
+        shared_with: &handout.shared_with,
+    };
+
+    let yaml =
+        serde_yaml::to_string(&fm).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
+    Ok(format!("---\n{}---\n{}", yaml, handout.content))
+}

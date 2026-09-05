@@ -34,7 +34,8 @@ async fn main() {
                 .path()
                 .app_local_data_dir()
                 .expect("Failed to resolve the application data directory");
-            std::fs::create_dir_all(&data_dir).expect("Failed to create the application data directory");
+            std::fs::create_dir_all(&data_dir)
+                .expect("Failed to create the application data directory");
 
             let db_path = data_dir.join("session.db");
             if let Err(error) = history::init(&db_path) {
@@ -77,9 +78,12 @@ async fn main() {
             commands::create_game_instance,
             commands::delete_game_instance,
             commands::list_game_sheets,
+            commands::list_game_handouts,
             commands::start_hosting,
             commands::stop_hosting,
             commands::host_address,
+            commands::toggle_handout_public,
+            commands::toggle_handout_share,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

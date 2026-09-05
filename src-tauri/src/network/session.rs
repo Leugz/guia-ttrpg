@@ -274,6 +274,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         Vec::new()
     });
     let history = history::recent(&state.db_path, &game_id, HISTORY_LIMIT).unwrap_or_default();
+    let handouts = campaign::list_handouts(&root).unwrap_or_default(); // <-- ADD THIS
     let players = state.players().await;
 
     let message = ServerMessage::SessionState {
@@ -281,6 +282,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         history,
         players,
         game_id,
+        handouts, // <-- ADD THIS
     };
     match serde_json::to_string(&message) {
         Ok(payload) => state.send(Target::Only(vec![client_id.to_string()]), payload),
@@ -612,6 +614,32 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
             let p: RollDiceParams = parse(params)?;
             to_value(api::roll_dice(&p.sides, p.secret)?)
         }
+
+        method::TOGGLE_HANDOUT_PUBLIC => {
+            #[derive(Deserialize)]
+            struct HandoutPublicParams {
+                #[serde(rename = "handoutId")]
+                handout_id: String,
+            }
+            let p: HandoutPublicParams = parse(params)?;
+            to_value(api::toggle_handout_public(root, &p.handout_id)?)
+        }
+        method::TOGGLE_HANDOUT_SHARE => {
+            #[derive(Deserialize)]
+            struct HandoutShareParams {
+                #[serde(rename = "handoutId")]
+                handout_id: String,
+                #[serde(rename = "targetClientId")]
+                target_client_id: String,
+            }
+            let p: HandoutShareParams = parse(params)?;
+            to_value(api::toggle_handout_share(
+                root,
+                &p.handout_id,
+                &p.target_client_id,
+            )?)
+        }
+
         unknown => Err(format!("Unknown method: {}", unknown)),
     }
 }

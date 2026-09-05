@@ -119,12 +119,18 @@ pub enum ServerMessage {
         players: Vec<Player>,
         #[serde(rename = "gameId")]
         game_id: String,
+        handouts: Vec<crate::models::Handout>, // <-- ADDED
     },
     /// A sheet changed on disk; anyone displaying it should refresh.
     SheetUpdate {
         #[serde(rename = "sheetId")]
         sheet_id: String,
         sheet: CharacterSheet,
+    },
+    /// A handout was updated (public, private, or shared state changed)
+    HandoutUpdate {
+        // <-- ADDED
+        handout: crate::models::Handout,
     },
     /// Result of a `Rpc` request.
     RpcResult {
@@ -208,7 +214,9 @@ pub mod method {
     pub const DESCRIBE_ENTRY: &str = "describe_entry";
     pub const GRANT_SHEET_ACCESS: &str = "grant_sheet_access";
     pub const REVOKE_SHEET_ACCESS: &str = "revoke_sheet_access";
-    pub const ROLL_DICE: &str = "roll_dice"; // <-- ADD THIS LINE
+    pub const ROLL_DICE: &str = "roll_dice";
+    pub const TOGGLE_HANDOUT_PUBLIC: &str = "toggle_handout_public"; // <-- ADDED
+    pub const TOGGLE_HANDOUT_SHARE: &str = "toggle_handout_share"; // <-- ADDED
 }
 
 #[cfg(test)]

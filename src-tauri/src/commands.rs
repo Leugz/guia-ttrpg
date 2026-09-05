@@ -35,7 +35,11 @@ pub fn load_character_sheet(path: String) -> Result<ParsedDocument, String> {
 }
 
 #[tauri::command]
-pub fn save_character_sheet(path: String, data: CharacterSheet, body: String) -> Result<(), String> {
+pub fn save_character_sheet(
+    path: String,
+    data: CharacterSheet,
+    body: String,
+) -> Result<(), String> {
     api::save_character_sheet(&path, data, &body)
 }
 
@@ -78,7 +82,11 @@ pub fn roll_test(path: String, request: TestRequest) -> Result<TestOutcome, Stri
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn modify_resource(path: String, resource: String, delta: i32) -> Result<CharacterSheet, String> {
+pub fn modify_resource(
+    path: String,
+    resource: String,
+    delta: i32,
+) -> Result<CharacterSheet, String> {
     api::modify_resource(&path, &resource, delta)
 }
 
@@ -110,7 +118,11 @@ pub fn set_attribute(
 }
 
 #[tauri::command]
-pub fn step_attribute(path: String, attribute: String, steps: i32) -> Result<CharacterSheet, String> {
+pub fn step_attribute(
+    path: String,
+    attribute: String,
+    steps: i32,
+) -> Result<CharacterSheet, String> {
     api::step_attribute(&path, &attribute, steps)
 }
 
@@ -129,7 +141,11 @@ pub fn step_skill(path: String, skill_id: String, steps: i32) -> Result<Characte
 }
 
 #[tauri::command]
-pub fn toggle_entry(path: String, entry_id: String, active: bool) -> Result<CharacterSheet, String> {
+pub fn toggle_entry(
+    path: String,
+    entry_id: String,
+    active: bool,
+) -> Result<CharacterSheet, String> {
     api::toggle_entry(&path, &entry_id, active)
 }
 
@@ -245,4 +261,30 @@ pub async fn host_address() -> Result<Option<String>, String> {
     let state = shared_state()?;
     let session = state.session.read().await;
     Ok(session.as_ref().map(|session| session.address.clone()))
+}
+
+#[tauri::command]
+pub async fn toggle_handout_public(
+    game_root: String,
+    handout_id: String,
+) -> Result<crate::models::Handout, String> {
+    api::toggle_handout_public(std::path::Path::new(&game_root), &handout_id)
+}
+
+#[tauri::command]
+pub async fn toggle_handout_share(
+    game_root: String,
+    handout_id: String,
+    target_client_id: String,
+) -> Result<crate::models::Handout, String> {
+    api::toggle_handout_share(
+        std::path::Path::new(&game_root),
+        &handout_id,
+        &target_client_id,
+    )
+}
+
+#[tauri::command]
+pub fn list_game_handouts(game_path: String) -> Result<Vec<crate::models::Handout>, String> {
+    crate::campaign::list_handouts(std::path::Path::new(&game_path))
 }

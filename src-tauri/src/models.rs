@@ -905,3 +905,23 @@ accessible_sheets: []
         assert!(sheet.set_skill_value("inexistente", StepDice::D6).is_err());
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Handout {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default = "default_content_type")]
+    pub content_type: String,
+    #[serde(default)]
+    pub is_public: bool,
+    #[serde(default)]
+    pub shared_with: Vec<String>,
+    #[serde(default)]
+    pub content: String,
+}
+
+pub fn default_content_type() -> String {
+    "text".to_string()
+}

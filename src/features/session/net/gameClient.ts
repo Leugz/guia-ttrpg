@@ -16,6 +16,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   CharacterSheet,
   DeathSaveOutcome,
+  Handout,
   ParsedDocument,
   ResolvedPool,
   ResourceOutcome,
@@ -235,4 +236,39 @@ export const rollDice = (
   dispatch(
     () => invoke<RollResult>('roll_dice', { sides, secret }),
     () => lan.request(RpcMethod.rollDice, { sides, secret })
+  );
+
+export const toggleHandoutPublic = (handoutId: string): Promise<Handout> =>
+  dispatch(
+    () =>
+      invoke<Handout>('toggle_handout_public', {
+        gameRoot: getGameContext().gameRoot,
+        handoutId,
+      }),
+    () => lan.request(RpcMethod.toggleHandoutPublic, { handoutId })
+  );
+
+export const toggleHandoutShare = (
+  handoutId: string,
+  targetClientId: string
+): Promise<Handout> =>
+  dispatch(
+    () =>
+      invoke<Handout>('toggle_handout_share', {
+        gameRoot: getGameContext().gameRoot,
+        handoutId,
+        targetClientId,
+      }),
+    () =>
+      lan.request(RpcMethod.toggleHandoutShare, { handoutId, targetClientId })
+  );
+
+export const listHandouts = (): Promise<Handout[]> =>
+  dispatch(
+    () =>
+      invoke<Handout[]>('list_game_handouts', {
+        gamePath: getGameContext().gameRoot,
+      }),
+    // Connected clients already receive handouts automatically via SessionState on join
+    () => Promise.resolve([])
   );

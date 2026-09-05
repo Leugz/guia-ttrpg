@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Crosshair,
   Ruler,
@@ -11,9 +12,9 @@ import {
   ShieldAlert,
   X,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
-  Copy,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -139,7 +140,6 @@ const CharacterSelectionModal = ({
   clientId: string;
   isOfflineHost: boolean;
 }) => (
-  // Modal implementation remains unchanged
   <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
     <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
       <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
@@ -157,6 +157,7 @@ const CharacterSelectionModal = ({
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Opções do Sistema
         </p>
+
         <button
           onClick={() => onSelectSpecial('__GM__')}
           disabled={!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)}
@@ -190,6 +191,7 @@ const CharacterSelectionModal = ({
               : 'Assumir'}
           </span>
         </button>
+
         <button
           onClick={() => onSelectSpecial(null)}
           className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
@@ -207,6 +209,7 @@ const CharacterSelectionModal = ({
             Assumir
           </span>
         </button>
+
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Ato 1: Personagens
         </p>
@@ -215,6 +218,7 @@ const CharacterSelectionModal = ({
             const profileColor = getProfileColor(char.profile);
             const isClaimedByOther =
               !isOfflineHost && isSheetTaken(roster, char.id, clientId);
+
             return (
               <button
                 key={char.id}
@@ -272,6 +276,7 @@ const ResourceBar = ({
     { length: VISUAL_BLOCKS },
     (_, i) => i < activeCount
   );
+
   return (
     <div className='flex items-center gap-1'>
       <div className={`w-8 font-serif text-lg font-bold ${colorClass}`}>
@@ -295,7 +300,13 @@ export function VttApp() {
   const roster = useLanStore((state) => state.roster);
   const sheets = useLanStore((state) => state.sheets);
   const setSheets = useLanStore((state) => state.setSheets);
+
+  // NEW: Handout stores mapped correctly
+  const handouts = useLanStore((state) => state.handouts) || [];
+  const setHandouts = useLanStore((state) => state.setHandouts);
+
   const connect = useLanStore((state) => state.connect);
+  const disconnect = useLanStore((state) => state.disconnect);
   const updateIdentity = useLanStore((state) => state.updateIdentity);
   const claimSheet = useLanStore((state) => state.claimSheet);
   const connectionStatus = useLanStore((state) => state.status);
@@ -370,45 +381,38 @@ export function VttApp() {
   const [toasts, setToasts] = useState<any[]>([]);
 
   // -------------------------------------------------------------------------
-  // Handouts State
+  // Handouts State (REAL)
   // -------------------------------------------------------------------------
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
-
-  // Set to empty array to remove hardcoded mock data
-  const [handouts, setHandouts] = useState<any[]>([]);
-
   const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
 
-  // A player can see it if they are the GM, if it's public, OR if their clientId is in the sharedWith array.
+  console.log('Handouts recebidos do servidor:', handouts);
+
+  // A player can see it if they are the GM, if it's public, OR if their clientId is in the shared_with array.
   const visibleHandouts = isTrueGM
     ? handouts
-    : handouts.filter((h) => h.isPublic || h.sharedWith?.includes(clientId));
+    : handouts.filter((h) => h.is_public || h.shared_with?.includes(clientId));
 
   const documentos = visibleHandouts.filter((h) => h.category === 'documentos');
   const regras = visibleHandouts.filter((h) => h.category === 'regras');
 
-  const toggleHandoutPublic = (id: string) => {
-    setHandouts((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, isPublic: !h.isPublic } : h))
-    );
+  const handleToggleHandoutPublic = async (id: string) => {
+    try {
+      await gameClient.toggleHandoutPublic(id);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const toggleHandoutShare = (handoutId: string, targetClientId: string) => {
-    setHandouts((prev) =>
-      prev.map((h) => {
-        if (h.id === handoutId) {
-          const sharedArray = h.sharedWith || [];
-          const isShared = sharedArray.includes(targetClientId);
-          return {
-            ...h,
-            sharedWith: isShared
-              ? sharedArray.filter((id: string) => id !== targetClientId)
-              : [...sharedArray, targetClientId],
-          };
-        }
-        return h;
-      })
-    );
+  const handleToggleHandoutShare = async (
+    handoutId: string,
+    targetClientId: string
+  ) => {
+    try {
+      await gameClient.toggleHandoutShare(handoutId, targetClientId);
+    } catch (e) {
+      console.error(e);
+    }
   };
   // -------------------------------------------------------------------------
 
@@ -467,6 +471,8 @@ export function VttApp() {
         username: username || 'Unknown',
         color: identityColor,
       });
+    } else {
+      disconnect();
     }
   }, [
     connect,
@@ -503,10 +509,12 @@ export function VttApp() {
     });
   }, [identityColor, clientId, username, updateIdentity]);
 
+  // NEW: Fetch Sheets & Handouts when Hosting
   useEffect(() => {
     if (!isHosting) return;
     let cancelled = false;
 
+    // Fetch Sheets
     gameClient
       .listSheets()
       .then((available) => {
@@ -514,10 +522,18 @@ export function VttApp() {
       })
       .catch((error) => console.error('Failed to list the party:', error));
 
+    // Fetch Handouts
+    gameClient
+      .listHandouts()
+      .then((available) => {
+        if (!cancelled) setHandouts(available);
+      })
+      .catch((error) => console.error('Failed to list handouts:', error));
+
     return () => {
       cancelled = true;
     };
-  }, [isHosting, setSheets]);
+  }, [isHosting, setSheets, setHandouts]);
 
   const pushToast = (toast: any) =>
     setToasts((prev) =>
@@ -782,7 +798,7 @@ export function VttApp() {
                         }
                       >
                         <div
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : h.sharedWith.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.is_public ? 'bg-green-500' : h.shared_with && h.shared_with.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
                         />
                         <span className='truncate font-medium'>{h.title}</span>
                       </div>
@@ -790,10 +806,10 @@ export function VttApp() {
                       {isTrueGM && (
                         <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
                           <button
-                            onClick={() => toggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                            onClick={() => handleToggleHandoutPublic(h.id)}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.is_public ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                           >
-                            {h.isPublic ? (
+                            {h.is_public ? (
                               <>
                                 <Eye size={10} /> Público (Todos)
                               </>
@@ -805,7 +821,7 @@ export function VttApp() {
                           </button>
 
                           {/* Targeted Sharing Toggles (Hidden if fully public) */}
-                          {!h.isPublic && (
+                          {!h.is_public && (
                             <div className='flex flex-wrap items-center gap-1'>
                               <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
                                 Visível para:
@@ -816,14 +832,17 @@ export function VttApp() {
                                     p.connected && p.claimed_sheet !== '__GM__'
                                 )
                                 .map((p) => {
-                                  const isShared = h.sharedWith.includes(
-                                    p.client_id
-                                  );
+                                  const isShared =
+                                    h.shared_with &&
+                                    h.shared_with.includes(p.client_id);
                                   return (
                                     <button
                                       key={p.client_id}
                                       onClick={() =>
-                                        toggleHandoutShare(h.id, p.client_id)
+                                        handleToggleHandoutShare(
+                                          h.id,
+                                          p.client_id
+                                        )
                                       }
                                       className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
                                       style={{
@@ -882,7 +901,7 @@ export function VttApp() {
                         }
                       >
                         <div
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : h.sharedWith.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.is_public ? 'bg-green-500' : h.shared_with && h.shared_with.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
                         />
                         <span className='truncate font-medium'>{h.title}</span>
                       </div>
@@ -890,10 +909,10 @@ export function VttApp() {
                       {isTrueGM && (
                         <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
                           <button
-                            onClick={() => toggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                            onClick={() => handleToggleHandoutPublic(h.id)}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.is_public ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                           >
-                            {h.isPublic ? (
+                            {h.is_public ? (
                               <>
                                 <Eye size={10} /> Público (Todos)
                               </>
@@ -905,7 +924,7 @@ export function VttApp() {
                           </button>
 
                           {/* Targeted Sharing Toggles (Hidden if fully public) */}
-                          {!h.isPublic && (
+                          {!h.is_public && (
                             <div className='flex flex-wrap items-center gap-1'>
                               <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
                                 Visível para:
@@ -916,14 +935,17 @@ export function VttApp() {
                                     p.connected && p.claimed_sheet !== '__GM__'
                                 )
                                 .map((p) => {
-                                  const isShared = h.sharedWith.includes(
-                                    p.client_id
-                                  );
+                                  const isShared =
+                                    h.shared_with &&
+                                    h.shared_with.includes(p.client_id);
                                   return (
                                     <button
                                       key={p.client_id}
                                       onClick={() =>
-                                        toggleHandoutShare(h.id, p.client_id)
+                                        handleToggleHandoutShare(
+                                          h.id,
+                                          p.client_id
+                                        )
                                       }
                                       className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
                                       style={{
@@ -969,7 +991,12 @@ export function VttApp() {
       {openHandoutIds.map((id, index) => {
         const handout = handouts.find((h) => h.id === id);
         if (!handout) return null;
-        if (!isTrueGM && !handout.isPublic) return null; // Fallback safety
+        if (
+          !isTrueGM &&
+          !handout.is_public &&
+          (!handout.shared_with || !handout.shared_with.includes(clientId))
+        )
+          return null; // Fallback safety
 
         return (
           <DraggableWindow
@@ -983,10 +1010,11 @@ export function VttApp() {
             width='w-96'
           >
             <div className='max-h-[600px] overflow-y-auto bg-zinc-950 p-4 text-sm text-zinc-300'>
-              {handout.type === 'text' ? (
-                <p className='whitespace-pre-wrap leading-relaxed'>
-                  {handout.content}
-                </p>
+              {handout.content_type === 'text' ? (
+                // NEW: Markdown wrapper with Tailwind styling for generated tags
+                <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
+                  <ReactMarkdown>{handout.content}</ReactMarkdown>
+                </div>
               ) : (
                 <img
                   src={handout.content}
@@ -1036,7 +1064,6 @@ export function VttApp() {
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
         <div className='flex flex-col gap-2'>
-          {/* UPDATED SHEET SELECTOR BUTTON */}
           <button
             onClick={() => setIsSelectionModalOpen(true)}
             className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/80 px-2 py-1.5 text-left transition-colors hover:border-zinc-600'
