@@ -155,14 +155,16 @@ async fn join(state: &Arc<AppState>, client_id: &str, username: &str, color: &st
 
     {
         let mut roster = state.roster.write().await;
-        let entry = roster.entry(client_id.to_string()).or_insert_with(|| Player {
-            client_id: client_id.to_string(),
-            username: username.to_string(),
-            claimed_sheet: None,
-            color: color.to_string(),
-            connected: true,
-            is_gm,
-        });
+        let entry = roster
+            .entry(client_id.to_string())
+            .or_insert_with(|| Player {
+                client_id: client_id.to_string(),
+                username: username.to_string(),
+                claimed_sheet: None,
+                color: color.to_string(),
+                connected: true,
+                is_gm,
+            });
         // Re-sending `join` refreshes identity without dropping the claim, which
         // is what makes reconnects restore rather than duplicate a session.
         entry.username = username.to_string();
@@ -205,20 +207,33 @@ async fn relay_chat(
     envelope: ChatEnvelope,
     raw: &str,
 ) {
-    let (game_id, host) = {
+    let game_id = {
         let session = state.session.read().await;
         match session.as_ref() {
-            Some(session) => (session.game_id.clone(), session.host_client_id.clone()),
-            None => (String::new(), String::new()),
+            Some(session) => session.game_id.clone(),
+            None => String::new(),
         }
     };
 
-    // Secret rolls reach their author and the GM only. Previously every client
-    // received the payload and merely rendered a "GM only" badge.
+    // Find whoever claimed the __GM__ role, rather than assuming it's the host machine
+    let gm_client_id = {
+        let roster = state.roster.read().await;
+        roster
+            .values()
+            .find(|p| p.claimed_sheet.as_deref() == Some("__GM__"))
+            .map(|p| p.client_id.clone())
+    };
+
     let target = if envelope.is_secret() {
-        let mut recipients = vec![host];
-        if let Some(sender) = sender {
-            recipients.push(sender.to_string());
+        let mut recipients = Vec::new();
+        if let Some(gm) = gm_client_id {
+            recipients.push(gm);
+        }
+        if let Some(sender_id) = sender {
+            let s = sender_id.to_string();
+            if !recipients.contains(&s) {
+                recipients.push(s);
+            }
         }
         Target::Only(recipients)
     } else {
@@ -377,7 +392,12 @@ fn requested_sheet(params: &Value) -> Option<String> {
 /// A player may edit the sheet they claimed; the GM may edit anything; and a
 /// claimed sheet's `accessible_sheets` list extends that permission, which is
 /// how the GM hands out extra sheets.
-async fn may_mutate(state: &Arc<AppState>, client_id: &str, sheet_id: &str, root: &PathBuf) -> bool {
+async fn may_mutate(
+    state: &Arc<AppState>,
+    client_id: &str,
+    sheet_id: &str,
+    root: &PathBuf,
+) -> bool {
     if state
         .host_client_id()
         .await
@@ -446,8 +466,7 @@ async fn rpc(
     // File IO must not run on the async executor; each request gets its own
     // blocking task so one slow disk cannot stall the whole table.
     let method = method.to_string();
-    let dispatched =
-        tokio::task::spawn_blocking(move || dispatch(&root, &method, params)).await;
+    let dispatched = tokio::task::spawn_blocking(move || dispatch(&root, &method, params)).await;
 
     match dispatched {
         Ok(Ok(data)) => ServerMessage::ok(request_id, data),
@@ -660,7 +679,12 @@ mod tests {
             json!({ "sheetId": "../../../etc/passwd.md" })
         )
         .is_err());
-        assert!(dispatch(&root, method::LOAD_SHEET, json!({ "sheetId": "sub/alan.md" })).is_err());
+        assert!(dispatch(
+            &root,
+            method::LOAD_SHEET,
+            json!({ "sheetId": "sub/alan.md" })
+        )
+        .is_err());
     }
 
     #[test]

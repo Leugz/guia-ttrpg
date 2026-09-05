@@ -376,18 +376,77 @@ impl StepDice {
 }
 
 pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
-    let entries = sides
-        .iter()
-        .map(|&s| Die::new(s).map(|die| PoolEntry::new(die, die.notation())))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut rng = rand::thread_rng();
+    if sides.is_empty() {
+        return Err("Dice pool cannot be empty.".into());
+    }
 
-    let label = entries
+    let mut dice = Vec::new();
+    let mut rolls = Vec::new();
+    let mut total_sum = 0;
+    let mut highest = 0;
+    let mut lowest = u32::MAX;
+
+    for &side in sides {
+        if !ROLLABLE_SIDES.contains(&side) {
+            return Err(format!("Unsupported die size: d{}", side));
+        }
+        let value = rng.gen_range(1..=side as u32);
+        rolls.push(value);
+        total_sum += value;
+        if value > highest {
+            highest = value;
+        }
+        if value < lowest {
+            lowest = value;
+        }
+    }
+
+    let highest_index = rolls.iter().position(|&v| v == highest).unwrap_or(0);
+    let lowest_index = rolls.iter().position(|&v| v == lowest).unwrap_or(0);
+
+    for (index, (&side, &value)) in sides.iter().zip(rolls.iter()).enumerate() {
+        dice.push(RolledDie {
+            sides: side,
+            value,
+            counted: true,
+            source: format!("d{}", side),
+            is_highest: index == highest_index,
+            is_lowest: index == lowest_index,
+        });
+    }
+
+    let is_critical_failure = rolls.iter().all(|&v| v == 1);
+    let mut is_critical_success = false;
+    for &v in &rolls {
+        if v >= CRITICAL_SUCCESS_THRESHOLD
+            && rolls.iter().filter(|&&x| x == v).count() >= CRITICAL_SUCCESS_COUNT
+        {
+            is_critical_success = true;
+            break;
+        }
+    }
+
+    let label = sides
         .iter()
-        .map(|entry| entry.die.notation())
+        .map(|s| format!("d{}", s))
         .collect::<Vec<_>>()
         .join(" + ");
 
-    roll_pool_entries(&entries, label, secret)
+    Ok(RollResult {
+        dice,
+        rolls,
+        total_sum,
+        highest,
+        lowest,
+        highest_index,
+        lowest_index,
+        dropped_index: None,
+        is_critical_success,
+        is_critical_failure,
+        label,
+        secret,
+    })
 }
 
 #[cfg(test)]

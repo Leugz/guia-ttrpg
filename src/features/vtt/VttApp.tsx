@@ -11,9 +11,9 @@ import {
   ShieldAlert,
   X,
   ChevronDown,
-  Copy,
   Eye,
   EyeOff,
+  Copy,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -315,6 +315,8 @@ export function VttApp() {
     lanHostAddress,
     localClaim,
     setLocalClaim,
+    vpnIp,
+    setVpnIp,
   } = useSessionStore();
 
   useEffect(() => {
@@ -404,7 +406,8 @@ export function VttApp() {
   };
   // -------------------------------------------------------------------------
 
-  const displayIp = lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '';
+  const displayIp =
+    vpnIp || (lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '');
 
   const handleCopyIp = () => {
     if (displayIp) {
@@ -667,6 +670,20 @@ export function VttApp() {
               </button>
               {isSettingsOpen && (
                 <div className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-[#0a0a0a] py-1 shadow-2xl'>
+                  {isHosting && (
+                    <div className='border-b border-zinc-800/50 px-4 py-3'>
+                      <span className='mb-1 block text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+                        IP da VPN (ZeroTier)
+                      </span>
+                      <input
+                        type='text'
+                        value={vpnIp || ''}
+                        onChange={(e) => setVpnIp(e.target.value)}
+                        placeholder='Automático'
+                        className='w-full rounded border border-zinc-700 bg-black px-2 py-1.5 font-mono text-xs text-white outline-none transition-colors focus:border-[var(--theme-color)]'
+                      />
+                    </div>
+                  )}
                   {isHosting && !isLanOpen && (
                     <button
                       onClick={() => {
@@ -676,6 +693,17 @@ export function VttApp() {
                       className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-blue-400 transition-colors hover:bg-zinc-900 hover:text-blue-300'
                     >
                       Abrir para LAN
+                    </button>
+                  )}
+                  {isHosting && isLanOpen && (
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        handleCopyIp();
+                      }}
+                      className='flex w-full items-center justify-between border-b border-zinc-800/50 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white'
+                    >
+                      Copiar IP <Copy size={14} />
                     </button>
                   )}
                   {isHosting && isLanOpen && (

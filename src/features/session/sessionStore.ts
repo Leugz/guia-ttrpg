@@ -35,6 +35,9 @@ interface SessionState {
   hostedGames: HostedGame[];
   sessionError: string | null;
 
+  vpnIp: string | null;
+  setVpnIp: (ip: string | null) => void;
+
   setUsername: (name: string) => void;
   createGame: (name: string, actId: string) => Promise<void>;
   deleteGame: (id: string) => Promise<void>;
@@ -72,6 +75,9 @@ export const useSessionStore = create<SessionState>()(
       isLanOpen: false,
       hostedGames: [],
       sessionError: null,
+      vpnIp: null,
+
+      setVpnIp: (ip) => set({ vpnIp: ip ? ip.trim() : null }),
 
       setUsername: (name) => set({ username: name.trim() }),
 
@@ -224,6 +230,7 @@ export const useSessionStore = create<SessionState>()(
         clientId: state.clientId,
         username: state.username,
         hostedGames: state.hostedGames,
+        vpnIp: state.vpnIp,
       }),
     }
   )
