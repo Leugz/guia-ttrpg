@@ -208,6 +208,7 @@ pub mod method {
     pub const DESCRIBE_ENTRY: &str = "describe_entry";
     pub const GRANT_SHEET_ACCESS: &str = "grant_sheet_access";
     pub const REVOKE_SHEET_ACCESS: &str = "revoke_sheet_access";
+    pub const ROLL_DICE: &str = "roll_dice"; // <-- ADD THIS LINE
 }
 
 #[cfg(test)]

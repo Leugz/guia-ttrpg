@@ -374,55 +374,15 @@ export function VttApp() {
   // -------------------------------------------------------------------------
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
 
-  const [handouts, setHandouts] = useState([
-    {
-      id: 'd1',
-      title: 'Carta Encontrada',
-      type: 'text',
-      category: 'documentos',
-      content:
-        'A criatura se alimenta de medo. Não demonstre fraqueza.\n\n- Dr. Veríssimo',
-      isPublic: false,
-      sharedWith: [] as string[],
-    },
-    {
-      id: 'd2',
-      title: 'Símbolo Misterioso',
-      type: 'image',
-      category: 'documentos',
-      content:
-        'https://images.unsplash.com/photo-1596720426673-e4e14290f0cc?q=80&w=400&auto=format&fit=crop',
-      isPublic: true,
-      sharedWith: [] as string[],
-    },
-    {
-      id: 'r1',
-      title: 'Regra de Ímpeto',
-      type: 'text',
-      category: 'regras',
-      content:
-        'Sempre que você falhar em um teste, preencha 1 espaço de Ímpeto. Você pode gastar 1 Ímpeto para adicionar +d4 ao seu próximo teste.',
-      isPublic: true,
-      sharedWith: [] as string[],
-    },
-    {
-      id: 'r2',
-      title: 'Testes de Morte',
-      type: 'text',
-      category: 'regras',
-      content:
-        'Ao chegar a 0 PV, você deve fazer um teste de Vigor (DT Inicial 7). Cada sucesso aumenta a DT em 3. Falhar resulta em morte.',
-      isPublic: true,
-      sharedWith: [] as string[],
-    },
-  ]);
+  // Set to empty array to remove hardcoded mock data
+  const [handouts, setHandouts] = useState<any[]>([]);
 
   const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
 
   // A player can see it if they are the GM, if it's public, OR if their clientId is in the sharedWith array.
   const visibleHandouts = isTrueGM
     ? handouts
-    : handouts.filter((h) => h.isPublic || h.sharedWith.includes(clientId));
+    : handouts.filter((h) => h.isPublic || h.sharedWith?.includes(clientId));
 
   const documentos = visibleHandouts.filter((h) => h.category === 'documentos');
   const regras = visibleHandouts.filter((h) => h.category === 'regras');
@@ -437,12 +397,13 @@ export function VttApp() {
     setHandouts((prev) =>
       prev.map((h) => {
         if (h.id === handoutId) {
-          const isShared = h.sharedWith.includes(targetClientId);
+          const sharedArray = h.sharedWith || [];
+          const isShared = sharedArray.includes(targetClientId);
           return {
             ...h,
             sharedWith: isShared
-              ? h.sharedWith.filter((id) => id !== targetClientId)
-              : [...h.sharedWith, targetClientId],
+              ? sharedArray.filter((id: string) => id !== targetClientId)
+              : [...sharedArray, targetClientId],
           };
         }
         return h;

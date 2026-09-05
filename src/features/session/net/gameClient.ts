@@ -231,4 +231,8 @@ export const rollTest = (
 export const rollDice = (
   sides: number[],
   secret: boolean
-): Promise<RollResult> => invoke<RollResult>('roll_dice', { sides, secret });
+): Promise<RollResult> =>
+  dispatch(
+    () => invoke<RollResult>('roll_dice', { sides, secret }),
+    () => lan.request(RpcMethod.rollDice, { sides, secret })
+  );

@@ -9,6 +9,7 @@ import type {
   ParsedDocument,
   ResolvedPool,
   ResourceOutcome,
+  RollResult,
   TestOutcome,
   TestRequest,
 } from '../../../shared/types';
@@ -98,6 +99,7 @@ export const RpcMethod = {
   describeEntry: 'describe_entry',
   grantSheetAccess: 'grant_sheet_access',
   revokeSheetAccess: 'revoke_sheet_access',
+  rollDice: 'roll_dice',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -118,6 +120,7 @@ export interface RpcResults {
   [RpcMethod.describeEntry]: unknown;
   [RpcMethod.grantSheetAccess]: CharacterSheet;
   [RpcMethod.revokeSheetAccess]: CharacterSheet;
+  [RpcMethod.rollDice]: RollResult;
 }
 
 export interface TestRpcParams {

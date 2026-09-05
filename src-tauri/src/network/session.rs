@@ -359,6 +359,13 @@ struct TestParams {
 }
 
 #[derive(Debug, Deserialize)]
+struct RollDiceParams {
+    sides: Vec<u8>,
+    #[serde(default)]
+    secret: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct AccessParams {
     #[serde(rename = "sheetId")]
     sheet_id: String,
@@ -601,6 +608,10 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
             )?)
         }
 
+        method::ROLL_DICE => {
+            let p: RollDiceParams = parse(params)?;
+            to_value(api::roll_dice(&p.sides, p.secret)?)
+        }
         unknown => Err(format!("Unknown method: {}", unknown)),
     }
 }
