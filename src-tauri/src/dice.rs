@@ -7,6 +7,7 @@ pub const STEP_LADDER: [u8; 5] = [4, 6, 8, 10, 12];
 pub const ROLLABLE_SIDES: [u8; 6] = [4, 6, 8, 10, 12, 20];
 pub const MAX_POOL_SIZE: usize = 4;
 pub const COUNTED_DICE: usize = 3;
+
 pub const CRITICAL_SUCCESS_THRESHOLD: u32 = 6;
 pub const CRITICAL_SUCCESS_COUNT: usize = 2;
 
@@ -66,8 +67,10 @@ impl StepDice {
         if value >= 12 {
             return StepDice::D12;
         }
+
         let mut best = StepDice::D4;
         let mut best_distance = i64::MAX;
+
         for step in StepDice::LADDER {
             let distance = (step.sides() as i64 - value).abs();
             if distance < best_distance {
@@ -75,6 +78,7 @@ impl StepDice {
                 best = step;
             }
         }
+
         best
     }
 
@@ -145,17 +149,20 @@ impl<'de> Visitor<'de> for StepDiceVisitor {
         if let Some(die) = StepDice::from_legacy_str(value) {
             return Ok(die);
         }
+
         let fallback = value
             .trim()
             .trim_start_matches(['d', 'D'])
             .parse::<i64>()
             .map(StepDice::nearest)
             .unwrap_or(StepDice::D4);
+
         tracing::warn!(
             invalid = value,
             normalized = fallback.sides(),
             "unsupported step die string normalized to nearest valid value"
         );
+
         Ok(fallback)
     }
 }
@@ -262,6 +269,7 @@ pub fn roll_pool_entries_with<R: Rng + ?Sized>(
     if entries.is_empty() {
         return Err("Dice pool cannot be empty.".into());
     }
+
     if entries.len() > MAX_POOL_SIZE {
         return Err(format!(
             "Dice pool must contain at most {} dice, got {}.",
@@ -324,17 +332,25 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
     assert!(!values.is_empty(), "cannot resolve an empty pool");
 
     let mut ranked: Vec<usize> = (0..values.len()).collect();
+    // Sort descending by value; break ties by retaining original insertion order
     ranked.sort_by(|&a, &b| values[b].cmp(&values[a]).then(a.cmp(&b)));
+
     let counted: Vec<usize> = ranked.iter().copied().take(COUNTED_DICE).collect();
     let dropped = ranked.get(COUNTED_DICE).copied();
-    let total: u32 = counted.iter().map(|&i| values[i]).sum();
 
+    let total: u32 = counted.iter().map(|&i| values[i]).sum();
     let highest = *values.iter().max().expect("pool is non-empty");
     let lowest = *values.iter().min().expect("pool is non-empty");
-    let high_dice = values
-        .iter()
-        .filter(|&&v| v >= CRITICAL_SUCCESS_THRESHOLD)
-        .count();
+
+    let mut is_critical_success = false;
+    for &v in values {
+        if v >= CRITICAL_SUCCESS_THRESHOLD
+            && values.iter().filter(|&&x| x == v).count() >= CRITICAL_SUCCESS_COUNT
+        {
+            is_critical_success = true;
+            break;
+        }
+    }
 
     Resolution {
         highest_index: values.iter().position(|&v| v == highest).unwrap(),
@@ -344,7 +360,7 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
         total,
         highest,
         lowest,
-        is_critical_success: high_dice >= CRITICAL_SUCCESS_COUNT,
+        is_critical_success,
         is_critical_failure: values.iter().all(|&v| v == 1),
     }
 }
@@ -364,11 +380,13 @@ pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
         .iter()
         .map(|&s| Die::new(s).map(|die| PoolEntry::new(die, die.notation())))
         .collect::<Result<Vec<_>, _>>()?;
+
     let label = entries
         .iter()
         .map(|entry| entry.die.notation())
         .collect::<Vec<_>>()
         .join(" + ");
+
     roll_pool_entries(&entries, label, secret)
 }
 
@@ -409,10 +427,13 @@ mod tests {
     fn invalid_die_values_normalize_to_nearest_step() {
         let die: StepDice = serde_yaml::from_str("14").unwrap();
         assert_eq!(die, StepDice::D12);
+
         let die: StepDice = serde_yaml::from_str("2").unwrap();
         assert_eq!(die, StepDice::D4);
+
         let die: StepDice = serde_yaml::from_str("9").unwrap();
         assert_eq!(die, StepDice::D8);
+
         assert_eq!(StepDice::nearest(5), StepDice::D4);
         assert_eq!(StepDice::nearest(7), StepDice::D6);
     }
@@ -444,9 +465,11 @@ mod tests {
         for _ in 0..200 {
             let result =
                 roll_pool_entries_with(&mut rng, &entries(&[8, 8, 8, 8]), "teste", false).unwrap();
+
             let mut sorted = result.rolls.clone();
             sorted.sort_unstable_by(|a, b| b.cmp(a));
             let expected: u32 = sorted.iter().take(3).sum();
+
             assert_eq!(result.total_sum, expected);
             assert_eq!(result.dice.iter().filter(|d| d.counted).count(), 3);
             assert!(result.dropped_index.is_some());
@@ -470,14 +493,21 @@ mod tests {
     }
 
     #[test]
-    fn critical_success_needs_two_dice_at_six_or_above() {
+    fn critical_success_needs_two_identical_dice_at_six_or_above() {
         let mut rng = StdRng::seed_from_u64(3);
         for _ in 0..300 {
             let result =
                 roll_pool_entries_with(&mut rng, &entries(&[12, 12, 12, 12]), "teste", false)
                     .unwrap();
-            let high = result.rolls.iter().filter(|&&v| v >= 6).count();
-            assert_eq!(result.is_critical_success, high >= 2);
+
+            let mut expected_crit = false;
+            for &v in &result.rolls {
+                if v >= 6 && result.rolls.iter().filter(|&&x| x == v).count() >= 2 {
+                    expected_crit = true;
+                    break;
+                }
+            }
+            assert_eq!(result.is_critical_success, expected_crit);
         }
     }
 
@@ -506,15 +536,16 @@ mod tests {
         let resolution = resolve_values(&[1, 1, 1, 1]);
         assert!(resolution.is_critical_failure);
         assert_eq!(resolution.total, 3);
+
         let resolution = resolve_values(&[1, 1, 1, 2]);
         assert!(!resolution.is_critical_failure);
     }
 
     #[test]
-    fn exactly_two_high_dice_are_enough_and_one_is_not() {
+    fn exactly_two_identical_high_dice_are_enough_and_one_is_not() {
         assert!(resolve_values(&[6, 6]).is_critical_success);
-        assert!(resolve_values(&[12, 6, 5, 4]).is_critical_success);
-        assert!(!resolve_values(&[12, 5, 5, 4]).is_critical_success);
+        assert!(resolve_values(&[12, 12, 5, 4]).is_critical_success);
+        assert!(!resolve_values(&[12, 6, 5, 4]).is_critical_success);
         assert!(!resolve_values(&[5, 5, 5]).is_critical_success);
     }
 
@@ -545,6 +576,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(21);
         let result =
             roll_pool_entries_with(&mut rng, &entries(&[12, 12, 12, 12]), "teste", false).unwrap();
+
         assert_eq!(result.highest, *result.rolls.iter().max().unwrap());
         assert_eq!(result.lowest, *result.rolls.iter().min().unwrap());
         assert!(result.dice[result.highest_index].is_highest);
@@ -567,6 +599,7 @@ mod tests {
             PoolEntry::new(StepDice::D6, "Furtividade"),
         ];
         let result = roll_pool_entries(&pool, "Teste de Físico (Furtividade)", false).unwrap();
+
         assert_eq!(result.dice[0].source, "Físico");
         assert_eq!(result.dice[0].sides, 8);
         assert_eq!(result.dice[1].source, "Furtividade");

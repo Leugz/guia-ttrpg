@@ -10,6 +10,7 @@ import {
   ArrowUp,
   ArrowDown,
   X,
+  Skull,
 } from 'lucide-react';
 import { useChatStore } from '../chatStore';
 import {
@@ -22,7 +23,7 @@ import { DieShape } from '../../../shared/components/DieShape';
 import { GM_COLOR } from '../../character-sheet/characterStore';
 
 const TextMessage = ({ msg }: { msg: any }) => {
-  const isGuestOrGM = msg.sender === 'Guest' || msg.sender === 'Mestre';
+  const isGuestOrGM = msg.sender === 'Convidado' || msg.sender === 'Mestre';
   const primaryName = isGuestOrGM && msg.username ? msg.username : msg.sender;
   const secondaryName = isGuestOrGM && msg.username ? msg.sender : msg.username;
 
@@ -70,7 +71,8 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
     .filter((d: any) => d.counted)
     .map((d: any) => d.value);
 
-  const isGuestOrGM = rollMsg.sender === 'Guest' || rollMsg.sender === 'Mestre';
+  const isGuestOrGM =
+    rollMsg.sender === 'Convidado' || rollMsg.sender === 'Mestre';
   const primaryName =
     isGuestOrGM && rollMsg.username ? rollMsg.username : rollMsg.sender;
   const secondaryName =
@@ -82,6 +84,20 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
         minute: '2-digit',
       })
     : 'Agora';
+
+  // Isolate only the specific values that triggered the Critical Success
+  const critValues = new Set<number>();
+  if (result.is_critical_success) {
+    const counts: Record<number, number> = {};
+    result.dice.forEach((d: any) => {
+      counts[d.value] = (counts[d.value] || 0) + 1;
+    });
+    Object.entries(counts).forEach(([val, count]) => {
+      if (Number(val) >= 6 && count >= 2) {
+        critValues.add(Number(val));
+      }
+    });
+  }
 
   return (
     <div
@@ -120,11 +136,13 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
             value={d.value}
             className='h-14 w-14 text-2xl'
             colorClass={
-              !d.counted
-                ? 'text-zinc-500'
-                : result.is_critical_success && d.value >= 6
+              result.is_critical_success && critValues.has(d.value)
+                ? 'text-indigo-400'
+                : result.is_critical_failure
                   ? 'text-red-500'
-                  : 'text-white'
+                  : !d.counted
+                    ? 'text-zinc-500'
+                    : 'text-white'
             }
             isDropped={!d.counted}
           />
@@ -150,16 +168,23 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
               Total
             </span>
             <span
-              className={`font-serif text-4xl font-black ${result.is_critical_success ? 'text-red-500 drop-shadow-[0_0_8px_rgba(220,38,38,0.5)]' : result.is_critical_failure ? 'text-zinc-600' : 'text-zinc-200'}`}
+              className={`font-serif text-4xl font-black ${result.is_critical_success ? 'text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]' : result.is_critical_failure ? 'text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'text-zinc-200'}`}
             >
               {result.total_sum}
             </span>
           </div>
         </div>
       </div>
+
       {result.is_critical_success && (
-        <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-red-500'>
+        <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-indigo-900/50 bg-indigo-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-indigo-400'>
           <Sparkles size={14} /> Sucesso Crítico <Sparkles size={14} />
+        </div>
+      )}
+
+      {result.is_critical_failure && (
+        <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-red-500'>
+          <Skull size={14} /> Falha Crítica <Skull size={14} />
         </div>
       )}
     </div>
@@ -182,8 +207,6 @@ export function ChatPanel({
 
   const [filter, setFilter] = useState('default');
   const [inputText, setInputText] = useState('');
-
-  // FIX: Replace scrollIntoView with direct scrollTop to prevent horizontal shifting
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -213,7 +236,7 @@ export function ChatPanel({
     ? character.name
     : claimedSheet === '__GM__'
       ? 'Mestre'
-      : 'Guest';
+      : 'Convidado';
 
   const handleSend = () => {
     if (!inputText.trim()) return;
@@ -267,7 +290,6 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* Container utilizing the new scroll fix */}
       <div
         ref={scrollContainerRef}
         className='scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent relative z-10 flex flex-1 flex-col gap-1 overflow-y-auto p-3'

@@ -38,7 +38,7 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
     ? character.name
     : claimedSheet === '__GM__'
       ? 'Mestre'
-      : 'Guest';
+      : 'Convidado';
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -125,7 +125,7 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
           )}
         </div>
 
-        <div className='mb-6 flex items-center gap-2'>
+        <div className='mb-4 flex items-center gap-2'>
           <input
             type='checkbox'
             id='secret-roll'
@@ -139,6 +139,13 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
           >
             Rolagem Secreta (GM apenas)
           </label>
+        </div>
+
+        <div className='mb-6 rounded border border-neutral-800/50 bg-black/50 p-3 text-[10px] leading-relaxed text-neutral-500'>
+          * <strong>Sucesso Crítico:</strong> Requer pelo menos 2 dados com o{' '}
+          <em>mesmo valor</em> (sendo 6 ou maior).
+          <br />* <strong>Falha Crítica:</strong> Requer que <em>todos</em> os
+          dados rolados tenham valor 1.
         </div>
 
         <div className='flex justify-end gap-3'>

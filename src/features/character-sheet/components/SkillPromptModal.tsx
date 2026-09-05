@@ -25,7 +25,7 @@ export function SkillPromptModal({
     pendingImpetoD4,
     setPendingImpetoD4,
     ajudado,
-    setAjudado, // NEW
+    setAjudado,
   } = useCharacterStore();
 
   const { addMessage } = useChatStore();
@@ -35,8 +35,6 @@ export function SkillPromptModal({
     initialSkillId || null
   );
   const [isSecret, setIsSecret] = useState(false);
-
-  // FIXED: Auto-loads from the store instead of character.active_effects
   const [helpSteps, setHelpSteps] = useState<number>(ajudado ? 1 : 0);
 
   const [triggeredAbilities, setTriggeredAbilities] = useState<string[]>(() => {
@@ -50,7 +48,6 @@ export function SkillPromptModal({
   const [preview, setPreview] = useState<ResolvedPool | null>(null);
 
   const virtualTriggers: any[] = [];
-
   if (
     attributeName === 'mind' &&
     character?.abilities.some((a) => a.id === 'foco_mental') &&
@@ -73,7 +70,6 @@ export function SkillPromptModal({
       cost: '-2 PD',
     });
   }
-
   if (impeto >= 1 || pendingImpetoD4) {
     virtualTriggers.push({
       id: 'impeto_1',
@@ -101,7 +97,6 @@ export function SkillPromptModal({
     if (triggeredAbilities.includes('impeto_1')) extraDice.push(4);
     if (triggeredAbilities.includes('foco_mental')) extraDice.push(4);
     if (triggeredAbilities.includes('foco_emocional')) extraDice.push(4);
-
     if (triggeredAbilities.includes('avaliacao_1')) extraDice.push(4);
     if (triggeredAbilities.includes('avaliacao_2')) {
       extraDice.push(4);
@@ -133,13 +128,14 @@ export function SkillPromptModal({
   useEffect(() => {
     if (!activeSheetId) return;
     let cancelled = false;
+
     gameClient
       .previewTest(activeSheetId, buildRequest())
       .then((pool: ResolvedPool) => {
-        // A slower reply must not overwrite a newer preview.
         if (!cancelled) setPreview(pool);
       })
       .catch(console.error);
+
     return () => {
       cancelled = true;
     };
@@ -154,6 +150,7 @@ export function SkillPromptModal({
 
   const handleRoll = async () => {
     if (!activeSheetId || !character) return;
+
     try {
       const outcome: TestOutcome = await gameClient.rollTest(
         activeSheetId,
@@ -169,13 +166,11 @@ export function SkillPromptModal({
         if (!pendingImpetoD4) setImpeto((prev) => prev - 1);
         setPendingImpetoD4(false);
       }
-
       if (triggeredAbilities.includes('avaliacao_1'))
         setAvaliacao((prev) => prev - 1);
       if (triggeredAbilities.includes('avaliacao_2'))
         setAvaliacao((prev) => prev - 2);
 
-      // FIXED: Automatically clears the local "Ajudado" state
       if (helpSteps > 0 && ajudado) {
         setAjudado(false);
       }
@@ -314,7 +309,6 @@ export function SkillPromptModal({
                     </span>
                   </div>
                 ))}
-
               {virtualTriggers.map((entry) => (
                 <label
                   key={entry.id}
@@ -381,6 +375,13 @@ export function SkillPromptModal({
           >
             Rolagem Secreta (Apenas Mestre)
           </label>
+        </div>
+
+        <div className='mb-4 rounded border border-zinc-800/50 bg-zinc-900/30 p-3 text-[10px] leading-relaxed text-zinc-500'>
+          * <strong>Sucesso Crítico:</strong> Requer pelo menos 2 dados com o{' '}
+          <em>mesmo valor</em> (sendo 6 ou maior).
+          <br />* <strong>Falha Crítica:</strong> Requer que <em>todos</em> os
+          dados rolados tenham valor 1.
         </div>
 
         {preview && (

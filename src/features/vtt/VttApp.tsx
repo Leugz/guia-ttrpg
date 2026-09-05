@@ -12,7 +12,6 @@ import {
   ShieldAlert,
   X,
   ChevronDown,
-  Copy,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
