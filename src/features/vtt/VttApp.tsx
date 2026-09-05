@@ -374,34 +374,79 @@ export function VttApp() {
   // -------------------------------------------------------------------------
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
 
-  // Mock Handout Data
   const [handouts, setHandouts] = useState([
     {
-      id: 'h1',
+      id: 'd1',
       title: 'Carta Encontrada',
       type: 'text',
+      category: 'documentos',
       content:
         'A criatura se alimenta de medo. Não demonstre fraqueza.\n\n- Dr. Veríssimo',
       isPublic: false,
+      sharedWith: [] as string[],
     },
     {
-      id: 'h2',
+      id: 'd2',
       title: 'Símbolo Misterioso',
       type: 'image',
+      category: 'documentos',
       content:
         'https://images.unsplash.com/photo-1596720426673-e4e14290f0cc?q=80&w=400&auto=format&fit=crop',
       isPublic: true,
+      sharedWith: [] as string[],
+    },
+    {
+      id: 'r1',
+      title: 'Regra de Ímpeto',
+      type: 'text',
+      category: 'regras',
+      content:
+        'Sempre que você falhar em um teste, preencha 1 espaço de Ímpeto. Você pode gastar 1 Ímpeto para adicionar +d4 ao seu próximo teste.',
+      isPublic: true,
+      sharedWith: [] as string[],
+    },
+    {
+      id: 'r2',
+      title: 'Testes de Morte',
+      type: 'text',
+      category: 'regras',
+      content:
+        'Ao chegar a 0 PV, você deve fazer um teste de Vigor (DT Inicial 7). Cada sucesso aumenta a DT em 3. Falhar resulta em morte.',
+      isPublic: true,
+      sharedWith: [] as string[],
     },
   ]);
+
   const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
 
+  // A player can see it if they are the GM, if it's public, OR if their clientId is in the sharedWith array.
   const visibleHandouts = isTrueGM
     ? handouts
-    : handouts.filter((h) => h.isPublic);
+    : handouts.filter((h) => h.isPublic || h.sharedWith.includes(clientId));
+
+  const documentos = visibleHandouts.filter((h) => h.category === 'documentos');
+  const regras = visibleHandouts.filter((h) => h.category === 'regras');
 
   const toggleHandoutPublic = (id: string) => {
     setHandouts((prev) =>
       prev.map((h) => (h.id === id ? { ...h, isPublic: !h.isPublic } : h))
+    );
+  };
+
+  const toggleHandoutShare = (handoutId: string, targetClientId: string) => {
+    setHandouts((prev) =>
+      prev.map((h) => {
+        if (h.id === handoutId) {
+          const isShared = h.sharedWith.includes(targetClientId);
+          return {
+            ...h,
+            sharedWith: isShared
+              ? h.sharedWith.filter((id) => id !== targetClientId)
+              : [...h.sharedWith, targetClientId],
+          };
+        }
+        return h;
+      })
     );
   };
   // -------------------------------------------------------------------------
@@ -749,46 +794,210 @@ export function VttApp() {
       {/* DRAGGABLE HANDOUT LIST */}
       {isHandoutListOpen && (
         <DraggableWindow
-          title='Handouts'
+          title='Arquivos & Documentos'
           onClose={() => setIsHandoutListOpen(false)}
           initialX={window.innerWidth - 340}
           initialY={80}
-          width='w-72'
+          width='w-80'
         >
-          <div className='flex max-h-[400px] flex-col overflow-y-auto'>
-            {visibleHandouts.map((h) => (
-              <div
-                key={h.id}
-                className='flex flex-col gap-2 border-b border-zinc-800/50 px-3 py-2.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-900/50'
-              >
-                <div
-                  className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
-                  onClick={() =>
-                    !openHandoutIds.includes(h.id) &&
-                    setOpenHandoutIds((prev) => [...prev, h.id])
-                  }
-                >
-                  <div
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : 'bg-zinc-600'}`}
-                  />
-                  <span className='truncate'>{h.title}</span>
-                </div>
-                {isTrueGM && (
-                  <div className='ml-3 flex gap-1'>
-                    <button
-                      onClick={() => toggleHandoutPublic(h.id)}
-                      className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+          <div className='flex max-h-[500px] flex-col overflow-y-auto bg-zinc-950/50 pb-2'>
+            {/* CATEGORY: REGRAS */}
+            {(regras.length > 0 || isTrueGM) && (
+              <div className='mb-2 mt-2 px-3'>
+                <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+                  Regras do Sistema
+                </span>
+                <div className='mt-1 flex flex-col gap-1'>
+                  {regras.map((h) => (
+                    <div
+                      key={h.id}
+                      className='flex flex-col gap-2 rounded border border-transparent bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-800 hover:bg-zinc-900/80'
                     >
-                      {h.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
-                      {h.isPublic ? 'Público' : 'Privado'}
-                    </button>
-                  </div>
-                )}
+                      <div
+                        className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
+                        onClick={() =>
+                          !openHandoutIds.includes(h.id) &&
+                          setOpenHandoutIds((prev) => [...prev, h.id])
+                        }
+                      >
+                        <div
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : h.sharedWith.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
+                        />
+                        <span className='truncate font-medium'>{h.title}</span>
+                      </div>
+
+                      {isTrueGM && (
+                        <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
+                          <button
+                            onClick={() => toggleHandoutPublic(h.id)}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                          >
+                            {h.isPublic ? (
+                              <>
+                                <Eye size={10} /> Público (Todos)
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff size={10} /> Privado
+                              </>
+                            )}
+                          </button>
+
+                          {/* Targeted Sharing Toggles (Hidden if fully public) */}
+                          {!h.isPublic && (
+                            <div className='flex flex-wrap items-center gap-1'>
+                              <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
+                                Visível para:
+                              </span>
+                              {roster
+                                .filter(
+                                  (p) =>
+                                    p.connected && p.claimed_sheet !== '__GM__'
+                                )
+                                .map((p) => {
+                                  const isShared = h.sharedWith.includes(
+                                    p.client_id
+                                  );
+                                  return (
+                                    <button
+                                      key={p.client_id}
+                                      onClick={() =>
+                                        toggleHandoutShare(h.id, p.client_id)
+                                      }
+                                      className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                      style={{
+                                        color: isShared ? p.color : undefined,
+                                        borderColor: isShared
+                                          ? p.color
+                                          : '#27272a',
+                                        borderWidth: '1px',
+                                      }}
+                                      title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
+                                    >
+                                      {getInitials(p.username)}
+                                    </button>
+                                  );
+                                })}
+                              {roster.filter(
+                                (p) =>
+                                  p.connected && p.claimed_sheet !== '__GM__'
+                              ).length === 0 && (
+                                <span className='text-[9px] text-zinc-600'>
+                                  Nenhum jogador
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {regras.length === 0 && (
+                    <span className='py-2 text-xs italic text-zinc-600'>
+                      Nenhuma regra disponível.
+                    </span>
+                  )}
+                </div>
               </div>
-            ))}
-            {visibleHandouts.length === 0 && (
-              <div className='p-4 text-center text-xs uppercase tracking-widest text-zinc-600'>
-                Nenhum handout disponível
+            )}
+
+            {/* CATEGORY: DOCUMENTOS */}
+            {(documentos.length > 0 || isTrueGM) && (
+              <div className='mb-2 mt-2 px-3'>
+                <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+                  Documentos & Pistas
+                </span>
+                <div className='mt-1 flex flex-col gap-1'>
+                  {documentos.map((h) => (
+                    <div
+                      key={h.id}
+                      className='flex flex-col gap-2 rounded border border-transparent bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-800 hover:bg-zinc-900/80'
+                    >
+                      <div
+                        className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
+                        onClick={() =>
+                          !openHandoutIds.includes(h.id) &&
+                          setOpenHandoutIds((prev) => [...prev, h.id])
+                        }
+                      >
+                        <div
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.isPublic ? 'bg-green-500' : h.sharedWith.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
+                        />
+                        <span className='truncate font-medium'>{h.title}</span>
+                      </div>
+
+                      {isTrueGM && (
+                        <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
+                          <button
+                            onClick={() => toggleHandoutPublic(h.id)}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.isPublic ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                          >
+                            {h.isPublic ? (
+                              <>
+                                <Eye size={10} /> Público (Todos)
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff size={10} /> Privado
+                              </>
+                            )}
+                          </button>
+
+                          {/* Targeted Sharing Toggles (Hidden if fully public) */}
+                          {!h.isPublic && (
+                            <div className='flex flex-wrap items-center gap-1'>
+                              <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
+                                Visível para:
+                              </span>
+                              {roster
+                                .filter(
+                                  (p) =>
+                                    p.connected && p.claimed_sheet !== '__GM__'
+                                )
+                                .map((p) => {
+                                  const isShared = h.sharedWith.includes(
+                                    p.client_id
+                                  );
+                                  return (
+                                    <button
+                                      key={p.client_id}
+                                      onClick={() =>
+                                        toggleHandoutShare(h.id, p.client_id)
+                                      }
+                                      className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                      style={{
+                                        color: isShared ? p.color : undefined,
+                                        borderColor: isShared
+                                          ? p.color
+                                          : '#27272a',
+                                        borderWidth: '1px',
+                                      }}
+                                      title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
+                                    >
+                                      {getInitials(p.username)}
+                                    </button>
+                                  );
+                                })}
+                              {roster.filter(
+                                (p) =>
+                                  p.connected && p.claimed_sheet !== '__GM__'
+                              ).length === 0 && (
+                                <span className='text-[9px] text-zinc-600'>
+                                  Nenhum jogador
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {documentos.length === 0 && (
+                    <span className='py-2 text-xs italic text-zinc-600'>
+                      Nenhum documento disponível.
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
