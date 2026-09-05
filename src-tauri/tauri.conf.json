@@ -22,9 +22,12 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$HOME/**"
-        ]
+        "scope": {
+          "allow": [
+            "$HOME/.local/share/com.guia.ttrpg/games/**/*"
+          ],
+          "requireLiteralLeadingDot": false
+        }
       }
     }
   },
