@@ -399,3 +399,135 @@ pub fn render_handout(handout: &Handout) -> Result<String, String> {
         serde_yaml::to_string(&fm).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
     Ok(format!("---\n{}---\n{}", yaml, handout.content))
 }
+
+use crate::models::MapDefinition;
+
+/// Parse one map file. The frontmatter carries the metadata and the body is
+/// the campaign-relative path to the image, exactly like an image handout.
+pub fn parse_map(id: &str, raw: &str) -> Result<MapDefinition, String> {
+    let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
+    let parsed = matter.parse(raw);
+
+    if parsed.data.is_none() || parsed.matter.trim().is_empty() {
+        return Err(
+            "Nenhum YAML Frontmatter encontrado no topo do arquivo (certifique-se de usar ---)."
+                .into(),
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Frontmatter {
+        title: String,
+        /// Optional: when absent the image path is taken from the body, which
+        /// is the shape image handouts already use.
+        #[serde(default)]
+        image: String,
+        #[serde(default)]
+        grid_size: u32,
+        #[serde(default)]
+        is_active: bool,
+    }
+
+    let fm: Frontmatter =
+        serde_yaml::from_str(&parsed.matter).map_err(|e| format!("Erro no formato do YAML: {}", e))?;
+
+    let image = if fm.image.trim().is_empty() {
+        parsed.content.trim().to_string()
+    } else {
+        fm.image.trim().to_string()
+    };
+
+    if image.is_empty() {
+        return Err(format!(
+            "O mapa '{}' não aponta para nenhuma imagem. Informe `image:` no frontmatter ou o caminho no corpo do arquivo.",
+            id
+        ));
+    }
+
+    Ok(MapDefinition {
+        id: id.to_string(),
+        title: fm.title,
+        image,
+        grid_size: fm.grid_size,
+        is_active: fm.is_active,
+    })
+}
+
+/// Write a map back out.
+///
+/// `body` is whatever followed the frontmatter in the original file and is
+/// preserved verbatim, so revealing a map never eats the notes a GM keeps
+/// underneath it.
+pub fn render_map(map: &MapDefinition, body: &str) -> Result<String, String> {
+    #[derive(serde::Serialize)]
+    struct Frontmatter<'a> {
+        #[serde(rename = "type")]
+        doc_type: &'a str,
+        title: &'a str,
+        image: &'a str,
+        grid_size: u32,
+        is_active: bool,
+    }
+
+    let fm = Frontmatter {
+        doc_type: "map",
+        title: &map.title,
+        image: &map.image,
+        grid_size: map.grid_size,
+        is_active: map.is_active,
+    };
+
+    let yaml = serde_yaml::to_string(&fm).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
+    Ok(format!("---\n{}---\n{}", yaml, body))
+}
+
+/// The text after a document's frontmatter, or an empty string when there is
+/// none. Used to carry a map's notes through a rewrite.
+pub fn document_body(raw: &str) -> String {
+    let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
+    matter.parse(raw).content
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    const MAP: &str = "---\ntype: \"map\"\ntitle: \"Térreo\"\nimage: \"assets/maps/terreo.png\"\ngrid_size: 70\nis_active: true\n---\n";
+
+    #[test]
+    fn a_map_survives_a_round_trip() {
+        let map = parse_map("terreo", MAP).unwrap();
+        assert_eq!(map.title, "Térreo");
+        assert_eq!(map.image, "assets/maps/terreo.png");
+        assert_eq!(map.grid_size, 70);
+        assert!(map.is_active);
+
+        let reparsed = parse_map("terreo", &render_map(&map, "").unwrap()).unwrap();
+        assert_eq!(reparsed.image, map.image);
+        assert!(reparsed.is_active);
+    }
+
+    #[test]
+    fn rewriting_a_map_keeps_the_notes_underneath_it() {
+        let raw = format!("{MAP}Cheiro de mofo no corredor oeste.\n");
+        let map = parse_map("terreo", &raw).unwrap();
+        let body = document_body(&raw);
+
+        let rewritten = render_map(&map, &body).unwrap();
+        assert!(rewritten.contains("Cheiro de mofo"), "{rewritten}");
+    }
+
+    #[test]
+    fn the_image_path_may_live_in_the_body_instead() {
+        let raw = "---\ntype: \"map\"\ntitle: \"Porão\"\n---\nassets/maps/porao.jpg\n";
+        let map = parse_map("porao", raw).unwrap();
+        assert_eq!(map.image, "assets/maps/porao.jpg");
+        assert_eq!(map.grid_size, 0);
+    }
+
+    #[test]
+    fn a_map_without_an_image_is_rejected() {
+        let raw = "---\ntype: \"map\"\ntitle: \"Vazio\"\n---\n";
+        assert!(parse_map("vazio", raw).is_err());
+    }
+}

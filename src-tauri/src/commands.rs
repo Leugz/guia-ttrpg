@@ -309,3 +309,23 @@ pub async fn open_handout_for_player(
         &target_client_id,
     )
 }
+
+// ---------------------------------------------------------------------------
+// Maps
+//
+// The mirror of the map RPCs, for the window running on the host machine.
+// Same `api` functions, reached over Tauri IPC instead of the socket.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_game_maps(game_path: String) -> Result<Vec<crate::models::MapDefinition>, String> {
+    api::list_maps(std::path::Path::new(&game_path))
+}
+
+#[tauri::command]
+pub async fn set_active_map(
+    game_root: String,
+    map_id: String,
+) -> Result<Vec<crate::models::MapDefinition>, String> {
+    api::set_active_map(std::path::Path::new(&game_root), &map_id)
+}

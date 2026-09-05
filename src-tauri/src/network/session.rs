@@ -18,6 +18,7 @@ use crate::api;
 use crate::campaign;
 use crate::effects::TestRequest;
 use crate::history;
+use crate::models::{MapToken, SaveIndicator};
 use crate::network::protocol::{
     method, ChatEnvelope, ClientMessage, Player, ServerMessage, Target, HISTORY_LIMIT,
 };
@@ -87,8 +88,12 @@ async fn disconnect(state: &Arc<AppState>, client_id: Option<String>) {
             player.connected = false;
         }
     }
+    let board_changed = state.remove_tokens_owned_by(&client_id).await;
     tracing::info!(client_id, "player disconnected");
     broadcast_roster(state).await;
+    if board_changed {
+        broadcast_board(state).await;
+    }
 }
 
 /// Returns an optional direct reply for this socket only.
@@ -137,6 +142,43 @@ async fn handle_text(
             relay_chat(state, client_id.as_deref(), envelope, text).await;
             None
         }
+        ClientMessage::TokenPlace { client_id: _, token } => {
+            place_token(state, client_id.as_deref(), token).await;
+            None
+        }
+        ClientMessage::TokenMove {
+            client_id: _,
+            token_id,
+            x,
+            y,
+            dragging,
+        } => {
+            move_token(state, client_id.as_deref(), &token_id, x, y, dragging).await;
+            None
+        }
+        ClientMessage::TokenState {
+            client_id: _,
+            token_id,
+            grayscale,
+            save_indicator,
+        } => {
+            restyle_token(
+                state,
+                client_id.as_deref(),
+                &token_id,
+                grayscale,
+                save_indicator,
+            )
+            .await;
+            None
+        }
+        ClientMessage::TokenRemove {
+            client_id: _,
+            token_id,
+        } => {
+            remove_token(state, client_id.as_deref(), &token_id).await;
+            None
+        }
         ClientMessage::Rpc {
             request_id,
             method,
@@ -146,6 +188,127 @@ async fn handle_text(
             serde_json::to_string(&response).ok()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Board
+//
+// Token traffic never touches the disk and never waits for a reply. Movement in
+// particular is the hottest thing on this socket — one message per animation
+// frame while a piece is being dragged — so it does the least work possible:
+// authorise, update one map entry, rebroadcast the three numbers that changed.
+// ---------------------------------------------------------------------------
+
+/// Push the whole board out. Used after structural changes, which are rare.
+async fn broadcast_board(state: &Arc<AppState>) {
+    let tokens = state.board().await;
+    let message = ServerMessage::TokensSync { tokens };
+    match serde_json::to_string(&message) {
+        Ok(payload) => state.send(Target::All, payload),
+        Err(error) => tracing::error!(%error, "failed to serialise the board"),
+    }
+}
+
+async fn place_token(state: &Arc<AppState>, sender: Option<&str>, token: MapToken) {
+    let Some(sender) = sender else {
+        return;
+    };
+
+    let mut token = token;
+    // The owner is the connection that sent this, never what the payload
+    // claims, so nobody can place a piece in somebody else's name.
+    token.owner_client_id = sender.to_string();
+    if token.id.trim().is_empty() || token.map_id.trim().is_empty() {
+        tracing::warn!(sender, "rejected a token with no id or map");
+        return;
+    }
+
+    {
+        let mut tokens = state.tokens.write().await;
+        // One token per owner per map: dragging your portrait out again moves
+        // your piece rather than cluttering the board with copies of you.
+        tokens.retain(|_, existing| {
+            !(existing.owner_client_id == token.owner_client_id
+                && existing.map_id == token.map_id
+                && existing.sheet_id == token.sheet_id)
+        });
+        tokens.insert(token.id.clone(), token);
+    }
+    broadcast_board(state).await;
+}
+
+async fn move_token(
+    state: &Arc<AppState>,
+    sender: Option<&str>,
+    token_id: &str,
+    x: f64,
+    y: f64,
+    dragging: bool,
+) {
+    let Some(sender) = sender else {
+        return;
+    };
+    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+        return;
+    }
+
+    {
+        let mut tokens = state.tokens.write().await;
+        let Some(token) = tokens.get_mut(token_id) else {
+            return;
+        };
+        token.x = x;
+        token.y = y;
+    }
+
+    let message = ServerMessage::TokenMoved {
+        token_id: token_id.to_string(),
+        x,
+        y,
+        dragging,
+    };
+    if let Ok(payload) = serde_json::to_string(&message) {
+        state.send(Target::All, payload);
+    }
+}
+
+async fn restyle_token(
+    state: &Arc<AppState>,
+    sender: Option<&str>,
+    token_id: &str,
+    grayscale: bool,
+    save_indicator: Option<SaveIndicator>,
+) {
+    let Some(sender) = sender else {
+        return;
+    };
+    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+        return;
+    }
+
+    {
+        let mut tokens = state.tokens.write().await;
+        let Some(token) = tokens.get_mut(token_id) else {
+            return;
+        };
+        token.grayscale = grayscale;
+        token.save_indicator = save_indicator;
+    }
+    broadcast_board(state).await;
+}
+
+async fn remove_token(state: &Arc<AppState>, sender: Option<&str>, token_id: &str) {
+    let Some(sender) = sender else {
+        return;
+    };
+    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+        return;
+    }
+    {
+        let mut tokens = state.tokens.write().await;
+        tokens.remove(token_id);
+    }
+    broadcast_board(state).await;
 }
 
 async fn join(state: &Arc<AppState>, client_id: &str, username: &str, color: &str) {
@@ -276,6 +439,11 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
     });
     let history = history::recent(&state.db_path, &game_id, HISTORY_LIMIT).unwrap_or_default();
     let handouts = campaign::list_handouts(&root).unwrap_or_default(); // <-- ADD THIS
+    let maps = campaign::list_maps(&root).unwrap_or_else(|error| {
+        tracing::error!(%error, "failed to list maps for a joining client");
+        Vec::new()
+    });
+    let tokens = state.board().await;
     let players = state.players().await;
 
     let message = ServerMessage::SessionState {
@@ -284,6 +452,8 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         players,
         game_id,
         handouts, // <-- ADD THIS
+        maps,
+        tokens,
     };
     match serde_json::to_string(&message) {
         Ok(payload) => state.send(Target::Only(vec![client_id.to_string()]), payload),
@@ -514,6 +684,13 @@ async fn rpc(
         }
     }
 
+    // Revealing a map is the GM's call alone: it changes what the whole table
+    // is looking at, and it is the one map operation that writes to disk.
+    if method == method::SET_ACTIVE_MAP && !state.is_gm(client_id).await {
+        tracing::warn!(client_id, "rejected a map change from a non-GM");
+        return ServerMessage::err(request_id, "Only the GM can change the map.");
+    }
+
     if is_mutating(method) {
         let Some(sheet_id) = requested_sheet(&params) else {
             return ServerMessage::err(request_id, "This request must name a sheet.");
@@ -728,6 +905,33 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
             }
             let p: Params = parse(params)?;
             to_value(api::get_handout_asset(root, &p.handout_id)?)
+        }
+
+        method::LIST_MAPS => to_value(api::list_maps(root)?),
+
+        method::SET_ACTIVE_MAP => {
+            #[derive(Deserialize)]
+            struct Params {
+                #[serde(rename = "mapId")]
+                map_id: String,
+            }
+            let p: Params = parse(params)?;
+            to_value(api::set_active_map(root, &p.map_id)?)
+        }
+
+        method::GET_MAP_ASSET => {
+            #[derive(Deserialize)]
+            struct Params {
+                #[serde(rename = "mapId")]
+                map_id: String,
+            }
+            let p: Params = parse(params)?;
+            to_value(api::get_map_asset(root, &p.map_id)?)
+        }
+
+        method::GET_SHEET_PORTRAIT => {
+            let p: SheetParams = parse(params)?;
+            to_value(api::get_sheet_portrait(root, &p.sheet_id)?)
         }
 
         unknown => Err(format!("Unknown method: {}", unknown)),

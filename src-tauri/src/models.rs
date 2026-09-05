@@ -235,6 +235,12 @@ pub struct CharacterSheet {
     #[serde(default = "default_level")]
     pub level: u32,
     pub color: Option<String>,
+    /// Optional campaign-relative path to this character's portrait, e.g.
+    /// `assets/portraits/alan.png`. It is what the player drags onto the map
+    /// to place their token, so it is resolved through the same asset rules
+    /// an image handout uses. `None` falls back to initials on a colour chip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portrait: Option<String>,
     pub resources: Resources,
     #[serde(alias = "base_attributes")]
     pub attributes: Attributes,
@@ -274,6 +280,7 @@ impl CharacterSheet {
             occupation: occupation.to_string(),
             level: 1,
             color: Some("$dc2626".to_string()),
+            portrait: None,
             resources: Resources {
                 hp: ResourceStat {
                     current: 10,
@@ -924,4 +931,73 @@ pub struct Handout {
 
 pub fn default_content_type() -> String {
     "text".to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Maps and tokens
+// ---------------------------------------------------------------------------
+
+/// A battle map the GM can reveal to the table.
+///
+/// Stored exactly like a handout: one Markdown file per map under `maps/`,
+/// with the YAML frontmatter holding the metadata and the body holding the
+/// campaign-relative path to the image. That keeps maps editable in Obsidian
+/// and keeps the on-disk format uniform.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapDefinition {
+    /// File stem, e.g. `mansao_terreo`.
+    pub id: String,
+    pub title: String,
+    /// Campaign-relative path to a PNG or JPEG, e.g. `assets/maps/terreo.png`.
+    pub image: String,
+    /// Side of one grid square in image pixels. `0` disables the grid overlay.
+    #[serde(default)]
+    pub grid_size: u32,
+    /// Exactly one map is active at a time; that is the one players see.
+    #[serde(default)]
+    pub is_active: bool,
+}
+
+/// Where a save indicator is drawn on a token, mirroring the two death-save
+/// tracks a sheet already carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SaveIndicator {
+    /// Physical track: the character is at 0 PV and owes a save.
+    Hp,
+    /// Mental track: the character is at 0 PD and owes a save.
+    Dp,
+    /// Both tracks at once.
+    Both,
+}
+
+/// A piece on the board.
+///
+/// Tokens are deliberately *not* persisted to Markdown. They move dozens of
+/// times a second while someone drags one, and rewriting a file at that rate
+/// would be both slow and useless — a token's position has no meaning between
+/// sessions. They live in the host's memory for as long as the table is open.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapToken {
+    pub id: String,
+    /// The map this token sits on. Tokens on other maps are not drawn.
+    pub map_id: String,
+    /// Who placed it. A player may only move their own; the GM may move any.
+    pub owner_client_id: String,
+    /// Sheet the token portrays, used by every client to resolve the portrait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet_id: Option<String>,
+    /// Fallback label when there is no portrait to draw.
+    pub label: String,
+    pub color: String,
+    /// Position in *map image* coordinates, so it survives pan and zoom and
+    /// lands in the same spot on every screen regardless of window size.
+    pub x: f64,
+    pub y: f64,
+    /// Drawn desaturated. The owner sets this when they drop to 0 PV/PD; the
+    /// GM can also toggle it by hand for anything else that is out of play.
+    #[serde(default)]
+    pub grayscale: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub save_indicator: Option<SaveIndicator>,
 }

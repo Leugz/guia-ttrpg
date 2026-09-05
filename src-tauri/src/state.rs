@@ -13,6 +13,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Serialize;
 use tokio::sync::{broadcast, oneshot, RwLock};
 
+use crate::models::MapToken;
 use crate::network::protocol::{Envelope, Player, Target};
 
 /// The table currently being hosted by this instance.
@@ -31,6 +32,14 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub roster: RwLock<HashMap<String, Player>>,
     pub session: RwLock<Option<HostedSession>>,
+    /// Pieces currently on the board, keyed by token id.
+    ///
+    /// Held in memory rather than on disk: a token moves many times a second
+    /// while it is being dragged, and its position carries no meaning once the
+    /// table closes. The host is still the single source of truth, so a
+    /// reconnecting player is handed the current board rather than trusting
+    /// whatever their own tab happened to remember.
+    pub tokens: RwLock<HashMap<String, MapToken>>,
 }
 
 impl AppState {
@@ -41,6 +50,7 @@ impl AppState {
             db_path,
             roster: RwLock::new(HashMap::new()),
             session: RwLock::new(None),
+            tokens: RwLock::new(HashMap::new()),
         }
     }
 
@@ -67,6 +77,51 @@ impl AppState {
             .await
             .as_ref()
             .map(|session| session.root.clone())
+    }
+
+    /// Board contents in a stable order so two clients never disagree about
+    /// which token is drawn on top.
+    pub async fn board(&self) -> Vec<MapToken> {
+        let tokens = self.tokens.read().await;
+        let mut list: Vec<MapToken> = tokens.values().cloned().collect();
+        list.sort_by(|a, b| a.id.cmp(&b.id));
+        list
+    }
+
+    /// True when this client placed the token. Callers combine this with the
+    /// GM check, since the GM may rearrange anything on the board while a
+    /// player may only touch their own piece.
+    pub async fn owns_token(&self, client_id: &str, token_id: &str) -> bool {
+        let tokens = self.tokens.read().await;
+        tokens
+            .get(token_id)
+            .is_some_and(|token| token.owner_client_id == client_id)
+    }
+
+    /// Whoever is running the table: the machine hosting it, or whoever has
+    /// claimed the `__GM__` role on it. Both count, which matters because the
+    /// GM is not required to be the host.
+    pub async fn is_gm(&self, client_id: &str) -> bool {
+        if self
+            .host_client_id()
+            .await
+            .is_some_and(|host| host == client_id)
+        {
+            return true;
+        }
+        let roster = self.roster.read().await;
+        roster
+            .get(client_id)
+            .is_some_and(|player| player.claimed_sheet.as_deref() == Some("__GM__"))
+    }
+
+    /// Drop every token a departing client owns, so a player who leaves does
+    /// not strand a piece nobody but the GM can pick up.
+    pub async fn remove_tokens_owned_by(&self, client_id: &str) -> bool {
+        let mut tokens = self.tokens.write().await;
+        let before = tokens.len();
+        tokens.retain(|_, token| token.owner_client_id != client_id);
+        tokens.len() != before
     }
 
     pub fn send(&self, target: Target, payload: String) {

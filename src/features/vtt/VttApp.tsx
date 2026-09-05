@@ -30,7 +30,12 @@ import type { LanPlayer, SheetSummary } from '../session/net/protocol';
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
-import { GameBoard } from '../map/components/GameBoard';
+import {
+  GameBoard,
+  TOKEN_DRAG_MIME,
+  type TokenDragPayload,
+} from '../map/components/GameBoard';
+import { MapSelector } from '../map/components/MapSelector';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
 
 const getInitials = (name: string) => {
@@ -56,24 +61,39 @@ const getConditionDesc = (id: string) => {
 };
 
 // Custom Draggable Window Component
+const MIN_WINDOW_WIDTH = 280;
+const MIN_WINDOW_HEIGHT = 200;
+
 const DraggableWindow = ({
   title,
   onClose,
   children,
   initialX = 100,
   initialY = 100,
-  width = 'w-72',
+  initialWidth = 288,
+  initialHeight,
+  resizable = false,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   initialX?: number;
   initialY?: number;
-  width?: string;
+  /** Pixels, so the corner grip can change it. */
+  initialWidth?: number;
+  /** Omit to let the window size itself to its content. */
+  initialHeight?: number;
+  resizable?: boolean;
 }) => {
   const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const [size, setSize] = useState({
+    width: initialWidth,
+    height: initialHeight ?? 0,
+  });
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0 });
+  const resizeRef = useRef({ startX: 0, startY: 0, width: 0, height: 0 });
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -94,14 +114,55 @@ const DraggableWindow = ({
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
+  const handleResizeDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      width: size.width,
+      // Measuring the rendered height here is what lets a content-sized
+      // window be grabbed and resized without first being given a height.
+      height:
+        size.height ||
+        e.currentTarget.parentElement?.getBoundingClientRect().height ||
+        MIN_WINDOW_HEIGHT,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleResizeMove = (e: React.PointerEvent) => {
+    if (!isResizing) return;
+    setSize({
+      width: Math.max(
+        MIN_WINDOW_WIDTH,
+        resizeRef.current.width + (e.clientX - resizeRef.current.startX)
+      ),
+      height: Math.max(
+        MIN_WINDOW_HEIGHT,
+        resizeRef.current.height + (e.clientY - resizeRef.current.startY)
+      ),
+    });
+  };
+
+  const handleResizeUp = (e: React.PointerEvent) => {
+    setIsResizing(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   return (
     <div
-      className={`pointer-events-auto absolute z-50 flex ${width} flex-col gap-2 shadow-2xl`}
-      style={{ left: pos.x, top: pos.y }}
+      className='pointer-events-auto absolute z-50 flex flex-col gap-2 shadow-2xl'
+      style={{
+        left: pos.x,
+        top: pos.y,
+        width: size.width,
+        height: size.height || undefined,
+      }}
     >
-      <div className='overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
+      <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
         <div
-          className='flex cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'
+          className='flex shrink-0 cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -118,8 +179,22 @@ const DraggableWindow = ({
             <X size={14} />
           </button>
         </div>
-        <div className='flex flex-col'>{children}</div>
+        <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
       </div>
+
+      {resizable && (
+        <div
+          onPointerDown={handleResizeDown}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeUp}
+          className='absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize'
+          title='Redimensionar'
+        >
+          {/* Two short rules read as a grip without needing a label. */}
+          <span className='pointer-events-none absolute bottom-1 right-1 block h-2 w-px rotate-45 bg-zinc-600' />
+          <span className='pointer-events-none absolute bottom-1 right-2.5 block h-2 w-px rotate-45 bg-zinc-700' />
+        </div>
+      )}
     </div>
   );
 };
@@ -305,6 +380,7 @@ export function VttApp() {
   // NEW: Handout stores mapped correctly
   const handouts = useLanStore((state) => state.handouts) || [];
   const setHandouts = useLanStore((state) => state.setHandouts);
+  const setMaps = useLanStore((state) => state.setMaps);
 
   const connect = useLanStore((state) => state.connect);
   const disconnect = useLanStore((state) => state.disconnect);
@@ -378,7 +454,7 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isMapTransitioning, setIsMapTransitioning] = useState(false);
+  const [isMapSelectorOpen, setIsMapSelectorOpen] = useState(false);
   const [toasts, setToasts] = useState<any[]>([]);
 
   // -------------------------------------------------------------------------
@@ -483,6 +559,89 @@ export function VttApp() {
   }, [openHandoutIds, handouts, handoutAssetUrls]);
 
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // The player's own piece
+  // -------------------------------------------------------------------------
+
+  const activeSheetId = useCharacterStore((state) => state.activeSheetId);
+
+  /**
+   * The portrait shown on the profile button — and, once dragged onto the
+   * board, the face of that player's token. The GM has no sheet and therefore
+   * no piece, so nothing is fetched for them.
+   */
+  // Tagged with the sheet it belongs to, so switching character retires the
+  // old portrait during render instead of needing an effect to clear it.
+  const [resolvedPortrait, setResolvedPortrait] = useState<{
+    sheetId: string;
+    url: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!activeSheetId || isTrueGM) return;
+    let cancelled = false;
+    gameClient
+      .getPortraitUrl(activeSheetId)
+      .then((url) => {
+        if (!cancelled) setResolvedPortrait({ sheetId: activeSheetId, url });
+      })
+      // A sheet without a `portrait:` is normal, not a failure: the token
+      // falls back to initials on the character's colour.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSheetId, isTrueGM]);
+
+  const portraitUrl =
+    !isTrueGM && activeSheetId && resolvedPortrait?.sheetId === activeSheetId
+      ? resolvedPortrait.url
+      : null;
+
+  /** Deterministic, and identical to the id the board places under. */
+  const myTokenId = activeSheetId ? `token:${clientId}:${activeSheetId}` : null;
+
+  /**
+   * Mirror the sheet onto the piece. A character who has failed a death save
+   * is greyed out; one sitting at zero with the save still owed gets the
+   * marker, which is the whole point of showing it on the board rather than
+   * making the GM read every sheet.
+   */
+  useEffect(() => {
+    if (!myTokenId || !character) return;
+
+    const hpDown = (character.resources.hp.current || 0) <= 0;
+    const dpDown = (character.resources.dp.current || 0) <= 0;
+    const hpFailed = Boolean(character.death_saves?.hp?.failed);
+    const dpFailed = Boolean(character.death_saves?.dp?.failed);
+
+    const grayscale = hpFailed || dpFailed;
+    const owesHp = hpDown && !hpFailed;
+    const owesDp = dpDown && !dpFailed;
+    const saveIndicator = grayscale
+      ? null
+      : owesHp && owesDp
+        ? 'both'
+        : owesHp
+          ? 'hp'
+          : owesDp
+            ? 'dp'
+            : null;
+
+    gameClient.setTokenState(clientId, myTokenId, grayscale, saveIndicator);
+  }, [myTokenId, clientId, character]);
+
+  const handleTokenDragStart = (event: React.DragEvent<HTMLDivElement>) => {
+    if (isTrueGM || !character || !activeSheetId) return;
+    const payload: TokenDragPayload = {
+      sheetId: activeSheetId,
+      label: character.name,
+      color: identityColor,
+    };
+    event.dataTransfer.setData(TOKEN_DRAG_MIME, JSON.stringify(payload));
+    event.dataTransfer.effectAllowed = 'copy';
+  };
 
   const displayIp =
     vpnIp || (lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '');
@@ -598,10 +757,18 @@ export function VttApp() {
       })
       .catch((error) => console.error('Failed to list handouts:', error));
 
+    // Fetch Maps
+    gameClient
+      .listMaps()
+      .then((available) => {
+        if (!cancelled) setMaps(available);
+      })
+      .catch((error) => console.error('Failed to list maps:', error));
+
     return () => {
       cancelled = true;
     };
-  }, [isHosting, setSheets, setHandouts]);
+  }, [isHosting, setSheets, setHandouts, setMaps]);
 
   const pushToast = (toast: any) =>
     setToasts((prev) =>
@@ -668,10 +835,8 @@ export function VttApp() {
         </div>
       )}
 
-      <div
-        className={`absolute inset-0 z-0 transition-opacity duration-1000 ${isMapTransitioning ? 'opacity-0' : 'opacity-100'}`}
-      >
-        <GameBoard />
+      <div className='absolute inset-0 z-0'>
+        <GameBoard clientId={clientId} isGM={isTrueGM} />
       </div>
 
       <div className='pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4'>
@@ -697,13 +862,12 @@ export function VttApp() {
             </button>
             {isTrueGM && (
               <button
-                onClick={() => {
-                  if (!isMapTransitioning) {
-                    setIsMapTransitioning(true);
-                    setTimeout(() => setIsMapTransitioning(false), 1000);
-                  }
-                }}
-                className='mt-2 rounded-sm p-2 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-300'
+                onClick={() => setIsMapSelectorOpen((open) => !open)}
+                className={`mt-2 rounded-sm p-2 transition-colors ${
+                  isMapSelectorOpen
+                    ? 'bg-zinc-900 text-[var(--theme-color)]'
+                    : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+                }`}
                 title='Mudar Mapa'
               >
                 <MapIcon size={18} />
@@ -721,6 +885,10 @@ export function VttApp() {
               <FileText size={18} />
             </button>
           </div>
+
+          {isTrueGM && isMapSelectorOpen && (
+            <MapSelector onClose={() => setIsMapSelectorOpen(false)} />
+          )}
         </div>
 
         <div className='pointer-events-auto flex flex-col items-end gap-2'>
@@ -841,11 +1009,13 @@ export function VttApp() {
         <DraggableWindow
           title='Arquivos & Documentos'
           onClose={() => setIsHandoutListOpen(false)}
-          initialX={window.innerWidth - 340}
+          initialX={84}
           initialY={80}
-          width='w-80'
+          initialWidth={320}
+          initialHeight={520}
+          resizable
         >
-          <div className='flex max-h-[500px] flex-col overflow-y-auto bg-zinc-950/50 pb-2'>
+          <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-zinc-950/50 pb-2'>
             {/* CATEGORY: REGRAS */}
             {(regras.length > 0 || isTrueGM) && (
               <div className='mb-2 mt-2 px-3'>
@@ -1128,11 +1298,13 @@ export function VttApp() {
                 return next;
               });
             }}
-            initialX={150 + index * 30}
-            initialY={150 + index * 30}
-            width='w-96'
+            initialX={220 + index * 30}
+            initialY={120 + index * 30}
+            initialWidth={560}
+            initialHeight={640}
+            resizable
           >
-            <div className='max-h-[600px] overflow-y-auto bg-zinc-950 p-4 text-sm text-zinc-300'>
+            <div className='min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4 text-sm text-zinc-300'>
               {handout.content_type === 'text' ? (
                 // NEW: Markdown wrapper with Tailwind styling for generated tags
                 <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
@@ -1209,14 +1381,37 @@ export function VttApp() {
             onClick={() =>
               character ? setIsSheetOpen(true) : setIsSelectionModalOpen(true)
             }
-            className='group relative h-32 w-32 cursor-pointer overflow-hidden rounded-sm border-2 border-zinc-800 bg-zinc-900 shadow-2xl'
+            // Dragging this onto the board is how a player puts themselves on
+            // it. The GM runs the table rather than standing on it, so for
+            // them the picture stays a button and nothing more.
+            draggable={!isTrueGM && Boolean(character)}
+            onDragStart={handleTokenDragStart}
+            className={`group relative h-32 w-32 overflow-hidden rounded-sm border-2 border-zinc-800 bg-zinc-900 shadow-2xl ${
+              !isTrueGM && character ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+            }`}
           >
-            <div className='absolute inset-0 bg-gradient-to-tr from-zinc-900 to-zinc-800 opacity-50' />
-            <div className='absolute inset-x-2 bottom-0 h-3/4 rounded-t-[40%] border-x border-t border-zinc-700/50 bg-zinc-800/30' />
+            {portraitUrl ? (
+              <img
+                src={portraitUrl}
+                alt={charName}
+                className='absolute inset-0 h-full w-full object-cover'
+                draggable={false}
+              />
+            ) : (
+              <>
+                <div className='absolute inset-0 bg-gradient-to-tr from-zinc-900 to-zinc-800 opacity-50' />
+                <div className='absolute inset-x-2 bottom-0 h-3/4 rounded-t-[40%] border-x border-t border-zinc-700/50 bg-zinc-800/30' />
+              </>
+            )}
             <div className='absolute inset-0 flex flex-col items-center justify-center bg-black/60 p-2 text-center opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100'>
               <span className='mb-2 font-serif text-xs font-bold tracking-widest text-white'>
                 {character ? 'ABRIR FICHA' : 'SELECIONAR FICHA'}
               </span>
+              {!isTrueGM && character && (
+                <span className='font-serif text-[10px] tracking-widest text-zinc-400'>
+                  Arraste para o mapa
+                </span>
+              )}
             </div>
           </div>
         </div>

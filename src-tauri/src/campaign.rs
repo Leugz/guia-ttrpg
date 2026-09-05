@@ -337,3 +337,61 @@ pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
 
     Ok(handouts)
 }
+
+use crate::models::MapDefinition;
+
+/// Resolve a map id (a bare file stem such as `mansao_terreo`) to its file.
+///
+/// Same containment rule as sheets and handouts: a client hands over an id,
+/// never a path, so it cannot reach outside the `maps/` directory.
+pub fn resolve_map(root: &Path, map_id: &str) -> Result<PathBuf, String> {
+    let trimmed = map_id.trim();
+    if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(format!("Invalid map id: {}", map_id));
+    }
+    let mut path = root.join("maps").join(trimmed);
+    path.set_extension("md");
+    Ok(path)
+}
+
+/// Every map in a game instance, sorted by file name so the selector is in the
+/// same order for everyone at the table.
+///
+/// A missing `maps/` directory is not an error: a campaign is allowed to have
+/// no maps at all, and the board simply shows its empty state.
+pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
+    let dir = root.join("maps");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Failed to read maps: {}", e))?;
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        })
+        .collect();
+    files.sort();
+
+    let mut maps = Vec::new();
+    for path in files {
+        let Some(id) = path.file_stem().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        match crate::storage::parse_map(id, &raw) {
+            Ok(map) => maps.push(map),
+            // One malformed map must not hide the rest of the campaign.
+            Err(reason) => tracing::warn!(map = id, %reason, "skipping unreadable map"),
+        }
+    }
+    Ok(maps)
+}

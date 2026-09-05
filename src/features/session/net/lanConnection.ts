@@ -13,10 +13,14 @@ import {
   RpcMethod,
   type ConnectionStatus,
   type LanPlayer,
+  type MapsUpdateMessage,
   type RpcResults,
   type ServerMessage,
   type SessionStateMessage,
   type SheetUpdateMessage,
+  type TokenClientMessage,
+  type TokenMovedMessage,
+  type TokensSyncMessage,
 } from './protocol';
 
 const RECONNECT_DELAY_MS = 2000;
@@ -39,6 +43,9 @@ export interface LanEvents {
   closed: string;
   handout: HandoutUpdateMessage;
   handoutForceOpen: HandoutForceOpenMessage;
+  maps: MapsUpdateMessage;
+  tokens: TokensSyncMessage;
+  tokenMoved: TokenMovedMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -229,6 +236,16 @@ class LanConnection {
     this.send({ type: 'release', clientId });
   }
 
+  /**
+   * Board traffic. Deliberately fire-and-forget: a drag emits one of these per
+   * animation frame, so there is no request id to match and no promise to
+   * settle. `send` already no-ops when the socket is closed, which is exactly
+   * the right behaviour for an offline host with nobody to tell.
+   */
+  sendToken(message: TokenClientMessage) {
+    this.send(message);
+  }
+
   /** Call a method on the host and wait for its answer. */
   request<M extends keyof RpcResults>(
     method: M,
@@ -323,6 +340,15 @@ class LanConnection {
         return;
       case 'handout_force_open':
         this.emit('handoutForceOpen', message as HandoutForceOpenMessage);
+        return;
+      case 'maps_update':
+        this.emit('maps', message as MapsUpdateMessage);
+        return;
+      case 'tokens_sync':
+        this.emit('tokens', message as TokensSyncMessage);
+        return;
+      case 'token_moved':
+        this.emit('tokenMoved', message as TokenMovedMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);

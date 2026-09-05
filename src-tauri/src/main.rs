@@ -86,6 +86,9 @@ async fn main() {
             commands::toggle_handout_share,
             commands::open_handout_for_all,
             commands::open_handout_for_player,
+            // Maps
+            commands::list_game_maps,
+            commands::set_active_map,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

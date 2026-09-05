@@ -138,6 +138,8 @@ export interface CharacterSheet {
   occupation: string;
   level: number;
   color?: string;
+  /** Campaign-relative path to the portrait, e.g. `assets/portraits/alan.png`. */
+  portrait?: string;
   resources: {
     hp: ResourceStat;
     dp: ResourceStat;
@@ -166,4 +168,35 @@ export interface Handout {
   is_public: boolean;
   shared_with: string[];
   content: string;
+}
+
+// --- Maps & Tokens ---
+
+export interface MapDefinition {
+  /** File stem of the map document, e.g. `mansao_terreo`. */
+  id: string;
+  title: string;
+  /** Campaign-relative path to the PNG/JPEG. */
+  image: string;
+  /** Side of one grid square in image pixels; `0` hides the grid. */
+  grid_size: number;
+  /** Exactly one map is active; that is the one the table is looking at. */
+  is_active: boolean;
+}
+
+/** Which death-save track a token's marker refers to. */
+export type SaveIndicator = 'hp' | 'dp' | 'both';
+
+export interface MapToken {
+  id: string;
+  map_id: string;
+  owner_client_id: string;
+  sheet_id?: string | null;
+  label: string;
+  color: string;
+  /** Position in map-image coordinates, so it is identical on every screen. */
+  x: number;
+  y: number;
+  grayscale: boolean;
+  save_indicator?: SaveIndicator | null;
 }

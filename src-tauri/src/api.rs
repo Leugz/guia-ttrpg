@@ -790,3 +790,95 @@ pub fn get_handout_asset(root: &Path, handout_id: &str) -> Result<HandoutAsset, 
         data_base64: storage::base64_encode(&bytes),
     })
 }
+
+// ---------------------------------------------------------------------------
+// Maps
+// ---------------------------------------------------------------------------
+
+use crate::models::MapDefinition;
+
+/// A binary asset handed to a client that has no filesystem of its own.
+///
+/// Identical in shape to `HandoutAsset`; kept as its own type so maps and
+/// portraits can evolve independently of handouts.
+#[derive(Debug, Clone, Serialize)]
+pub struct AssetPayload {
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    #[serde(rename = "dataBase64")]
+    pub data_base64: String,
+}
+
+fn read_asset(root: &Path, reference: &str) -> Result<AssetPayload, String> {
+    let asset_path = storage::resolve_asset_within(root, reference)?;
+    let bytes = std::fs::read(&asset_path)
+        .map_err(|e| format!("Failed to read image at {}: {}", asset_path.display(), e))?;
+    Ok(AssetPayload {
+        mime_type: storage::mime_for_asset(&asset_path).to_string(),
+        data_base64: storage::base64_encode(&bytes),
+    })
+}
+
+pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
+    campaign::list_maps(root)
+}
+
+/// Reveal one map to the whole table.
+///
+/// Activation is exclusive: every other map is deactivated in the same pass,
+/// so "which map are we looking at" has exactly one answer and reconnecting
+/// clients read it off disk rather than being told by another client.
+pub fn set_active_map(root: &Path, map_id: &str) -> Result<Vec<MapDefinition>, String> {
+    let maps = campaign::list_maps(root)?;
+    if !maps.iter().any(|map| map.id == map_id) {
+        return Err(format!("Map '{}' does not exist in this campaign.", map_id));
+    }
+
+    let mut updated = Vec::with_capacity(maps.len());
+    for mut map in maps {
+        let should_be_active = map.id == map_id;
+        // Only rewrite the files whose state actually changes.
+        if map.is_active != should_be_active {
+            map.is_active = should_be_active;
+            let path = campaign::resolve_map(root, &map.id)?;
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read map '{}': {}", map.id, e))?;
+            let rendered = storage::render_map(&map, &storage::document_body(&raw))?;
+            storage::write_atomic(&path, &rendered)?;
+        }
+        updated.push(map);
+    }
+
+    state::publish(
+        Target::All,
+        &ServerMessage::MapsUpdate {
+            maps: updated.clone(),
+        },
+    );
+
+    Ok(updated)
+}
+
+/// The bytes of a map image, for a client that cannot reach the host's disk.
+pub fn get_map_asset(root: &Path, map_id: &str) -> Result<AssetPayload, String> {
+    let path = campaign::resolve_map(root, map_id)?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read map '{}': {}", map_id, e))?;
+    let map = storage::parse_map(map_id, &raw)?;
+    read_asset(root, &map.image)
+}
+
+/// The bytes of a character's portrait, which is what their token is drawn
+/// with. Returns an error when the sheet declares no portrait, and the caller
+/// falls back to initials on a coloured chip.
+pub fn get_sheet_portrait(root: &Path, sheet_id: &str) -> Result<AssetPayload, String> {
+    let path = campaign::resolve_sheet(root, sheet_id)?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| "Sheet path is not valid UTF-8.".to_string())?;
+    let document = load_character_sheet(path)?;
+    let Some(portrait) = document.data.portrait.as_deref() else {
+        return Err(format!("Sheet '{}' has no portrait.", sheet_id));
+    };
+    read_asset(root, portrait)
+}

@@ -7,10 +7,13 @@ import type {
   CharacterSheet,
   DeathSaveOutcome,
   Handout,
+  MapDefinition,
+  MapToken,
   ParsedDocument,
   ResolvedPool,
   ResourceOutcome,
   RollResult,
+  SaveIndicator,
   TestOutcome,
   TestRequest,
 } from '../../../shared/types';
@@ -52,6 +55,8 @@ export interface SessionStateMessage {
   players: LanPlayer[];
   gameId: string;
   handouts: Handout[];
+  maps: MapDefinition[];
+  tokens: MapToken[];
 }
 
 export interface SheetUpdateMessage {
@@ -84,6 +89,30 @@ export interface HandoutForceOpenMessage {
   target: string | null;
 }
 
+/** The map list changed — in practice, the GM revealed a different map. */
+export interface MapsUpdateMessage {
+  type: 'maps_update';
+  maps: MapDefinition[];
+}
+
+/** The full board, sent on join and after any structural change. */
+export interface TokensSyncMessage {
+  type: 'tokens_sync';
+  tokens: MapToken[];
+}
+
+/**
+ * One token moved. The smallest message on the wire, because it is sent on
+ * every animation frame of a drag.
+ */
+export interface TokenMovedMessage {
+  type: 'token_moved';
+  tokenId: string;
+  x: number;
+  y: number;
+  dragging: boolean;
+}
+
 export type ServerMessage =
   | RosterSyncMessage
   | SessionStateMessage
@@ -91,7 +120,51 @@ export type ServerMessage =
   | RpcResultMessage
   | SessionClosedMessage
   | HandoutUpdateMessage
-  | HandoutForceOpenMessage;
+  | HandoutForceOpenMessage
+  | MapsUpdateMessage
+  | TokensSyncMessage
+  | TokenMovedMessage;
+
+// --- Client -> Server: board traffic ---------------------------------------
+//
+// Token operations are fire-and-forget broadcasts rather than RPCs. A drag
+// produces one message per frame, and waiting for a response on each would
+// both add latency and pointlessly burn request ids.
+
+export interface TokenPlaceMessage {
+  type: 'token_place';
+  clientId: string;
+  token: MapToken;
+}
+
+export interface TokenMoveMessage {
+  type: 'token_move';
+  clientId: string;
+  tokenId: string;
+  x: number;
+  y: number;
+  dragging: boolean;
+}
+
+export interface TokenStateMessage {
+  type: 'token_state';
+  clientId: string;
+  tokenId: string;
+  grayscale: boolean;
+  save_indicator: SaveIndicator | null;
+}
+
+export interface TokenRemoveMessage {
+  type: 'token_remove';
+  clientId: string;
+  tokenId: string;
+}
+
+export type TokenClientMessage =
+  | TokenPlaceMessage
+  | TokenMoveMessage
+  | TokenStateMessage
+  | TokenRemoveMessage;
 
 // --- RPC --------------------------------------------------------------------
 
@@ -120,6 +193,10 @@ export const RpcMethod = {
   openHandoutForAll: 'open_handout_for_all',
   openHandoutForPlayer: 'open_handout_for_player',
   getHandoutAsset: 'get_handout_asset',
+  listMaps: 'list_maps',
+  setActiveMap: 'set_active_map',
+  getMapAsset: 'get_map_asset',
+  getSheetPortrait: 'get_sheet_portrait',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -129,6 +206,9 @@ export interface HandoutAsset {
   mimeType: string;
   dataBase64: string;
 }
+
+/** Same shape, for map images and character portraits. */
+export type AssetPayload = HandoutAsset;
 
 /** Maps each method to the shape the host answers with. */
 export interface RpcResults {
@@ -152,6 +232,10 @@ export interface RpcResults {
   [RpcMethod.openHandoutForAll]: Handout;
   [RpcMethod.openHandoutForPlayer]: Handout;
   [RpcMethod.getHandoutAsset]: HandoutAsset;
+  [RpcMethod.listMaps]: MapDefinition[];
+  [RpcMethod.setActiveMap]: MapDefinition[];
+  [RpcMethod.getMapAsset]: AssetPayload;
+  [RpcMethod.getSheetPortrait]: AssetPayload;
 }
 
 export interface TestRpcParams {

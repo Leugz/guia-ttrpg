@@ -33,7 +33,10 @@
   },
   "bundle": {
     "resources": {
-      "../campaigns/act_1/templates/*.md": "campaigns/act_1/templates/"
+      "../campaigns/act_1/templates/*.md": "campaigns/act_1/templates/",
+      "../campaigns/act_1/templates/handouts/*": "campaigns/act_1/templates/handouts/",
+      "../campaigns/act_1/templates/maps/*": "campaigns/act_1/templates/maps/",
+      "../campaigns/act_1/templates/assets/**/*": "campaigns/act_1/templates/assets/"
     }
   }
 }

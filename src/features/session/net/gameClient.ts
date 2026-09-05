@@ -17,10 +17,13 @@ import type {
   CharacterSheet,
   DeathSaveOutcome,
   Handout,
+  MapDefinition,
+  MapToken,
   ParsedDocument,
   ResolvedPool,
   ResourceOutcome,
   RollResult,
+  SaveIndicator,
   TestOutcome,
   TestRequest,
 } from '../../../shared/types';
@@ -317,3 +320,144 @@ export const getHandoutAssetUrl = (
         .request(RpcMethod.getHandoutAsset, { handoutId: handout.id })
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
+
+// ---------------------------------------------------------------------------
+// Maps
+// ---------------------------------------------------------------------------
+
+export const listMaps = (): Promise<MapDefinition[]> =>
+  dispatch(
+    () =>
+      invoke<MapDefinition[]>('list_game_maps', {
+        gamePath: context.gameRoot,
+      }),
+    () => lan.request(RpcMethod.listMaps)
+  );
+
+/** GM only. The host refuses this from anyone else. */
+export const setActiveMap = (mapId: string): Promise<MapDefinition[]> =>
+  dispatch(
+    () =>
+      invoke<MapDefinition[]>('set_active_map', {
+        gameRoot: context.gameRoot,
+        mapId,
+      }),
+    () => lan.request(RpcMethod.setActiveMap, { mapId })
+  );
+
+/**
+ * A displayable URL for a map image, following the same split as handouts: the
+ * host addresses the file on disk, a joined client pulls the bytes over RPC.
+ */
+export const getMapImageUrl = (map: MapDefinition): Promise<string> =>
+  dispatch(
+    () => Promise.resolve(convertFileSrc(localPath(map.image))),
+    () =>
+      lan
+        .request(RpcMethod.getMapAsset, { mapId: map.id })
+        .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
+  );
+
+/**
+ * A displayable URL for a character's portrait, which is what their token is
+ * drawn with. Rejects when the sheet declares no `portrait:`; callers fall
+ * back to initials on a coloured chip.
+ */
+export const getPortraitUrl = (sheetId: string): Promise<string> =>
+  dispatch(
+    async () => {
+      // Only the sheet knows where its portrait lives, and a client drawing
+      // someone else's token has never loaded that sheet, so the lookup
+      // happens here rather than being pushed onto every caller.
+      const document = await invoke<ParsedDocument>('load_character_sheet', {
+        path: localPath(sheetId),
+      });
+      const portrait = document.data.portrait;
+      if (!portrait) throw new Error(`A ficha "${sheetId}" não tem retrato.`);
+      return convertFileSrc(localPath(portrait));
+    },
+    () =>
+      lan
+        .request(RpcMethod.getSheetPortrait, { sheetId })
+        .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
+  );
+
+// ---------------------------------------------------------------------------
+// Board
+//
+// Token operations are the one part of the client that does not go through
+// `dispatch`. They are fire-and-forget broadcasts, not requests: a drag emits
+// one per animation frame, so the round trip a promise implies would be pure
+// overhead. When the LAN is closed there is nobody to tell, and the operation
+// is applied to this window's own state instead.
+// ---------------------------------------------------------------------------
+
+/** The local end of a board operation, registered by `lanStore`. */
+export interface LocalBoardSink {
+  place: (token: MapToken) => void;
+  move: (tokenId: string, x: number, y: number, dragging: boolean) => void;
+  restyle: (
+    tokenId: string,
+    grayscale: boolean,
+    saveIndicator: SaveIndicator | null
+  ) => void;
+  remove: (tokenId: string) => void;
+}
+
+let localBoard: LocalBoardSink | null = null;
+
+export const setLocalBoardSink = (sink: LocalBoardSink) => {
+  localBoard = sink;
+};
+
+/** True when board traffic has somewhere to go over the wire. */
+const boardIsNetworked = () => lan.isOpen();
+
+export const placeToken = (clientId: string, token: MapToken) => {
+  if (boardIsNetworked()) {
+    lan.sendToken({ type: 'token_place', clientId, token });
+    return;
+  }
+  localBoard?.place(token);
+};
+
+export const moveToken = (
+  clientId: string,
+  tokenId: string,
+  x: number,
+  y: number,
+  dragging: boolean
+) => {
+  if (boardIsNetworked()) {
+    lan.sendToken({ type: 'token_move', clientId, tokenId, x, y, dragging });
+    return;
+  }
+  localBoard?.move(tokenId, x, y, dragging);
+};
+
+export const setTokenState = (
+  clientId: string,
+  tokenId: string,
+  grayscale: boolean,
+  saveIndicator: SaveIndicator | null
+) => {
+  if (boardIsNetworked()) {
+    lan.sendToken({
+      type: 'token_state',
+      clientId,
+      tokenId,
+      grayscale,
+      save_indicator: saveIndicator,
+    });
+    return;
+  }
+  localBoard?.restyle(tokenId, grayscale, saveIndicator);
+};
+
+export const removeToken = (clientId: string, tokenId: string) => {
+  if (boardIsNetworked()) {
+    lan.sendToken({ type: 'token_remove', clientId, tokenId });
+    return;
+  }
+  localBoard?.remove(tokenId);
+};

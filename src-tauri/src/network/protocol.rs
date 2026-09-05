@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::models::CharacterSheet;
+use crate::models::{CharacterSheet, MapDefinition, MapToken, SaveIndicator};
 
 /// Default LAN port. Chosen high enough to avoid privileged-port prompts.
 pub const LAN_PORT: u16 = 37373;
@@ -70,6 +70,49 @@ pub enum ClientMessage {
     Text(ChatEnvelope),
     /// A dice result rendered as a chat line.
     Roll(ChatEnvelope),
+    /// Drop a new token onto the board. The host overrides the owner with the
+    /// sending connection's id, so a client cannot place a piece in someone
+    /// else's name.
+    TokenPlace {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        token: MapToken,
+    },
+    /// Move a token. This is the hot path — it fires many times per second
+    /// while a piece is being dragged — so it is a plain broadcast rather than
+    /// an RPC: no request id, no response, no disk access.
+    TokenMove {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        #[serde(rename = "tokenId")]
+        token_id: String,
+        x: f64,
+        y: f64,
+        /// True for the intermediate frames of a drag, false for the final
+        /// resting position. Receivers use it to skip easing while a piece is
+        /// still in motion.
+        #[serde(default)]
+        dragging: bool,
+    },
+    /// Update the presentation flags a token carries: desaturated when its
+    /// character is out of play, and the save marker when one is owed.
+    TokenState {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        #[serde(rename = "tokenId")]
+        token_id: String,
+        #[serde(default)]
+        grayscale: bool,
+        #[serde(default)]
+        save_indicator: Option<SaveIndicator>,
+    },
+    /// Take a token off the board.
+    TokenRemove {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        #[serde(rename = "tokenId")]
+        token_id: String,
+    },
     /// A remote procedure call against the host's rules engine.
     Rpc {
         #[serde(rename = "requestId")]
@@ -120,6 +163,8 @@ pub enum ServerMessage {
         #[serde(rename = "gameId")]
         game_id: String,
         handouts: Vec<crate::models::Handout>, // <-- ADDED
+        maps: Vec<MapDefinition>,
+        tokens: Vec<MapToken>,
     },
     /// A sheet changed on disk; anyone displaying it should refresh.
     SheetUpdate {
@@ -137,6 +182,21 @@ pub enum ServerMessage {
         handout_id: String,
         /// `None` reaches everyone; `Some(id)` reaches just that client.
         target: Option<String>,
+    },
+    /// The map list changed — in practice, the GM revealed a different map.
+    /// Sent whole rather than as a delta because it is a rare event and the
+    /// list is a handful of entries.
+    MapsUpdate { maps: Vec<MapDefinition> },
+    /// The full board. Sent on join and after any structural change (a token
+    /// placed, removed, or restyled).
+    TokensSync { tokens: Vec<MapToken> },
+    /// One token moved. Deliberately the smallest message on the wire.
+    TokenMoved {
+        #[serde(rename = "tokenId")]
+        token_id: String,
+        x: f64,
+        y: f64,
+        dragging: bool,
     },
     /// Result of a `Rpc` request.
     RpcResult {
@@ -229,6 +289,12 @@ pub mod method {
     /// clients have no filesystem access of their own, so this is what lets
     /// them actually see an image handout instead of just its metadata.
     pub const GET_HANDOUT_ASSET: &str = "get_handout_asset";
+    pub const LIST_MAPS: &str = "list_maps";
+    /// GM-only: reveals a map to the whole table.
+    pub const SET_ACTIVE_MAP: &str = "set_active_map";
+    pub const GET_MAP_ASSET: &str = "get_map_asset";
+    /// Fetches a character's portrait so remote clients can draw its token.
+    pub const GET_SHEET_PORTRAIT: &str = "get_sheet_portrait";
 }
 
 #[cfg(test)]
