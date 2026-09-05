@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface DieShapeProps {
   sides: number;
   value?: number;

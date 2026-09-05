@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useChatStore } from '../../chat/chatStore';
+import * as gameClient from '../../session/net/gameClient';
 import {
   useCharacterStore,
   getProfileColor,
 } from '../../character-sheet/characterStore';
-import { RollResult } from '../../../shared/types';
 
 interface FreeDiceRollerProps {
   isOpen: boolean;
@@ -51,10 +50,7 @@ export function FreeDiceRoller({ isOpen, onClose }: FreeDiceRollerProps) {
     if (pool.length === 0) return;
 
     try {
-      const result = await invoke<RollResult>('roll_dice', {
-        sides: pool,
-        secret: isSecret,
-      });
+      const result = await gameClient.rollDice(pool, isSecret);
 
       addMessage({
         sender: character?.name || 'Guest',

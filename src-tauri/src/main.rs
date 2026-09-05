@@ -1,224 +1,88 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+//! Application shell.
+//!
+//! Bootstrapping only: logging, the SQLite session store, shared state and the
+//! IPC surface. The LAN server is no longer started here; it comes up when a GM
+//! opens a table (see `network::server`) and shuts down when they leave.
+
+mod api;
+mod campaign;
 mod commands;
 mod dice;
 mod effects;
+mod history;
 mod models;
+mod network;
 mod rules;
+mod state;
 mod storage;
 
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
-    },
-    routing::get,
-    Router,
-};
-use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
 use tauri::Manager;
-use tokio::sync::{broadcast, RwLock};
 
-const LAN_PORT: u16 = 37373;
-
-// --- MULTIPLAYER ROSTER PROTOCOL ---
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Player {
-    pub client_id: String,
-    pub username: String,
-    pub claimed_sheet: Option<String>,
-    pub color: String,
-}
-
-struct AppState {
-    tx: broadcast::Sender<String>,
-    db_path: PathBuf,
-    roster: RwLock<HashMap<String, Player>>, // Thread-safe server state tracking
-}
+use crate::state::AppState;
 
 #[tokio::main]
 async fn main() {
-    let (tx, _rx) = broadcast::channel(100);
-    let tx_clone = tx.clone();
-
     tauri::Builder::default()
-        .setup(move |app| {
+        .setup(|app| {
             init_logging(app.handle());
 
             let data_dir = app
                 .path()
                 .app_local_data_dir()
-                .expect("Failed to get data dir");
-            std::fs::create_dir_all(&data_dir).expect("Failed to create data dir");
+                .expect("Failed to resolve the application data directory");
+            std::fs::create_dir_all(&data_dir).expect("Failed to create the application data directory");
+
             let db_path = data_dir.join("session.db");
+            if let Err(error) = history::init(&db_path) {
+                tracing::error!(%error, "failed to initialise the session database");
+            }
 
-            init_sqlite(&db_path).expect("Failed to initialize SQLite database");
-
-            let app_state = Arc::new(AppState {
-                tx: tx_clone,
-                db_path,
-                roster: RwLock::new(HashMap::new()), // Initialize the empty server lobby
-            });
-
-            tokio::spawn(serve_lan(app_state));
-
-            let _window = app.get_webview_window("main").unwrap();
+            state::install(Arc::new(AppState::new(db_path)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Documents
             commands::load_character_sheet,
             commands::save_character_sheet,
             commands::create_character_sheet,
+            // Dice
             commands::execute_roll,
             commands::roll_dice,
             commands::preview_test,
             commands::roll_test,
+            // Resources
             commands::modify_resource,
             commands::apply_resource_change,
             commands::roll_death_save,
+            // Sheet editing
             commands::set_attribute,
             commands::step_attribute,
             commands::set_skill_value,
             commands::step_skill,
             commands::toggle_entry,
+            // Effects
             commands::list_builtin_effects,
             commands::list_default_skills,
             commands::apply_builtin_effect,
             commands::remove_active_effect,
             commands::describe_entry,
+            // Multi-sheet access
             commands::grant_sheet_access,
             commands::revoke_sheet_access,
-            commands::create_game_instance // Cleanly maps to commands.rs!
+            // Game lifecycle
+            commands::create_game_instance,
+            commands::delete_game_instance,
+            commands::list_game_sheets,
+            commands::start_hosting,
+            commands::stop_hosting,
+            commands::host_address,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-fn init_sqlite(db_path: &Path) -> rusqlite::Result<()> {
-    let conn = Connection::open(db_path)?;
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS chat_history (
-            id TEXT PRIMARY KEY,
-            payload TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-        [],
-    )?;
-    Ok(())
-}
-
-async fn serve_lan(state: Arc<AppState>) {
-    let router = Router::new()
-        .route("/ws", get(ws_handler))
-        .with_state(state);
-
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], LAN_PORT));
-
-    match tokio::net::TcpListener::bind(addr).await {
-        Ok(listener) => {
-            tracing::info!(%addr, "LAN server listening");
-            if let Err(error) = axum::serve(listener, router).await {
-                tracing::error!(%error, "LAN server stopped");
-            }
-        }
-        Err(error) => tracing::error!(%error, %addr, "failed to bind LAN server"),
-    }
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> axum::response::Response {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
-}
-
-// --- WEBSOCKET INTERCEPTOR AND ROUTER ---
-async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
-    let mut rx = state.tx.subscribe();
-
-    // Send the current roster to the newly connected client immediately
-    broadcast_roster(&state).await;
-
-    loop {
-        tokio::select! {
-            Some(Ok(msg)) = socket.recv() => {
-                if let Message::Text(text) = msg {
-
-                    // Try to parse JSON to see if it's a structural command
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                        let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                        match msg_type {
-                            "join" => {
-                                if let (Some(client_id), Some(username), Some(color)) = (
-                                    parsed.get("clientId").and_then(|v| v.as_str()),
-                                    parsed.get("username").and_then(|v| v.as_str()),
-                                    parsed.get("color").and_then(|v| v.as_str()),
-                                ) {
-                                    let player = Player {
-                                        client_id: client_id.to_string(),
-                                        username: username.to_string(),
-                                        claimed_sheet: None,
-                                        color: color.to_string(),
-                                    };
-                                    state.roster.write().await.insert(client_id.to_string(), player);
-                                    broadcast_roster(&state).await;
-                                }
-                            }
-                            "claim" => {
-                                if let (Some(client_id), Some(sheet_id)) = (
-                                    parsed.get("clientId").and_then(|v| v.as_str()),
-                                    parsed.get("sheetId").and_then(|v| v.as_str()),
-                                ) {
-                                    if let Some(player) = state.roster.write().await.get_mut(client_id) {
-                                        player.claimed_sheet = Some(sheet_id.to_string());
-                                    }
-                                    broadcast_roster(&state).await;
-                                }
-                            }
-                            "text" | "roll" => {
-                                // Standard Chat and Dice messages bypass the roster and hit the database
-                                if let Ok(conn) = Connection::open(&state.db_path) {
-                                    let id = uuid::Uuid::new_v4().to_string();
-                                    let _ = conn.execute(
-                                        "INSERT INTO chat_history (id, payload) VALUES (?1, ?2)",
-                                        [&id, &text],
-                                    );
-                                }
-                                let _ = state.tx.send(text);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            Ok(msg) = rx.recv() => {
-                if socket.send(Message::Text(msg)).await.is_err() {
-                    break;
-                }
-            }
-            else => break,
-        }
-    }
-}
-
-// Packages the HashMap into a flat Array and broadcasts it across the LAN
-async fn broadcast_roster(state: &Arc<AppState>) {
-    let roster_map = state.roster.read().await;
-    let players: Vec<Player> = roster_map.values().cloned().collect();
-
-    let roster_msg = serde_json::json!({
-        "type": "roster_sync",
-        "players": players
-    });
-
-    if let Ok(text) = serde_json::to_string(&roster_msg) {
-        let _ = state.tx.send(text);
-    }
 }
 
 fn init_logging(app: &tauri::AppHandle) {

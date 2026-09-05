@@ -3,6 +3,11 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
+
+# This project uses pnpm; other lockfiles are noise
+package-lock.json
+yarn.lock
 
 # Rust & Tauri build artifacts
 src-tauri/target/

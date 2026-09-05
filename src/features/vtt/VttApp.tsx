@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   Crosshair,
   Ruler,
@@ -12,30 +11,24 @@ import {
   Wifi,
   ShieldAlert,
   X,
-  Dices,
   ChevronDown,
 } from 'lucide-react';
-import { useChatStore, Player } from '../chat/chatStore';
+import { useChatStore } from '../chat/chatStore';
 import {
   useCharacterStore,
   getProfileColor,
+  GM_COLOR,
 } from '../character-sheet/characterStore';
 import { useSessionStore } from '../session/sessionStore';
-import { ParsedDocument } from '../../shared/types';
+import { useLanStore, isSheetTaken } from '../session/net/lanStore';
+import * as gameClient from '../session/net/gameClient';
+import type { LanPlayer, SheetSummary } from '../session/net/protocol';
 
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
 import { GameBoard } from '../map/components/GameBoard';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
-
-const AVAILABLE_CHARACTERS = [
-  { id: 'alan', name: 'ALAN', profile: 'EXECUTOR', file: 'alan.md' },
-  { id: 'edgar', name: 'EDGAR', profile: 'EXECUTOR', file: 'edgar.md' },
-  { id: 'eloisa', name: 'ELOÍSA', profile: 'ANALISTA', file: 'eloisa.md' },
-  { id: 'kenia', name: 'KÊNIA', profile: 'ANALISTA', file: 'kenia.md' },
-  { id: 'victor', name: 'VICTOR', profile: 'VIGILANTE', file: 'victor.md' },
-];
 
 const getConditionDesc = (id: string) => {
   switch (id) {
@@ -52,16 +45,19 @@ const getConditionDesc = (id: string) => {
   }
 };
 
-// NEW: Accepts Roster to lock out claimed sheets
+// Sheets come from the host, so a joined client sees the same party the GM
+// does. The roster locks out anything another player already claimed.
 const CharacterSelectionModal = ({
   onClose,
   onSelect,
+  sheets,
   roster,
   clientId,
 }: {
   onClose: () => void;
-  onSelect: (fileName: string) => void;
-  roster: Player[];
+  onSelect: (sheetId: string) => void;
+  sheets: SheetSummary[];
+  roster: LanPlayer[];
   clientId: string;
 }) => (
   <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
@@ -81,17 +77,14 @@ const CharacterSelectionModal = ({
         <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
           Ato 1: Disponíveis
         </p>
-        {AVAILABLE_CHARACTERS.map((char) => {
+        {sheets.map((char) => {
           const profileColor = getProfileColor(char.profile);
-          // Check if another player's client_id has claimed this specific .md file
-          const isClaimedByOther = roster.some(
-            (p) => p.client_id !== clientId && p.claimed_sheet === char.file
-          );
+          const isClaimedByOther = isSheetTaken(roster, char.id, clientId);
 
           return (
             <button
               key={char.id}
-              onClick={() => onSelect(char.file)}
+              onClick={() => onSelect(char.id)}
               disabled={isClaimedByOther}
               className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByOther ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
             >
@@ -160,18 +153,26 @@ const ResourceBar = ({
 };
 
 export function VttApp() {
-  const { connect, messages, roster, claimSheet, updateIdentity } =
-    useChatStore();
+  const messages = useChatStore((state) => state.messages);
+  const roster = useLanStore((state) => state.roster);
+  const sheets = useLanStore((state) => state.sheets);
+  const setSheets = useLanStore((state) => state.setSheets);
+  const connect = useLanStore((state) => state.connect);
+  const updateIdentity = useLanStore((state) => state.updateIdentity);
+  const claimSheet = useLanStore((state) => state.claimSheet);
+
   const { character, loadCharacter, applyResourceChange, ajudado } =
     useCharacterStore();
-  const {
-    leaveGame,
-    activeGamePath,
-    isHosting,
-    username,
-    clientId,
-    lanHostAddress,
-  } = useSessionStore();
+  const { leaveGame, isHosting, username, clientId, lanHostAddress } =
+    useSessionStore();
+
+  // The GM has no Perfil, so they take the documented mestre colour rather than
+  // the neutral grey a missing profile would otherwise produce.
+  const identityColor = character
+    ? getProfileColor(character.profile)
+    : isHosting
+      ? GM_COLOR
+      : getProfileColor(undefined);
 
   const [isRollerOpen, setIsRollerOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -180,45 +181,47 @@ export function VttApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [activeTool, setActiveTool] = useState('select');
-  const [isGM, setIsGM] = useState(isHosting); // GM tools available if hosting
+  const [isGM] = useState(isHosting); // GM tools available if hosting
   const [isHandoutOpen, setIsHandoutOpen] = useState(false);
   const [isMapTransitioning, setIsMapTransitioning] = useState(false);
 
   const [toasts, setToasts] = useState<any[]>([]);
 
-  const handleLoadCharacter = async (fileName: string) => {
-    // Announce to the LAN server that we are claiming this file!
-    claimSheet(clientId, fileName);
+  const handleLoadCharacter = async (sheetId: string) => {
+    // Claim first so two players cannot take the same character in the gap
+    // between the click and the sheet arriving.
+    claimSheet(clientId, sheetId);
 
-    if (!isHosting) {
-      console.log(
-        'Joined as LAN Client. Need to fetch character from Host via WebSocket...'
-      );
-      setIsSelectionModalOpen(false);
-      return;
-    }
-
-    const fullPath = `${activeGamePath}/${fileName}`;
     try {
-      const result = await invoke<ParsedDocument>('load_character_sheet', {
-        path: fullPath,
-      });
-      loadCharacter(result, fullPath);
+      // Resolved locally when hosting, fetched from the host when joined.
+      const document = await gameClient.loadSheet(sheetId);
+      loadCharacter(document, sheetId);
       setIsSelectionModalOpen(false);
     } catch (error) {
-      console.error(
-        `Failed to load character at ${fullPath}. Make sure the Rust directory clone was successful!`,
-        error
-      );
+      console.error(`Failed to load the sheet "${sheetId}":`, error);
+      pushToast({
+        sender: 'Sistema',
+        color: '#ae2c12',
+        type: 'text',
+        content: 'Não foi possível carregar a ficha. Tente novamente.',
+      });
     }
   };
 
-  // 1. Establish the LAN Connection
+  // 1. Establish the LAN connection. The host dials its own server so both
+  // sides speak one protocol; a joined client dials the address it was given.
   useEffect(() => {
-    const hostIp = isHosting ? 'localhost' : lanHostAddress || 'localhost';
-    const initialColor = getProfileColor(character?.profile);
-    connect(hostIp, clientId, username || 'Unknown', initialColor);
+    const address = isHosting ? '127.0.0.1' : lanHostAddress || '127.0.0.1';
+    connect(address, {
+      clientId,
+      username: username || 'Unknown',
+      color: identityColor,
+    });
+    // Disconnecting is owned by leaveGame, so the socket survives re-renders.
+  }, [connect, isHosting, lanHostAddress, clientId, username, identityColor]);
 
+  // 2. Keyboard shortcuts, registered once rather than on every reconnect.
+  useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
         e.preventDefault();
@@ -227,16 +230,35 @@ export function VttApp() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [connect, isHosting, lanHostAddress, clientId, username]);
+  }, []);
 
-  // 2. Update our identity on the Server whenever our selected character changes
+  // 3. Keep our roster entry current as the active character changes.
   useEffect(() => {
-    updateIdentity(
+    updateIdentity({
       clientId,
-      username || 'Unknown',
-      getProfileColor(character?.profile)
-    );
-  }, [character?.profile, clientId, username, updateIdentity]);
+      username: username || 'Unknown',
+      color: identityColor,
+    });
+  }, [identityColor, clientId, username, updateIdentity]);
+
+  // 4. The host reads the party from disk; a client receives it with the
+  // session state on join, so this only needs to run when hosting.
+  useEffect(() => {
+    if (!isHosting) return;
+    let cancelled = false;
+    gameClient
+      .listSheets()
+      .then((available) => {
+        if (!cancelled) setSheets(available);
+      })
+      .catch((error) => console.error('Failed to list the party:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [isHosting, setSheets]);
+
+  const pushToast = (toast: any) =>
+    setToasts((prev) => [...prev, { ...toast, toastId: Date.now() }].slice(-3));
 
   const prevMsgCount = useRef(messages.length);
   const isChatOpenRef = useRef(isChatOpen);
@@ -248,10 +270,7 @@ export function VttApp() {
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
       if (!isChatOpenRef.current) {
-        const latest = messages[messages.length - 1];
-        setToasts((prev) =>
-          [...prev, { ...latest, toastId: Date.now() }].slice(-3)
-        );
+        pushToast(messages[messages.length - 1]);
       }
     }
     prevMsgCount.current = messages.length;
@@ -333,6 +352,11 @@ export function VttApp() {
           <div
             className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 shadow-xl backdrop-blur-sm'
             style={{ borderColor: 'var(--theme-color)' }}
+            title={
+              isHosting
+                ? `Compartilhe este endereço: ${lanHostAddress ?? '...'}`
+                : `Conectado a ${lanHostAddress ?? '...'}`
+            }
           >
             <Wifi size={14} style={{ color: 'var(--theme-color)' }} />
             <span className='font-mono text-xs tracking-wider text-zinc-400'>
@@ -352,7 +376,7 @@ export function VttApp() {
                   <button
                     onClick={() => {
                       setIsSettingsOpen(false);
-                      leaveGame();
+                      void leaveGame();
                     }}
                     className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-red-500 transition-colors hover:bg-zinc-900 hover:text-red-400'
                   >
@@ -365,16 +389,18 @@ export function VttApp() {
 
           {/* NEW: Dynamic Server Roster */}
           <div className='flex gap-2'>
-            {roster.map((player) => (
-              <div
-                key={player.client_id}
-                className={`flex h-8 w-8 items-center justify-center rounded-sm border bg-zinc-800 text-xs font-bold shadow-lg transition-colors ${player.client_id === clientId ? 'shadow-[0_0_10px_currentColor]' : ''}`}
-                style={{ color: player.color, borderColor: player.color }}
-                title={`${player.username} ${player.client_id === clientId ? '(Você)' : ''}`}
-              >
-                {player.username.substring(0, 2).toUpperCase()}
-              </div>
-            ))}
+            {roster
+              .filter((player) => player.connected)
+              .map((player) => (
+                <div
+                  key={player.client_id}
+                  className={`flex h-8 w-8 items-center justify-center rounded-sm border bg-zinc-800 text-xs font-bold shadow-lg transition-colors ${player.client_id === clientId ? 'shadow-[0_0_10px_currentColor]' : ''}`}
+                  style={{ color: player.color, borderColor: player.color }}
+                  title={`${player.username} ${player.client_id === clientId ? '(Você)' : ''}`}
+                >
+                  {player.username.substring(0, 2).toUpperCase()}
+                </div>
+              ))}
           </div>
         </div>
       </div>
@@ -550,6 +576,7 @@ export function VttApp() {
         <CharacterSelectionModal
           onClose={() => setIsSelectionModalOpen(false)}
           onSelect={handleLoadCharacter}
+          sheets={sheets}
           roster={roster}
           clientId={clientId}
         />

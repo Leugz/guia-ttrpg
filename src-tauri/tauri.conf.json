@@ -21,5 +21,10 @@
     "security": {
       "csp": null
     }
+  },
+  "bundle": {
+    "resources": {
+      "../campaigns/act_1/templates/*.md": "campaigns/act_1/templates/"
+    }
   }
 }

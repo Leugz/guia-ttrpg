@@ -1,12 +1,8 @@
 import { create } from 'zustand';
 import { RollResult } from '../../shared/types';
+import { lan } from '../session/net/lanConnection';
 
-export interface Player {
-  client_id: string;
-  username: string;
-  claimed_sheet: string | null;
-  color: string;
-}
+export type { LanPlayer as Player } from '../session/net/protocol';
 
 export interface ChatMessage {
   id: string;
@@ -20,19 +16,12 @@ export interface ChatMessage {
 
 interface ChatStore {
   messages: ChatMessage[];
-  roster: Player[];
-  ws: WebSocket | null;
-  connect: (
-    ipAddress: string,
-    clientId: string,
-    username: string,
-    color: string
-  ) => void;
   addMessage: (
     msg: Omit<ChatMessage, 'id' | 'color'> & { color?: string }
   ) => void;
-  claimSheet: (clientId: string, sheetId: string) => void;
-  updateIdentity: (clientId: string, username: string, color: string) => void;
+  /** Replace the log, used when the host sends the backlog on (re)connect. */
+  setHistory: (messages: ChatMessage[]) => void;
+  clear: () => void;
 }
 
 const generateId = () => {
@@ -42,87 +31,63 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+/** Append unless we already hold this id, so echoes and replays are harmless. */
+const appendUnique = (messages: ChatMessage[], incoming: ChatMessage) =>
+  messages.some((m) => m.id === incoming.id)
+    ? messages
+    : [...messages, incoming];
+
+export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
-  roster: [],
-  ws: null,
-
-  connect: (ipAddress, clientId, username, color) => {
-    if (get().ws?.readyState === WebSocket.OPEN) return;
-
-    // We use the provided IP Address (or localhost if hosting)
-    const socket = new WebSocket(`ws://${ipAddress}:37373/ws`);
-
-    socket.onopen = () => {
-      console.log('Connected to LAN server');
-      // Announce our presence to the server immediately
-      socket.send(JSON.stringify({ type: 'join', clientId, username, color }));
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const incomingMsg = JSON.parse(event.data);
-
-        // Intercept Roster Syncs to update the Lobby UI
-        if (incomingMsg.type === 'roster_sync') {
-          set({ roster: incomingMsg.players });
-        }
-        // Standard chat messages
-        else if (incomingMsg.type === 'text' || incomingMsg.type === 'roll') {
-          set((state) => {
-            if (state.messages.some((m) => m.id === incomingMsg.id))
-              return state;
-            return {
-              messages: [...state.messages, incomingMsg as ChatMessage],
-            };
-          });
-        }
-      } catch (e) {
-        console.error('Failed to parse incoming WebSocket message', e);
-      }
-    };
-
-    socket.onclose = () => {
-      console.log('Disconnected from LAN server. Reconnecting...');
-      setTimeout(
-        () => get().connect(ipAddress, clientId, username, color),
-        3000
-      );
-    };
-
-    set({ ws: socket });
-  },
 
   addMessage: (msg) => {
-    const finalColor = msg.color || '#71717a';
     const fullMsg: ChatMessage = {
       ...msg,
-      color: finalColor,
+      color: msg.color || '#71717a',
       id: generateId(),
     };
 
-    const { ws } = get();
-    set((state) => ({ messages: [...state.messages, fullMsg] }));
+    // Shown locally straight away; the host echoes it back to everyone else and
+    // the id keeps that echo from duplicating.
+    set((state) => ({ messages: appendUnique(state.messages, fullMsg) }));
 
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(fullMsg));
-    } else {
-      console.warn('WebSocket not connected. Message saved locally only.');
+    if (!lan.send(fullMsg)) {
+      console.warn(
+        'Sem conexão com o mestre: mensagem registrada apenas localmente.'
+      );
     }
   },
 
-  claimSheet: (clientId, sheetId) => {
-    const { ws } = get();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'claim', clientId, sheetId }));
-    }
-  },
-
-  updateIdentity: (clientId, username, color) => {
-    const { ws } = get();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // Re-emitting 'join' safely updates our record in the Rust HashMap
-      ws.send(JSON.stringify({ type: 'join', clientId, username, color }));
-    }
-  },
+  setHistory: (messages) => set({ messages }),
+  clear: () => set({ messages: [] }),
 }));
+
+const isChatMessage = (value: unknown): value is ChatMessage => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ChatMessage>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.sender === 'string' &&
+    (candidate.type === 'text' || candidate.type === 'roll')
+  );
+};
+
+lan.on('chat', (payload) => {
+  if (!isChatMessage(payload)) return;
+  useChatStore.setState((state) => ({
+    messages: appendUnique(state.messages, payload),
+  }));
+});
+
+// Backlog on join. Anything already on screen is preserved by id.
+lan.on('session', (session) => {
+  const restored = session.history.filter(isChatMessage);
+  if (restored.length === 0) return;
+  useChatStore.setState((state) => {
+    const merged = [...restored];
+    for (const message of state.messages) {
+      if (!merged.some((m) => m.id === message.id)) merged.push(message);
+    }
+    return { messages: merged };
+  });
+});

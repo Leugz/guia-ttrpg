@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import {
   CharacterSheet,
   ParsedDocument,
@@ -7,6 +6,10 @@ import {
   DeathSaveOutcome,
 } from '../../shared/types';
 import { useChatStore } from '../chat/chatStore';
+import * as gameClient from '../session/net/gameClient';
+import { lan } from '../session/net/lanConnection';
+
+export const GM_COLOR = '#987c50';
 
 export const getProfileColor = (profile?: string) => {
   if (!profile) return '#71717a';
@@ -19,7 +22,7 @@ export const getProfileColor = (profile?: string) => {
       return '#4b7e2f';
     case 'MESTRE':
     case 'GM':
-      return '#987c50';
+      return GM_COLOR;
     default:
       return '#71717a';
   }
@@ -28,7 +31,8 @@ export const getProfileColor = (profile?: string) => {
 interface CharacterStore {
   character: CharacterSheet | null;
   notes: string;
-  activePath: string | null;
+  /** File name of the active sheet, e.g. `alan.md`. */
+  activeSheetId: string | null;
 
   impeto: number;
   avaliacao: number;
@@ -42,8 +46,10 @@ interface CharacterStore {
   setPendingImpetoD4: (val: boolean) => void;
   setAjudado: (val: boolean) => void;
 
-  loadCharacter: (doc: ParsedDocument, path: string) => void;
-  clearCharacter: () => void; // NEW: Wipes memory on logout
+  loadCharacter: (doc: ParsedDocument, sheetId: string) => void;
+  clearCharacter: () => void;
+  /** Accept a sheet pushed by the host without touching per-scene UI state. */
+  syncCharacter: (sheetId: string, sheet: CharacterSheet) => void;
 
   applyResourceChange: (resource: 'hp' | 'dp', delta: number) => Promise<void>;
   rollDeathSave: (resource: 'hp' | 'dp') => Promise<void>;
@@ -54,16 +60,19 @@ interface CharacterStore {
   removeActiveEffect: (effectId: string) => Promise<void>;
 }
 
-export const useCharacterStore = create<CharacterStore>((set, get) => ({
-  character: null,
-  notes: '',
-  activePath: null,
-
+const SCENE_DEFAULTS = {
   impeto: 0,
   avaliacao: 0,
   activeImpetoBuff: null,
   pendingImpetoD4: false,
   ajudado: false,
+} as const;
+
+export const useCharacterStore = create<CharacterStore>((set, get) => ({
+  character: null,
+  notes: '',
+  activeSheetId: null,
+  ...SCENE_DEFAULTS,
 
   setImpeto: (val) =>
     set((state) => ({
@@ -77,41 +86,37 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   setPendingImpetoD4: (val) => set({ pendingImpetoD4: val }),
   setAjudado: (val) => set({ ajudado: val }),
 
-  loadCharacter: (doc, path) =>
+  loadCharacter: (doc, sheetId) =>
     set({
       character: doc.data,
       notes: doc.body,
-      activePath: path,
-      impeto: 0,
-      avaliacao: 0,
-      activeImpetoBuff: null,
-      pendingImpetoD4: false,
-      ajudado: false,
+      activeSheetId: sheetId,
+      ...SCENE_DEFAULTS,
     }),
 
-  // Wipes all data to prevent bleed
   clearCharacter: () =>
     set({
       character: null,
       notes: '',
-      activePath: null,
-      impeto: 0,
-      avaliacao: 0,
-      activeImpetoBuff: null,
-      pendingImpetoD4: false,
-      ajudado: false,
+      activeSheetId: null,
+      ...SCENE_DEFAULTS,
     }),
 
+  syncCharacter: (sheetId, sheet) => {
+    if (get().activeSheetId !== sheetId) return;
+    set({ character: sheet });
+  },
+
   applyResourceChange: async (resource, delta) => {
-    const { activePath, character } = get();
-    if (!activePath || !character) return;
+    const { activeSheetId, character } = get();
+    if (!activeSheetId || !character) return;
 
     try {
-      const outcome = await invoke<ResourceOutcome>('apply_resource_change', {
-        path: activePath,
+      const outcome: ResourceOutcome = await gameClient.applyResourceChange(
+        activeSheetId,
         resource,
-        delta,
-      });
+        delta
+      );
       set({ character: outcome.character });
 
       if (outcome.change.triggered_save) {
@@ -129,13 +134,13 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   },
 
   rollDeathSave: async (resource) => {
-    const { activePath, character } = get();
-    if (!activePath || !character) return;
+    const { activeSheetId, character } = get();
+    if (!activeSheetId || !character) return;
     try {
-      const outcome = await invoke<DeathSaveOutcome>('roll_death_save', {
-        path: activePath,
-        resource,
-      });
+      const outcome: DeathSaveOutcome = await gameClient.rollDeathSave(
+        activeSheetId,
+        resource
+      );
       set({ character: outcome.character });
       useChatStore.getState().addMessage({
         sender: outcome.character.name,
@@ -145,81 +150,80 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
         rollResult: outcome.result,
       });
     } catch (error) {
-      console.error(`Death save failed:`, error);
+      console.error('Death save failed:', error);
     }
   },
 
   stepAttribute: async (attribute, steps) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activeSheetId } = get();
+    if (!activeSheetId) return;
     try {
-      const updated = await invoke<CharacterSheet>('step_attribute', {
-        path: activePath,
-        attribute,
-        steps,
+      set({
+        character: await gameClient.stepAttribute(
+          activeSheetId,
+          attribute,
+          steps
+        ),
       });
-      set({ character: updated });
     } catch (error) {
       console.error(error);
     }
   },
 
   stepSkill: async (skillId, steps) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activeSheetId } = get();
+    if (!activeSheetId) return;
     try {
-      const updated = await invoke<CharacterSheet>('step_skill', {
-        path: activePath,
-        skillId,
-        steps,
+      set({
+        character: await gameClient.stepSkill(activeSheetId, skillId, steps),
       });
-      set({ character: updated });
     } catch (error) {
       console.error(error);
     }
   },
 
   toggleEntry: async (entryId, active) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activeSheetId } = get();
+    if (!activeSheetId) return;
     try {
-      const updated = await invoke<CharacterSheet>('toggle_entry', {
-        path: activePath,
-        entryId,
-        active,
+      set({
+        character: await gameClient.toggleEntry(activeSheetId, entryId, active),
       });
-      set({ character: updated });
     } catch (error) {
       console.error(error);
     }
   },
 
   applyBuiltinEffect: async (effectId, magnitude) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activeSheetId } = get();
+    if (!activeSheetId) return;
     try {
-      const updated = await invoke<CharacterSheet>('apply_builtin_effect', {
-        path: activePath,
-        effectId,
-        magnitude: magnitude ?? null,
+      set({
+        character: await gameClient.applyBuiltinEffect(
+          activeSheetId,
+          effectId,
+          magnitude
+        ),
       });
-      set({ character: updated });
     } catch (error) {
       console.error(error);
     }
   },
 
   removeActiveEffect: async (effectId) => {
-    const { activePath } = get();
-    if (!activePath) return;
+    const { activeSheetId } = get();
+    if (!activeSheetId) return;
     try {
-      const updated = await invoke<CharacterSheet>('remove_active_effect', {
-        path: activePath,
-        effectId,
+      set({
+        character: await gameClient.removeActiveEffect(activeSheetId, effectId),
       });
-      set({ character: updated });
     } catch (error) {
       console.error(error);
     }
   },
 }));
+
+// The host announces every write, so a sheet open in two windows stays in step.
+lan.on('sheet', ({ sheetId, sheet }) => {
+  useCharacterStore.getState().syncCharacter(sheetId, sheet);
+});

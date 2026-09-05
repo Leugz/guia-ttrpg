@@ -7,11 +7,7 @@ interface AbilityListProps {
   onUseAbility: (name: string, description: string) => void;
 }
 
-export function AbilityList({
-  characterName,
-  abilities,
-  onUseAbility,
-}: AbilityListProps) {
+export function AbilityList({ abilities, onUseAbility }: AbilityListProps) {
   const { toggleEntry } = useCharacterStore();
 
   if (!abilities || abilities.length === 0) return null;

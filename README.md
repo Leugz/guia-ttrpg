@@ -54,7 +54,11 @@ _Note for Linux/Wayland users: The `tauri:dev` script automatically passes
 
 ## 🏗️ Project Architecture & Organization
 
-G.U.I.A utilizes a desktop-web hybrid architecture, maintaining a strict separation of concerns between the OS-level file system and the reactive user interface. 
+G.U.I.A is **host-authoritative**. The GM's machine owns the campaign files and
+the rules engine; joined players never touch the filesystem. A player asks the
+host to load a sheet or roll a test, the host runs the same Rust code its own
+window would run, and every write is announced to the table so open copies stay
+in step.
 
 ### Directory Structure
 
@@ -62,28 +66,64 @@ G.U.I.A utilizes a desktop-web hybrid architecture, maintaining a strict separat
 guia-ttrpg/
 ├── src-tauri/                 # ⚙️ Core Backend (Rust)
 │   ├── src/
-│   │   ├── main.rs            # Application shell, rolling app.log, async server initialization
-│   │   ├── commands.rs        # Tauri IPC handlers (the bridge to React)
-│   │   ├── models.rs          # Strict data schemas mirroring the YAML contracts
-│   │   ├── dice.rs            # Mathematical engine for step-dice and criticals
-│   │   ├── effects.rs         # Ability/inventory effects and roll-pool resolution
-│   │   ├── rules.rs           # Fixed system rules: skill catalog, built-in buffs, save DCs
+│   │   ├── main.rs            # Bootstrap: logging, SQLite, shared state, IPC surface
+│   │   ├── commands.rs        # Tauri IPC adapter (thin; delegates to api)
+│   │   ├── api.rs             # Application services: every game operation, once
+│   │   ├── state.rs           # Shared runtime state and the broadcast hub
+│   │   ├── campaign.rs        # Act discovery and game-instance provisioning
+│   │   ├── history.rs         # SQLite session log (chat/rolls) for reconnects
+│   │   ├── network/
+│   │   │   ├── protocol.rs    # Wire contract (mirrored in TypeScript)
+│   │   │   ├── server.rs      # Axum server lifecycle, address discovery
+│   │   │   └── session.rs     # Per-connection handling and RPC dispatch
+│   │   ├── models.rs          # Data schemas mirroring the YAML contracts
+│   │   ├── dice.rs            # Step-dice and criticals
+│   │   ├── effects.rs         # Ability/inventory effects and pool resolution
+│   │   ├── rules.rs           # Fixed rules: skills, built-in buffs, save DCs
 │   │   └── storage.rs         # Markdown/YAML parsing and atomic disk writes
-│   └── capabilities/          # Strict security whitelists for IPC bridge access
+│   └── capabilities/          # IPC permission whitelists
 │
 ├── src/                       # 🎨 Frontend UI (React + TypeScript)
-│   ├── components/            # Feature-based atomic components
-│   │   ├── canvas/            # React-Konva 2D mapping engine
-│   │   ├── character/         # Character sheet layout and logic
-│   │   └── chat/              # Event log and dice result rendering
-│   ├── store/                 # Zustand global state (characterStore, chatStore)
-│   ├── lib/                   # Static system rules and Typescript interfaces
-│   └── App.tsx                # Main layout orchestrator
+│   ├── features/              # Feature-sliced; each owns its store and components
+│   │   ├── home/              # Identity, table list, host/join
+│   │   ├── session/           # Session lifecycle and all networking
+│   │   │   ├── sessionStore.ts
+│   │   │   └── net/
+│   │   │       ├── protocol.ts      # Wire types, mirrors protocol.rs
+│   │   │       ├── lanConnection.ts # Socket, reconnect, request/response
+│   │   │       ├── lanStore.ts      # Presence: roster and offered sheets
+│   │   │       └── gameClient.ts    # Local IPC vs. host RPC, decided in one place
+│   │   ├── character-sheet/   # Sheet layout, logic and store
+│   │   ├── chat/              # Event log and dice rendering
+│   │   ├── dice/              # Free-form dice roller
+│   │   ├── map/               # React-Konva 2D mapping engine
+│   │   └── vtt/               # Main in-session layout orchestrator
+│   └── shared/                # Cross-feature types and components
 ```
 
 ### Architectural Flow
-1. **Data Layer (Obsidian/YAML):** The source of truth. All data is persisted locally in `.md` files to ensure player ownership and offline resilience.
-2. **Backend Engine (Rust):** Parses local files via `gray_matter`, enforces data integrity through strict structs, calculates dice logic natively for maximum performance, and handles atomic disk writes.
-3. **IPC Bridge (Tauri):** Securely passes serialized data between the OS and the webview.
-4. **State Management (Zustand):** Caches the backend data in lightweight frontend stores, preventing expensive re-renders of the Konva canvas when sidebar UI changes.
-5. **Presentation (React/Tailwind):** Renders the UI based on state changes. Components are feature-isolated to prevent layout coupling.
+
+1. **Data Layer (Obsidian/YAML):** The source of truth. Character state lives in
+   `.md` files inside a game instance, readable and editable in Obsidian.
+2. **Rules Engine (`api.rs`):** Parses via `gray_matter`, enforces integrity with
+   strict structs, resolves dice natively, and writes atomically. It has no
+   knowledge of Tauri or Axum, so it is unit tested directly.
+3. **Two Front Doors:** `commands.rs` exposes the engine over Tauri IPC for the
+   local window; `network/session.rs` exposes the same functions over WebSocket
+   for joined players. Identical rules, identical code.
+4. **Transport Choice (`gameClient.ts`):** The only place in the UI that knows
+   whether we are the host. Everything else addresses characters by sheet id.
+5. **State Management (Zustand):** Lightweight stores cache backend data,
+   preventing expensive Konva re-renders when sidebar UI changes.
+
+### Hosting Model
+
+- A LAN server binds only when a GM opens a table, and stops when they leave; a
+  player who only ever joins never opens a port.
+- Sheets are addressed by file name (`alan.md`) and resolved inside the game
+  instance, so a client cannot request an arbitrary path.
+- Writes are permission-checked: a player may edit the sheet they claimed, the
+  GM may edit anything, and `accessible_sheets` extends that.
+- Secret rolls are routed to their author and the GM only, not broadcast.
+- Disconnected players keep their claim so an automatic reconnect restores the
+  session instead of duplicating it.

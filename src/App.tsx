@@ -1,4 +1,3 @@
-import React from 'react';
 import { useSessionStore } from './features/session/sessionStore';
 import { WelcomeScreen } from './features/home/components/WelcomeScreen';
 import { HomeScreen } from './features/home/components/HomeScreen';

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useCharacterStore, getProfileColor } from '../characterStore';
 import { TestRequest, ResolvedPool, TestOutcome } from '../../../shared/types';
 import { useChatStore } from '../../chat/chatStore';
+import * as gameClient from '../../session/net/gameClient';
 
 export function SkillPromptModal({
   attributeName,
@@ -15,7 +15,7 @@ export function SkillPromptModal({
 }) {
   const {
     character,
-    activePath,
+    activeSheetId,
     applyResourceChange,
     impeto,
     setImpeto,
@@ -129,22 +129,34 @@ export function SkillPromptModal({
   };
 
   useEffect(() => {
-    if (!activePath) return;
-    invoke<ResolvedPool>('preview_test', {
-      path: activePath,
-      request: buildRequest(),
-    })
-      .then(setPreview)
+    if (!activeSheetId) return;
+    let cancelled = false;
+    gameClient
+      .previewTest(activeSheetId, buildRequest())
+      .then((pool: ResolvedPool) => {
+        // A slower reply must not overwrite a newer preview.
+        if (!cancelled) setPreview(pool);
+      })
       .catch(console.error);
-  }, [selectedSkill, isSecret, helpSteps, triggeredAbilities, activePath, dt]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedSkill,
+    isSecret,
+    helpSteps,
+    triggeredAbilities,
+    activeSheetId,
+    dt,
+  ]);
 
   const handleRoll = async () => {
-    if (!activePath || !character) return;
+    if (!activeSheetId || !character) return;
     try {
-      const outcome = await invoke<TestOutcome>('roll_test', {
-        path: activePath,
-        request: buildRequest(),
-      });
+      const outcome: TestOutcome = await gameClient.rollTest(
+        activeSheetId,
+        buildRequest()
+      );
 
       if (triggeredAbilities.includes('foco_mental'))
         applyResourceChange('dp', -2);
