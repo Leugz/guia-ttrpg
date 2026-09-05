@@ -119,9 +119,16 @@ export const RpcMethod = {
   toggleHandoutShare: 'toggle_handout_share',
   openHandoutForAll: 'open_handout_for_all',
   openHandoutForPlayer: 'open_handout_for_player',
+  getHandoutAsset: 'get_handout_asset',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
+
+/** The raw bytes of an image handout, ready to become a `data:` URL. */
+export interface HandoutAsset {
+  mimeType: string;
+  dataBase64: string;
+}
 
 /** Maps each method to the shape the host answers with. */
 export interface RpcResults {
@@ -144,6 +151,7 @@ export interface RpcResults {
   [RpcMethod.toggleHandoutShare]: Handout;
   [RpcMethod.openHandoutForAll]: Handout;
   [RpcMethod.openHandoutForPlayer]: Handout;
+  [RpcMethod.getHandoutAsset]: HandoutAsset;
 }
 
 export interface TestRpcParams {

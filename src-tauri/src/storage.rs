@@ -37,6 +37,77 @@ pub fn resolve_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// Like `resolve_within`, but for the binary image an image-handout's body
+/// points at, rather than a Markdown document. Only the allowed extension
+/// list differs — traversal outside the campaign root is still refused.
+pub fn resolve_asset_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
+    let relative = PathBuf::from(reference.trim());
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(format!(
+            "Reference '{}' escapes the campaign directory.",
+            reference
+        ));
+    }
+    let joined = root.join(relative);
+    match joined
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("webp") => Ok(joined),
+        _ => Err("Only image assets (jpg, jpeg, png, gif, webp) can be referenced.".into()),
+    }
+}
+
+/// Best-effort MIME type for an image asset, used when handing raw bytes to a
+/// remote client instead of letting it resolve the path itself.
+pub fn mime_for_asset(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        _ => "image/jpeg",
+    }
+}
+
+/// Minimal standard-alphabet base64 encoder (with padding). Small enough to
+/// hand-roll rather than pull in a whole extra crate just to ship a handful
+/// of handout images over the LAN socket.
+pub fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0b11) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(((b1 & 0b1111) << 2) | (b2 >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[(b2 & 0b111111) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 pub fn parse_document(raw: &str) -> Result<ParsedDocument, String> {
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     let parsed = matter.parse(raw);
@@ -231,6 +302,35 @@ Conteúdo livre do jogador.
 
         let resolved = resolve_within(root, "personagens/joao.md").unwrap();
         assert!(resolved.starts_with(root));
+    }
+
+    #[test]
+    fn image_asset_references_stay_inside_the_campaign_root() {
+        let root = Path::new("/campanhas/ordem");
+        assert!(resolve_asset_within(root, "../secreto.jpg").is_err());
+        assert!(resolve_asset_within(root, "/etc/passwd.png").is_err());
+        assert!(resolve_asset_within(root, "assets/mapa.md").is_err());
+
+        let resolved = resolve_asset_within(root, "assets/mapa_da_mansao.jpg").unwrap();
+        assert!(resolved.starts_with(root));
+    }
+
+    #[test]
+    fn mime_types_are_guessed_from_the_extension() {
+        assert_eq!(mime_for_asset(Path::new("a/b.PNG")), "image/png");
+        assert_eq!(mime_for_asset(Path::new("a/b.gif")), "image/gif");
+        assert_eq!(mime_for_asset(Path::new("a/b.webp")), "image/webp");
+        assert_eq!(mime_for_asset(Path::new("a/b.jpg")), "image/jpeg");
+        assert_eq!(mime_for_asset(Path::new("a/b.jpeg")), "image/jpeg");
+    }
+
+    #[test]
+    fn base64_encoding_matches_known_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
     }
 }
 

@@ -22,6 +22,7 @@ use crate::network::protocol::{
     method, ChatEnvelope, ClientMessage, Player, ServerMessage, Target, HISTORY_LIMIT,
 };
 use crate::state::AppState;
+use crate::storage;
 
 pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
@@ -444,6 +445,38 @@ async fn may_mutate(
     }
 }
 
+/// A player may fetch an image handout's bytes if they're the GM, the
+/// handout is public, or it has been explicitly shared with them — the same
+/// visibility rule the handout metadata itself is already filtered by on the
+/// frontend. This is enforced here too so a client can't bypass that filter
+/// by guessing a handout id.
+async fn may_view_handout(
+    state: &Arc<AppState>,
+    client_id: &str,
+    handout_id: &str,
+    root: &PathBuf,
+) -> bool {
+    if state
+        .host_client_id()
+        .await
+        .is_some_and(|host| host == client_id)
+    {
+        return true;
+    }
+
+    let Ok(path) = campaign::resolve_handout(root, handout_id) else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(handout) = storage::parse_handout(handout_id, &raw) else {
+        return false;
+    };
+
+    handout.is_public || handout.shared_with.iter().any(|shared| shared == client_id)
+}
+
 async fn rpc(
     state: &Arc<AppState>,
     client_id: Option<&str>,
@@ -458,6 +491,28 @@ async fn rpc(
     let Some(root) = state.game_root().await else {
         return ServerMessage::err(request_id, "No table is currently being hosted.");
     };
+
+    if method == method::GET_HANDOUT_ASSET {
+        #[derive(Deserialize)]
+        struct HandoutIdParams {
+            #[serde(rename = "handoutId")]
+            handout_id: String,
+        }
+        let Ok(HandoutIdParams { handout_id }) = serde_json::from_value(params.clone()) else {
+            return ServerMessage::err(request_id, "This request must name a handout.");
+        };
+        if !may_view_handout(state, client_id, &handout_id, &root).await {
+            tracing::warn!(
+                client_id,
+                handout_id,
+                "rejected an unauthorised handout asset request"
+            );
+            return ServerMessage::err(
+                request_id,
+                "You do not have permission to view that handout.",
+            );
+        }
+    }
 
     if is_mutating(method) {
         let Some(sheet_id) = requested_sheet(&params) else {
@@ -663,6 +718,16 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
                 &p.handout_id,
                 &p.target_client_id,
             )?)
+        }
+
+        method::GET_HANDOUT_ASSET => {
+            #[derive(Deserialize)]
+            struct Params {
+                #[serde(rename = "handoutId")]
+                handout_id: String,
+            }
+            let p: Params = parse(params)?;
+            to_value(api::get_handout_asset(root, &p.handout_id)?)
         }
 
         unknown => Err(format!("Unknown method: {}", unknown)),

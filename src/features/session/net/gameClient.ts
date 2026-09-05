@@ -11,7 +11,7 @@
  * acyclic: `sessionStore` pushes context in, everyone else just calls.
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 import type {
   CharacterSheet,
@@ -296,4 +296,24 @@ export const openHandoutForPlayer = (
       }),
     () =>
       lan.request(RpcMethod.openHandoutForPlayer, { handoutId, targetClientId })
+  );
+
+/**
+ * A displayable URL for an image handout.
+ *
+ * The host has the campaign folder on disk, so it can address the file
+ * directly through Tauri's asset protocol. A joined client has no local copy
+ * of that folder at all, so for it we pull the actual bytes over the RPC
+ * channel and hand back a `data:` URL instead — the same "two front doors,
+ * identical result" shape every other operation in this module follows.
+ */
+export const getHandoutAssetUrl = (
+  handout: Pick<Handout, 'id' | 'content'>
+): Promise<string> =>
+  dispatch(
+    () => Promise.resolve(convertFileSrc(localPath(handout.content))),
+    () =>
+      lan
+        .request(RpcMethod.getHandoutAsset, { handoutId: handout.id })
+        .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );

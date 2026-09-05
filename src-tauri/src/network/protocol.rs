@@ -225,6 +225,10 @@ pub mod method {
     pub const TOGGLE_HANDOUT_SHARE: &str = "toggle_handout_share";
     pub const OPEN_HANDOUT_FOR_ALL: &str = "open_handout_for_all";
     pub const OPEN_HANDOUT_FOR_PLAYER: &str = "open_handout_for_player";
+    /// Fetches the raw bytes of an image handout, base64-encoded. Joined
+    /// clients have no filesystem access of their own, so this is what lets
+    /// them actually see an image handout instead of just its metadata.
+    pub const GET_HANDOUT_ASSET: &str = "get_handout_asset";
 }
 
 #[cfg(test)]

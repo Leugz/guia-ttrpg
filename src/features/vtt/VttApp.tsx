@@ -32,7 +32,6 @@ import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
 import { GameBoard } from '../map/components/GameBoard';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
-import { convertFileSrc } from '@tauri-apps/api/core';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -387,6 +386,12 @@ export function VttApp() {
   // -------------------------------------------------------------------------
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
   const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
+  // Resolved `src` for image handouts, keyed by handout id. On the host this
+  // is an asset:// URL from the local disk; on a joined client it's a data:
+  // URL built from bytes fetched over the LAN RPC — see gameClient.getHandoutAssetUrl.
+  const [handoutAssetUrls, setHandoutAssetUrls] = useState<
+    Record<string, string>
+  >({});
 
   console.log('Handouts recebidos do servidor:', handouts);
 
@@ -449,6 +454,33 @@ export function VttApp() {
       console.error(e);
     }
   };
+
+  // Resolve the display URL for any open image handout that isn't cached
+  // yet. On the host this resolves instantly (local asset:// URL); on a
+  // joined client it awaits the RPC round-trip to the host.
+  useEffect(() => {
+    let cancelled = false;
+
+    openHandoutIds.forEach((id) => {
+      const handout = handouts.find((h) => h.id === id);
+      if (!handout || handout.content_type === 'text') return;
+      if (handoutAssetUrls[id]) return;
+
+      gameClient
+        .getHandoutAssetUrl(handout)
+        .then((url) => {
+          if (cancelled) return;
+          setHandoutAssetUrls((prev) => ({ ...prev, [id]: url }));
+        })
+        .catch((error) => {
+          console.error(`Failed to load the image for handout "${id}":`, error);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openHandoutIds, handouts, handoutAssetUrls]);
 
   // -------------------------------------------------------------------------
 
@@ -1087,9 +1119,15 @@ export function VttApp() {
           <DraggableWindow
             key={id}
             title={handout.title}
-            onClose={() =>
-              setOpenHandoutIds((prev) => prev.filter((i) => i !== id))
-            }
+            onClose={() => {
+              setOpenHandoutIds((prev) => prev.filter((i) => i !== id));
+              setHandoutAssetUrls((prev) => {
+                if (!(id in prev)) return prev;
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }}
             initialX={150 + index * 30}
             initialY={150 + index * 30}
             width='w-96'
@@ -1100,15 +1138,17 @@ export function VttApp() {
                 <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
                   <ReactMarkdown>{handout.content}</ReactMarkdown>
                 </div>
-              ) : (
+              ) : handoutAssetUrls[id] ? (
                 <img
-                  src={convertFileSrc(
-                    `${gameClient.getGameContext().gameRoot}/${handout.content}`
-                  )}
+                  src={handoutAssetUrls[id]}
                   alt={handout.title}
                   className='w-full rounded border border-zinc-800 object-contain'
                   draggable={false}
                 />
+              ) : (
+                <div className='py-8 text-center text-zinc-500'>
+                  Carregando imagem…
+                </div>
               )}
             </div>
           </DraggableWindow>

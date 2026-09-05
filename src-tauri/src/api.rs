@@ -760,3 +760,33 @@ pub fn open_handout_for_player(
 
     Ok(handout)
 }
+
+/// The raw bytes of an image handout, base64-encoded. Joined clients have no
+/// access to the host's filesystem, so this is what lets a player actually
+/// see an image handout instead of just its metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct HandoutAsset {
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    #[serde(rename = "dataBase64")]
+    pub data_base64: String,
+}
+
+pub fn get_handout_asset(root: &Path, handout_id: &str) -> Result<HandoutAsset, String> {
+    let path = campaign::resolve_handout(root, handout_id)?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let handout = storage::parse_handout(handout_id, &raw)?;
+
+    if handout.content_type == "text" {
+        return Err("This handout has no image asset.".into());
+    }
+
+    let asset_path = storage::resolve_asset_within(root, &handout.content)?;
+    let bytes = std::fs::read(&asset_path)
+        .map_err(|e| format!("Failed to read image at {}: {}", asset_path.display(), e))?;
+
+    Ok(HandoutAsset {
+        mime_type: storage::mime_for_asset(&asset_path).to_string(),
+        data_base64: storage::base64_encode(&bytes),
+    })
+}
