@@ -46,6 +46,15 @@ pub struct SheetSummary {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
+pub enum JukeboxPayload {
+    Play { track_url: String, looped: bool },
+    Pause,
+    Resume,
+    Stop,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 pub enum ToolPayload {
     Ping {
         x: f64,
@@ -144,6 +153,13 @@ pub enum ClientMessage {
         #[serde(default)]
         params: Value,
     },
+
+    /// Jukebox control (GM only)
+    Jukebox {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        payload: JukeboxPayload,
+    },
 }
 
 /// Chat payloads are produced by the UI and echoed back to everyone verbatim,
@@ -177,7 +193,9 @@ impl ChatEnvelope {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Full roster, sent whenever presence or claims change.
-    RosterSync { players: Vec<Player> },
+    RosterSync {
+        players: Vec<Player>,
+    },
     /// Everything a (re)joining client needs to catch up.
     SessionState {
         sheets: Vec<SheetSummary>,
@@ -209,10 +227,14 @@ pub enum ServerMessage {
     /// The map list changed — in practice, the GM revealed a different map.
     /// Sent whole rather than as a delta because it is a rare event and the
     /// list is a handful of entries.
-    MapsUpdate { maps: Vec<MapDefinition> },
+    MapsUpdate {
+        maps: Vec<MapDefinition>,
+    },
     /// The full board. Sent on join and after any structural change (a token
     /// placed, removed, or restyled).
-    TokensSync { tokens: Vec<MapToken> },
+    TokensSync {
+        tokens: Vec<MapToken>,
+    },
     /// One token moved. Deliberately the smallest message on the wire.
     TokenMoved {
         #[serde(rename = "tokenId")]
@@ -226,6 +248,9 @@ pub enum ServerMessage {
         client_id: String,
         payload: ToolPayload,
     },
+    JukeboxSync {
+        payload: JukeboxPayload,
+    },
     /// Result of a `Rpc` request.
     RpcResult {
         #[serde(rename = "requestId")]
@@ -237,7 +262,9 @@ pub enum ServerMessage {
         error: Option<String>,
     },
     /// The host closed the table.
-    SessionClosed { reason: String },
+    SessionClosed {
+        reason: String,
+    },
 }
 
 impl ServerMessage {

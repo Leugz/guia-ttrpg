@@ -1,8 +1,3 @@
-/**
- * The wire contract with the host, mirroring `src-tauri/src/network/protocol.rs`.
- * Change one, change the other.
- */
-
 import type {
   CharacterSheet,
   DeathSaveOutcome,
@@ -40,6 +35,19 @@ export interface SheetSummary {
 
 export type ConnectionStatus =
   'idle' | 'connecting' | 'online' | 'reconnecting' | 'offline';
+
+// Add the payload type
+export type JukeboxPayload =
+  | { action: 'play'; track_url: string; looped: boolean }
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'stop' };
+
+// Add to your ServerMessage union type:
+export interface JukeboxSyncMessage {
+  type: 'jukebox_sync';
+  payload: JukeboxPayload;
+}
 
 // --- Server -> Client -------------------------------------------------------
 
@@ -124,8 +132,8 @@ export type ServerMessage =
   | MapsUpdateMessage
   | TokensSyncMessage
   | TokenMovedMessage
-  /** Campaign-relative path to the portrait, e.g. `assets/portraits/alan.png`. */
-  | ToolSyncMessage;
+  | ToolSyncMessage
+  | JukeboxSyncMessage;
 
 // --- Client -> Server: board traffic ---------------------------------------
 //

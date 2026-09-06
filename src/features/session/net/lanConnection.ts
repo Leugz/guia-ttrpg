@@ -10,6 +10,7 @@ import {
   buildWsUrl,
   HandoutForceOpenMessage,
   HandoutUpdateMessage,
+  JukeboxSyncMessage,
   RpcMethod,
   ToolClientMessage,
   ToolSyncMessage,
@@ -49,6 +50,7 @@ export interface LanEvents {
   tokens: TokensSyncMessage;
   tokenMoved: TokenMovedMessage;
   tool: ToolSyncMessage;
+  jukeboxSync: JukeboxSyncMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -359,6 +361,9 @@ class LanConnection {
         return;
       case 'tool_sync':
         this.emit('tool', message as ToolSyncMessage);
+        return;
+      case 'jukebox_sync':
+        this.emit('jukeboxSync', message as JukeboxSyncMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);

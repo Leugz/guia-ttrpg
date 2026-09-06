@@ -16,6 +16,8 @@ import {
   Eye,
   EyeOff,
   Send,
+  Music,
+  Volume2,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -48,6 +50,8 @@ import { ResourceMathInput } from '../character-sheet/components/ResourceMathInp
 import { DieShape } from '../../shared/components/DieShape';
 import { tokenMotion } from '../map/tokenMotion';
 import { lan } from '../session/net/lanConnection';
+import { JukeboxPanel } from '../jukebox/components/JukeboxPanel';
+import { useJukeboxStore } from '../jukebox/jukeboxStore';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -413,6 +417,8 @@ const ResourceBar = ({
 };
 
 export function VttApp() {
+  const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
+  const { localVolume, setLocalVolume } = useJukeboxStore();
   const messages = useChatStore((state) => state.messages);
   const roster = useLanStore((state) => state.roster);
   const sheets = useLanStore((state) => state.sheets);
@@ -1056,13 +1062,22 @@ export function VttApp() {
               <Ruler size={18} />
             </button>
             {isTrueGM && (
-              <button
-                id='map-selector-btn'
-                onClick={() => setIsMapSelectorOpen((open) => !open)}
-                className={`mt-2 rounded-sm p-2 outline-none transition-colors focus:outline-none ${isMapSelectorOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
-              >
-                <MapIcon size={18} />
-              </button>
+              <>
+                <button
+                  id='map-selector-btn'
+                  onClick={() => setIsMapSelectorOpen((open) => !open)}
+                  className={`mt-2 rounded-sm p-2 outline-none transition-colors focus:outline-none ${isMapSelectorOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
+                >
+                  <MapIcon size={18} />
+                </button>
+                <button
+                  onClick={() => setIsJukeboxOpen(!isJukeboxOpen)}
+                  className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${isJukeboxOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
+                  title='Jukebox'
+                >
+                  <Music size={18} />
+                </button>
+              </>
             )}
             <button
               onClick={() => setIsHandoutListOpen(!isHandoutListOpen)}
@@ -1120,6 +1135,28 @@ export function VttApp() {
                   id='settings-menu'
                   className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-zinc-950/80 py-1 shadow-2xl backdrop-blur-md'
                 >
+                  <div className='border-b border-zinc-800/50 px-4 py-3'>
+                    <div className='mb-2 flex items-center justify-between'>
+                      <span className='flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+                        <Volume2 size={12} /> Volume da M sica
+                      </span>
+                      <span className='font-mono text-[10px] text-zinc-400'>
+                        {Math.round(localVolume * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type='range'
+                      min='0'
+                      max='1'
+                      step='0.01'
+                      value={localVolume}
+                      onChange={(e) =>
+                        setLocalVolume(parseFloat(e.target.value))
+                      }
+                      className='w-full accent-[var(--theme-color)]'
+                    />
+                  </div>
+
                   {isHosting && (
                     <div className='border-b border-zinc-800/50 px-4 py-3'>
                       <span className='mb-1 block text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -1507,6 +1544,19 @@ export function VttApp() {
           </DraggableWindow>
         );
       })}
+
+      {isJukeboxOpen && isTrueGM && (
+        <DraggableWindow
+          title='Jukebox'
+          onClose={() => setIsJukeboxOpen(false)}
+          initialX={84}
+          initialY={140} // Positioned nicely below the toolbars
+          initialWidth={300}
+          initialHeight={320}
+        >
+          <JukeboxPanel />
+        </DraggableWindow>
+      )}
 
       <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col items-end gap-3'>
         {toasts.map((toast) => {

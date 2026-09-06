@@ -199,6 +199,21 @@ async fn handle_text(
             }
             None
         }
+        ClientMessage::Jukebox {
+            client_id: _,
+            payload,
+        } => {
+            let sender = client_id.as_deref().unwrap_or("");
+            if state.is_gm(sender).await {
+                let msg = ServerMessage::JukeboxSync { payload };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.send(Target::All, json);
+                }
+            } else {
+                tracing::warn!(sender, "rejected jukebox command from non-GM");
+            }
+            None
+        }
         ClientMessage::Rpc {
             request_id,
             method,
