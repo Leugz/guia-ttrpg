@@ -47,6 +47,7 @@ import { MapSelector } from '../map/components/MapSelector';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
 import { DieShape } from '../../shared/components/DieShape';
 import { tokenMotion } from '../map/tokenMotion';
+import { lan } from '../session/net/lanConnection';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -595,12 +596,16 @@ export function VttApp() {
   // Mestre ouve as edições ao vivo
   useEffect(() => {
     if (!isTrueGM) return;
-    const unsub = useLanStore.subscribe((state, prevState) => {
-      // Como a ficha não fica mais armazenada puramente no event bus,
-      // precisamos recarregar na hora para o mestre visualizar.
-      // Em uma atualização futura do backend esse evento pode ser interceptado direto.
+    const unsubscribe = lan.on('sheet', (message) => {
+      setPartySheets((prev) => {
+        // Se a ficha alterada já estiver sendo acompanhada pelo mestre, atualiza a tela
+        if (prev[message.sheetId]) {
+          return { ...prev, [message.sheetId]: message.sheet };
+        }
+        return prev;
+      });
     });
-    return unsub;
+    return unsubscribe;
   }, [isTrueGM]);
 
   // -------------------------------------------------------------------------
@@ -1710,11 +1715,14 @@ export function VttApp() {
                     colorClass='text-red-500'
                     activeColorClass='bg-red-500'
                     onUpdate={(delta: number) =>
-                      gameClient.applyResourceChange(
-                        selectedPartyMember,
-                        'hp',
-                        delta
-                      )
+                      gameClient
+                        .applyResourceChange(selectedPartyMember, 'hp', delta)
+                        .then((outcome) => {
+                          setPartySheets((prev) => ({
+                            ...prev,
+                            [selectedPartyMember]: outcome.character,
+                          }));
+                        })
                     }
                   />
                   <ResourceBar
@@ -1726,11 +1734,14 @@ export function VttApp() {
                     colorClass='text-indigo-500'
                     activeColorClass='bg-indigo-500'
                     onUpdate={(delta: number) =>
-                      gameClient.applyResourceChange(
-                        selectedPartyMember,
-                        'dp',
-                        delta
-                      )
+                      gameClient
+                        .applyResourceChange(selectedPartyMember, 'dp', delta)
+                        .then((outcome) => {
+                          setPartySheets((prev) => ({
+                            ...prev,
+                            [selectedPartyMember]: outcome.character,
+                          }));
+                        })
                     }
                   />
                 </div>
