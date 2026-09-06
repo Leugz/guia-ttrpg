@@ -45,7 +45,10 @@ export function MapSelector({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div className='pointer-events-auto w-64 rounded-sm border border-zinc-800 bg-[#0a0a0a]/95 p-1.5 shadow-2xl backdrop-blur-md'>
+    <div
+      id='map-selector-menu'
+      className='pointer-events-auto w-64 rounded-sm border border-zinc-800 bg-black/50 p-1.5 shadow-2xl backdrop-blur-md'
+    >
       <span className='block border-b border-zinc-800 px-2 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
         Mapas
       </span>

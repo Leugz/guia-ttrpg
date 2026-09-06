@@ -1,8 +1,8 @@
 ---
 type: "map"
-title: "Porão + Sala Secreta"
-image: "assets/sala_secreta.jpg"
-grid_size: 0
+title: "Porão + Sala Secreta + Duto de Ventilação"
+image: "assets/mapa_da_mansao.jpg"
+grid_size: 230
 is_active: false
 ---
 Mapa de exemplo, reaproveitando a imagem que já existe em `assets/`.

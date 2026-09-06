@@ -24,7 +24,7 @@ import {
   GM_COLOR,
 } from '../character-sheet/characterStore';
 import { useSessionStore } from '../session/sessionStore';
-import { useLanStore, isSheetTaken } from '../session/net/lanStore';
+import { useLanStore } from '../session/net/lanStore';
 import * as gameClient from '../session/net/gameClient';
 import type { LanPlayer, SheetSummary } from '../session/net/protocol';
 import { ChatPanel } from '../chat/components/ChatPanel';
@@ -60,7 +60,6 @@ const getConditionDesc = (id: string) => {
   }
 };
 
-// Custom Draggable Window Component
 const MIN_WINDOW_WIDTH = 280;
 const MIN_WINDOW_HEIGHT = 200;
 
@@ -79,9 +78,7 @@ const DraggableWindow = ({
   children: React.ReactNode;
   initialX?: number;
   initialY?: number;
-  /** Pixels, so the corner grip can change it. */
   initialWidth?: number;
-  /** Omit to let the window size itself to its content. */
   initialHeight?: number;
   resizable?: boolean;
 }) => {
@@ -121,8 +118,6 @@ const DraggableWindow = ({
       startX: e.clientX,
       startY: e.clientY,
       width: size.width,
-      // Measuring the rendered height here is what lets a content-sized
-      // window be grabbed and resized without first being given a height.
       height:
         size.height ||
         e.currentTarget.parentElement?.getBoundingClientRect().height ||
@@ -190,7 +185,6 @@ const DraggableWindow = ({
           className='absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize'
           title='Redimensionar'
         >
-          {/* Two short rules read as a grip without needing a label. */}
           <span className='pointer-events-none absolute bottom-1 right-1 block h-2 w-px rotate-45 bg-zinc-600' />
           <span className='pointer-events-none absolute bottom-1 right-2.5 block h-2 w-px rotate-45 bg-zinc-700' />
         </div>
@@ -207,6 +201,7 @@ const CharacterSelectionModal = ({
   roster,
   clientId,
   isOfflineHost,
+  localClaim,
 }: {
   onClose: () => void;
   onSelect: (sheetId: string) => void;
@@ -215,127 +210,159 @@ const CharacterSelectionModal = ({
   roster: LanPlayer[];
   clientId: string;
   isOfflineHost: boolean;
-}) => (
-  <div className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'>
-    <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-[#0a0a0a] shadow-2xl'>
-      <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
-        <h2 className='font-serif text-xl font-black uppercase tracking-widest text-zinc-200'>
-          Selecionar Identidade
-        </h2>
-        <button
-          onClick={onClose}
-          className='text-zinc-500 transition-colors hover:text-white'
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <div className='flex flex-col p-4'>
-        <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
-          Opções do Sistema
-        </p>
+  localClaim: string | null;
+}) => {
+  const isGmClaimedByAnyone = isOfflineHost
+    ? localClaim === '__GM__'
+    : roster.some((p) => p.connected && p.claimed_sheet === '__GM__');
+  const isGmClaimedByMe = isOfflineHost
+    ? localClaim === '__GM__'
+    : roster.find((p) => p.client_id === clientId)?.claimed_sheet === '__GM__';
 
-        <button
-          onClick={() => onSelectSpecial('__GM__')}
-          disabled={!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)}
-          className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${!isOfflineHost && isSheetTaken(roster, '__GM__', clientId) ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
-        >
-          <div
-            className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-            style={{ backgroundColor: GM_COLOR }}
-          />
-          <div className='ml-2 flex flex-col items-start'>
-            <span
-              className='font-serif text-lg font-bold tracking-widest'
-              style={{
-                color:
-                  !isOfflineHost && isSheetTaken(roster, '__GM__', clientId)
-                    ? '#71717a'
-                    : GM_COLOR,
-              }}
-            >
-              Mestre (GM)
-            </span>
-            <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-              Apenas um mestre por mesa
-            </span>
-          </div>
-          <span
-            className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${!isOfflineHost && isSheetTaken(roster, '__GM__', clientId) ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+  return (
+    <div
+      className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-black/90 shadow-2xl backdrop-blur-md'>
+        <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
+          <h2 className='font-serif text-xl font-black uppercase tracking-widest text-zinc-200'>
+            Selecionar Identidade
+          </h2>
+          <button
+            onClick={onClose}
+            className='text-zinc-500 transition-colors hover:text-white'
           >
-            {!isOfflineHost && isSheetTaken(roster, '__GM__', clientId)
-              ? 'Bloqueado'
-              : 'Assumir'}
-          </span>
-        </button>
+            <X size={20} />
+          </button>
+        </div>
+        <div className='flex flex-col p-4'>
+          <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
+            Opções do Sistema
+          </p>
 
-        <button
-          onClick={() => onSelectSpecial(null)}
-          className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
-        >
-          <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
-          <div className='ml-2 flex flex-col items-start'>
-            <span className='font-serif text-lg font-bold tracking-widest text-zinc-400'>
-              Convidado
-            </span>
-            <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-              Participar usando seu Nome de Usuário
-            </span>
-          </div>
-          <span className='border border-zinc-800 bg-black px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-colors group-hover:border-zinc-600'>
-            Assumir
-          </span>
-        </button>
-
-        <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
-          Ato 1: Personagens
-        </p>
-        <div className='flex flex-col gap-2'>
-          {sheets.map((char) => {
-            const profileColor = getProfileColor(char.profile);
-            const isClaimedByOther =
-              !isOfflineHost && isSheetTaken(roster, char.id, clientId);
-
-            return (
-              <button
-                key={char.id}
-                onClick={() => onSelect(char.id)}
-                disabled={isClaimedByOther}
-                className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByOther ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
+          <button
+            onClick={() => onSelectSpecial('__GM__')}
+            disabled={isGmClaimedByAnyone}
+            className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isGmClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
+          >
+            <div
+              className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
+              style={{ backgroundColor: GM_COLOR }}
+            />
+            <div className='ml-2 flex flex-col items-start'>
+              <span
+                className='font-serif text-lg font-bold tracking-widest'
+                style={{
+                  color:
+                    isGmClaimedByAnyone && !isGmClaimedByMe
+                      ? '#71717a'
+                      : GM_COLOR,
+                }}
               >
-                <div
-                  className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-                  style={{
-                    backgroundColor: isClaimedByOther
-                      ? '#3f3f46'
-                      : profileColor,
-                  }}
-                />
-                <div className='ml-2 flex flex-col items-start'>
-                  <span
-                    className='font-serif text-lg font-bold tracking-widest'
-                    style={{
-                      color: isClaimedByOther ? '#71717a' : profileColor,
-                    }}
-                  >
-                    {char.name}
-                  </span>
-                  <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                    {char.profile}
-                  </span>
-                </div>
-                <span
-                  className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByOther ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+                Mestre (GM)
+              </span>
+              <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+                Apenas um mestre por mesa
+              </span>
+            </div>
+            <span
+              className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isGmClaimedByAnyone ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+            >
+              {isGmClaimedByAnyone
+                ? isGmClaimedByMe
+                  ? 'Sua Ficha'
+                  : 'Bloqueado'
+                : 'Assumir'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onSelectSpecial(null)}
+            className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
+          >
+            <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
+            <div className='ml-2 flex flex-col items-start'>
+              <span className='font-serif text-lg font-bold tracking-widest text-zinc-400'>
+                Convidado
+              </span>
+              <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+                Participar usando seu Nome de Usuário
+              </span>
+            </div>
+            <span className='border border-zinc-800 bg-black px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-colors group-hover:border-zinc-600'>
+              Assumir
+            </span>
+          </button>
+
+          <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
+            Ato 1: Personagens
+          </p>
+          <div className='flex flex-col gap-2'>
+            {sheets.map((char) => {
+              const profileColor = getProfileColor(char.profile);
+              const isClaimedByMe = isOfflineHost
+                ? localClaim === char.id
+                : roster.find((p) => p.client_id === clientId)
+                    ?.claimed_sheet === char.id;
+              const isClaimedByAnyone = isOfflineHost
+                ? localClaim === char.id
+                : roster.some(
+                    (p) => p.connected && p.claimed_sheet === char.id
+                  );
+
+              return (
+                <button
+                  key={char.id}
+                  onClick={() => onSelect(char.id)}
+                  disabled={isClaimedByAnyone}
+                  className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
                 >
-                  {isClaimedByOther ? 'Bloqueado' : 'Assumir'}
-                </span>
-              </button>
-            );
-          })}
+                  <div
+                    className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
+                    style={{
+                      backgroundColor:
+                        isClaimedByAnyone && !isClaimedByMe
+                          ? '#3f3f46'
+                          : profileColor,
+                    }}
+                  />
+                  <div className='ml-2 flex flex-col items-start'>
+                    <span
+                      className='font-serif text-lg font-bold tracking-widest'
+                      style={{
+                        color:
+                          isClaimedByAnyone && !isClaimedByMe
+                            ? '#71717a'
+                            : profileColor,
+                      }}
+                    >
+                      {char.name}
+                    </span>
+                    <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+                      {char.profile}
+                    </span>
+                  </div>
+                  <span
+                    className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByAnyone ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
+                  >
+                    {isClaimedByAnyone
+                      ? isClaimedByMe
+                        ? 'Sua Ficha'
+                        : 'Bloqueado'
+                      : 'Assumir'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ResourceBar = ({
   label,
@@ -377,7 +404,6 @@ export function VttApp() {
   const sheets = useLanStore((state) => state.sheets);
   const setSheets = useLanStore((state) => state.setSheets);
 
-  // NEW: Handout stores mapped correctly
   const handouts = useLanStore((state) => state.handouts) || [];
   const setHandouts = useLanStore((state) => state.setHandouts);
   const setMaps = useLanStore((state) => state.setMaps);
@@ -457,21 +483,58 @@ export function VttApp() {
   const [isMapSelectorOpen, setIsMapSelectorOpen] = useState(false);
   const [toasts, setToasts] = useState<any[]>([]);
 
-  // -------------------------------------------------------------------------
-  // Handouts State (REAL)
-  // -------------------------------------------------------------------------
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
   const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
-  // Resolved `src` for image handouts, keyed by handout id. On the host this
-  // is an asset:// URL from the local disk; on a joined client it's a data:
-  // URL built from bytes fetched over the LAN RPC — see gameClient.getHandoutAssetUrl.
   const [handoutAssetUrls, setHandoutAssetUrls] = useState<
     Record<string, string>
   >({});
 
-  console.log('Handouts recebidos do servidor:', handouts);
+  // -------------------------------------------------------------------------
+  // Click-Away Listeners
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const path = event.composedPath();
 
-  // A player can see it if they are the GM, if it's public, OR if their clientId is in the shared_with array.
+      const isMapBtn = path.some(
+        (el) => (el as HTMLElement).id === 'map-selector-btn'
+      );
+      const isMapMenu = path.some(
+        (el) => (el as HTMLElement).id === 'map-selector-menu'
+      );
+      if (isMapSelectorOpen && !isMapBtn && !isMapMenu) {
+        setIsMapSelectorOpen(false);
+      }
+
+      const isSetBtn = path.some(
+        (el) => (el as HTMLElement).id === 'settings-btn'
+      );
+      const isSetMenu = path.some(
+        (el) => (el as HTMLElement).id === 'settings-menu'
+      );
+      if (isSettingsOpen && !isSetBtn && !isSetMenu) {
+        setIsSettingsOpen(false);
+      }
+
+      const isChatBtn = path.some(
+        (el) => (el as HTMLElement).id === 'chat-open-btn'
+      );
+      const isChatPanel = path.some(
+        (el) => (el as HTMLElement).id === 'chat-panel'
+      );
+      if (isChatOpen && !isChatBtn && !isChatPanel) {
+        setIsChatOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMapSelectorOpen, isSettingsOpen, isChatOpen]);
+
+  // -------------------------------------------------------------------------
+  // Handouts Logic
+  // -------------------------------------------------------------------------
+
   const visibleHandouts = isTrueGM
     ? handouts
     : handouts.filter((h) => h.is_public || h.shared_with?.includes(clientId));
@@ -501,7 +564,6 @@ export function VttApp() {
   const forcedOpens = useLanStore((state) => state.forcedOpens);
   const clearForcedOpen = useLanStore((state) => state.clearForcedOpen);
 
-  // Consume anything the GM force-opened, on this client only if it's for me.
   useEffect(() => {
     forcedOpens.forEach((entry) => {
       const forMe = entry.target === null || entry.target === clientId;
@@ -531,12 +593,8 @@ export function VttApp() {
     }
   };
 
-  // Resolve the display URL for any open image handout that isn't cached
-  // yet. On the host this resolves instantly (local asset:// URL); on a
-  // joined client it awaits the RPC round-trip to the host.
   useEffect(() => {
     let cancelled = false;
-
     openHandoutIds.forEach((id) => {
       const handout = handouts.find((h) => h.id === id);
       if (!handout || handout.content_type === 'text') return;
@@ -552,69 +610,61 @@ export function VttApp() {
           console.error(`Failed to load the image for handout "${id}":`, error);
         });
     });
-
     return () => {
       cancelled = true;
     };
   }, [openHandoutIds, handouts, handoutAssetUrls]);
 
   // -------------------------------------------------------------------------
-
-  // -------------------------------------------------------------------------
-  // The player's own piece
+  // Core Connections
   // -------------------------------------------------------------------------
 
   const activeSheetId = useCharacterStore((state) => state.activeSheetId);
-
-  /**
-   * The portrait shown on the profile button — and, once dragged onto the
-   * board, the face of that player's token. The GM has no sheet and therefore
-   * no piece, so nothing is fetched for them.
-   */
-  // Tagged with the sheet it belongs to, so switching character retires the
-  // old portrait during render instead of needing an effect to clear it.
   const [resolvedPortrait, setResolvedPortrait] = useState<{
     sheetId: string;
     url: string;
   } | null>(null);
 
   useEffect(() => {
-    if (!activeSheetId || isTrueGM) return;
+    if (!activeSheetId && !isTrueGM) return;
     let cancelled = false;
+    const requestTarget = isTrueGM ? '__GM__' : activeSheetId!;
+
     gameClient
-      .getPortraitUrl(activeSheetId)
+      .getPortraitUrl(requestTarget)
       .then((url) => {
-        if (!cancelled) setResolvedPortrait({ sheetId: activeSheetId, url });
+        if (!cancelled) setResolvedPortrait({ sheetId: requestTarget, url });
       })
-      // A sheet without a `portrait:` is normal, not a failure: the token
-      // falls back to initials on the character's colour.
       .catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, [activeSheetId, isTrueGM]);
 
   const portraitUrl =
-    !isTrueGM && activeSheetId && resolvedPortrait?.sheetId === activeSheetId
+    resolvedPortrait?.sheetId === (isTrueGM ? '__GM__' : activeSheetId)
       ? resolvedPortrait.url
       : null;
+  const myTokenId =
+    isTrueGM || activeSheetId
+      ? `token:${clientId}:${isTrueGM ? '__GM__' : activeSheetId}`
+      : null;
 
-  /** Deterministic, and identical to the id the board places under. */
-  const myTokenId = activeSheetId ? `token:${clientId}:${activeSheetId}` : null;
-
-  /**
-   * Mirror the sheet onto the piece. A character who has failed a death save
-   * is greyed out; one sitting at zero with the save still owed gets the
-   * marker, which is the whole point of showing it on the board rather than
-   * making the GM read every sheet.
-   */
   useEffect(() => {
-    if (!myTokenId || !character) return;
-
-    const hpDown = (character.resources.hp.current || 0) <= 0;
-    const dpDown = (character.resources.dp.current || 0) <= 0;
-    const hpFailed = Boolean(character.death_saves?.hp?.failed);
-    const dpFailed = Boolean(character.death_saves?.dp?.failed);
+    if (!myTokenId || (!character && !isTrueGM)) return;
+    const hpDown = character
+      ? (character.resources.hp.current || 0) <= 0
+      : false;
+    const dpDown = character
+      ? (character.resources.dp.current || 0) <= 0
+      : false;
+    const hpFailed = character
+      ? Boolean(character.death_saves?.hp?.failed)
+      : false;
+    const dpFailed = character
+      ? Boolean(character.death_saves?.dp?.failed)
+      : false;
 
     const grayscale = hpFailed || dpFailed;
     const owesHp = hpDown && !hpFailed;
@@ -628,12 +678,13 @@ export function VttApp() {
           : owesDp
             ? 'dp'
             : null;
-
     gameClient.setTokenState(clientId, myTokenId, grayscale, saveIndicator);
-  }, [myTokenId, clientId, character]);
+  }, [myTokenId, clientId, character, isTrueGM]);
 
   const handleTokenDragStart = (event: React.DragEvent<HTMLDivElement>) => {
+    // Bloqueia expressamente se for o GM ou se não houver ficha carregada
     if (isTrueGM || !character || !activeSheetId) return;
+
     const payload: TokenDragPayload = {
       sheetId: activeSheetId,
       label: character.name,
@@ -699,17 +750,11 @@ export function VttApp() {
         color: identityColor,
       });
     } else {
+      // Disconnect cleanly if LAN is closed
       disconnect();
     }
-  }, [
-    connect,
-    isHosting,
-    isLanOpen,
-    lanHostAddress,
-    clientId,
-    username,
-    identityColor,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHosting, isLanOpen, lanHostAddress]);
 
   useEffect(() => {
     if (isLanOpen && connectionStatus === 'online' && localClaim) {
@@ -736,34 +781,28 @@ export function VttApp() {
     });
   }, [identityColor, clientId, username, updateIdentity]);
 
-  // NEW: Fetch Sheets & Handouts when Hosting
   useEffect(() => {
     if (!isHosting) return;
     let cancelled = false;
 
-    // Fetch Sheets
     gameClient
       .listSheets()
       .then((available) => {
         if (!cancelled) setSheets(available);
       })
-      .catch((error) => console.error('Failed to list the party:', error));
-
-    // Fetch Handouts
+      .catch((error) => console.error(error));
     gameClient
       .listHandouts()
       .then((available) => {
         if (!cancelled) setHandouts(available);
       })
-      .catch((error) => console.error('Failed to list handouts:', error));
-
-    // Fetch Maps
+      .catch((error) => console.error(error));
     gameClient
       .listMaps()
       .then((available) => {
         if (!cancelled) setMaps(available);
       })
-      .catch((error) => console.error('Failed to list maps:', error));
+      .catch((error) => console.error(error));
 
     return () => {
       cancelled = true;
@@ -836,12 +875,16 @@ export function VttApp() {
       )}
 
       <div className='absolute inset-0 z-0'>
-        <GameBoard clientId={clientId} isGM={isTrueGM} />
+        <GameBoard
+          clientId={clientId}
+          isGM={isTrueGM}
+          activeTool={activeTool}
+        />
       </div>
 
       <div className='pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4'>
         <div className='pointer-events-auto flex gap-2'>
-          <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-[#0a0a0a] p-1.5 shadow-xl'>
+          <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-[#0a0a0a]/80 p-1.5 shadow-xl backdrop-blur-md'>
             <button
               onClick={() => setActiveTool('select')}
               className={`rounded-sm p-2 transition-colors ${activeTool === 'select' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
@@ -862,12 +905,9 @@ export function VttApp() {
             </button>
             {isTrueGM && (
               <button
+                id='map-selector-btn'
                 onClick={() => setIsMapSelectorOpen((open) => !open)}
-                className={`mt-2 rounded-sm p-2 transition-colors ${
-                  isMapSelectorOpen
-                    ? 'bg-zinc-900 text-[var(--theme-color)]'
-                    : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-                }`}
+                className={`mt-2 rounded-sm p-2 transition-colors ${isMapSelectorOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
                 title='Mudar Mapa'
               >
                 <MapIcon size={18} />
@@ -875,11 +915,7 @@ export function VttApp() {
             )}
             <button
               onClick={() => setIsHandoutListOpen(!isHandoutListOpen)}
-              className={`rounded-sm p-2 transition-colors ${
-                isHandoutListOpen
-                  ? 'bg-zinc-900 text-[var(--theme-color)]'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
-              } ${!isTrueGM ? 'mt-2' : ''}`}
+              className={`rounded-sm p-2 transition-colors ${isHandoutListOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'} ${!isTrueGM ? 'mt-2' : ''}`}
               title='Documentos'
             >
               <FileText size={18} />
@@ -887,13 +923,15 @@ export function VttApp() {
           </div>
 
           {isTrueGM && isMapSelectorOpen && (
-            <MapSelector onClose={() => setIsMapSelectorOpen(false)} />
+            <div id='map-selector-menu'>
+              <MapSelector onClose={() => setIsMapSelectorOpen(false)} />
+            </div>
           )}
         </div>
 
         <div className='pointer-events-auto flex flex-col items-end gap-2'>
           <div
-            className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 shadow-xl backdrop-blur-sm'
+            className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/60 px-3 py-1.5 shadow-xl backdrop-blur-md'
             style={{ borderColor: 'var(--theme-color)' }}
           >
             <div
@@ -921,13 +959,17 @@ export function VttApp() {
 
             <div className='relative ml-2 border-l border-zinc-700 pl-2'>
               <button
+                id='settings-btn'
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
                 className='text-zinc-500 transition-colors hover:text-white'
               >
                 <Settings size={14} />
               </button>
               {isSettingsOpen && (
-                <div className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-[#0a0a0a] py-1 shadow-2xl'>
+                <div
+                  id='settings-menu'
+                  className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-[#0a0a0a]/80 py-1 shadow-2xl backdrop-blur-md'
+                >
                   {isHosting && (
                     <div className='border-b border-zinc-800/50 px-4 py-3'>
                       <span className='mb-1 block text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -1004,7 +1046,6 @@ export function VttApp() {
         </div>
       </div>
 
-      {/* DRAGGABLE HANDOUT LIST */}
       {isHandoutListOpen && (
         <DraggableWindow
           title='Arquivos & Documentos'
@@ -1016,7 +1057,6 @@ export function VttApp() {
           resizable
         >
           <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-zinc-950/50 pb-2'>
-            {/* CATEGORY: REGRAS */}
             {(regras.length > 0 || isTrueGM) && (
               <div className='mb-2 mt-2 px-3'>
                 <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -1061,12 +1101,11 @@ export function VttApp() {
                           <button
                             onClick={() => handleOpenHandoutForAll(h.id)}
                             className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
-                            title='Torna público (se necessário) e abre agora na tela de todos'
+                            title='Torna público e abre na tela de todos'
                           >
                             <Send size={10} /> Abrir para Todos
                           </button>
 
-                          {/* Targeted Sharing Toggles (Hidden if fully public) */}
                           {!h.is_public && (
                             <>
                               <div className='flex flex-wrap items-center gap-1'>
@@ -1084,9 +1123,8 @@ export function VttApp() {
                                       h.shared_with &&
                                       h.shared_with.includes(p.client_id);
                                     return (
-                                      <>
+                                      <React.Fragment key={p.client_id}>
                                         <button
-                                          key={p.client_id}
                                           onClick={() =>
                                             handleToggleHandoutShare(
                                               h.id,
@@ -1119,7 +1157,7 @@ export function VttApp() {
                                         >
                                           <Send size={9} />
                                         </button>
-                                      </>
+                                      </React.Fragment>
                                     );
                                   })}
                                 {roster.filter(
@@ -1146,7 +1184,6 @@ export function VttApp() {
               </div>
             )}
 
-            {/* CATEGORY: DOCUMENTOS */}
             {(documentos.length > 0 || isTrueGM) && (
               <div className='mb-2 mt-2 px-3'>
                 <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -1191,12 +1228,11 @@ export function VttApp() {
                           <button
                             onClick={() => handleOpenHandoutForAll(h.id)}
                             className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
-                            title='Torna público (se necessário) e abre agora na tela de todos'
+                            title='Torna público e abre na tela de todos'
                           >
                             <Send size={10} /> Abrir para Todos
                           </button>
 
-                          {/* Targeted Sharing Toggles (Hidden if fully public) */}
                           {!h.is_public && (
                             <div className='flex flex-wrap items-center gap-1'>
                               <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
@@ -1212,9 +1248,8 @@ export function VttApp() {
                                     h.shared_with &&
                                     h.shared_with.includes(p.client_id);
                                   return (
-                                    <>
+                                    <React.Fragment key={p.client_id}>
                                       <button
-                                        key={p.client_id}
                                         onClick={() =>
                                           handleToggleHandoutShare(
                                             h.id,
@@ -1245,7 +1280,7 @@ export function VttApp() {
                                       >
                                         <Send size={9} />
                                       </button>
-                                    </>
+                                    </React.Fragment>
                                   );
                                 })}
                               {roster.filter(
@@ -1274,7 +1309,6 @@ export function VttApp() {
         </DraggableWindow>
       )}
 
-      {/* DRAGGABLE OPEN HANDOUT CONTENT WINDOWS */}
       {openHandoutIds.map((id, index) => {
         const handout = handouts.find((h) => h.id === id);
         if (!handout) return null;
@@ -1283,7 +1317,7 @@ export function VttApp() {
           !handout.is_public &&
           (!handout.shared_with || !handout.shared_with.includes(clientId))
         )
-          return null; // Fallback safety
+          return null;
 
         return (
           <DraggableWindow
@@ -1304,9 +1338,8 @@ export function VttApp() {
             initialHeight={640}
             resizable
           >
-            <div className='min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4 text-sm text-zinc-300'>
+            <div className='min-h-0 flex-1 overflow-y-auto bg-zinc-950/80 p-4 text-sm text-zinc-300 backdrop-blur-md'>
               {handout.content_type === 'text' ? (
-                // NEW: Markdown wrapper with Tailwind styling for generated tags
                 <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
                   <ReactMarkdown>{handout.content}</ReactMarkdown>
                 </div>
@@ -1331,7 +1364,7 @@ export function VttApp() {
         {toasts.map((toast) => (
           <div
             key={toast.toastId}
-            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/90 p-3 text-sm shadow-2xl backdrop-blur-sm'
+            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/80 p-3 text-sm shadow-2xl backdrop-blur-md'
           >
             <span
               className='font-serif font-bold tracking-wider'
@@ -1365,7 +1398,7 @@ export function VttApp() {
         <div className='flex flex-col gap-2'>
           <button
             onClick={() => setIsSelectionModalOpen(true)}
-            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/80 px-2 py-1.5 text-left transition-colors hover:border-zinc-600'
+            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/60 px-2 py-1.5 text-left backdrop-blur-md transition-colors hover:border-zinc-600'
           >
             <span
               className='truncate font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'
@@ -1381,20 +1414,24 @@ export function VttApp() {
             onClick={() =>
               character ? setIsSheetOpen(true) : setIsSelectionModalOpen(true)
             }
-            // Dragging this onto the board is how a player puts themselves on
-            // it. The GM runs the table rather than standing on it, so for
-            // them the picture stays a button and nothing more.
             draggable={!isTrueGM && Boolean(character)}
             onDragStart={handleTokenDragStart}
-            className={`group relative h-32 w-32 overflow-hidden rounded-sm border-2 border-zinc-800 bg-zinc-900 shadow-2xl ${
-              !isTrueGM && character ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+            className={`group relative h-32 w-32 shrink-0 rounded-sm transition-transform hover:scale-105 ${
+              !isTrueGM && character
+                ? 'cursor-grab active:cursor-grabbing'
+                : 'cursor-pointer'
+            } ${
+              portraitUrl
+                ? 'bg-transparent shadow-none' // NO border, NO background if image exists
+                : 'border-2 border-zinc-800 bg-black/40 shadow-2xl backdrop-blur-md'
             }`}
           >
             {portraitUrl ? (
               <img
                 src={portraitUrl}
                 alt={charName}
-                className='absolute inset-0 h-full w-full object-cover'
+                // object-contain ensures your hex shape isn't cropped, drop-shadow gives it depth against the map
+                className='absolute inset-0 h-full w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)]'
                 draggable={false}
               />
             ) : (
@@ -1407,7 +1444,7 @@ export function VttApp() {
               <span className='mb-2 font-serif text-xs font-bold tracking-widest text-white'>
                 {character ? 'ABRIR FICHA' : 'SELECIONAR FICHA'}
               </span>
-              {!isTrueGM && character && (
+              {(character || isTrueGM) && (
                 <span className='font-serif text-[10px] tracking-widest text-zinc-400'>
                   Arraste para o mapa
                 </span>
@@ -1418,7 +1455,7 @@ export function VttApp() {
 
         <div className='flex flex-col gap-2'>
           {hasConditions && (
-            <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/80 px-3 py-1.5 shadow-md'>
+            <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md'>
               <ShieldAlert size={16} className='text-yellow-500' />
               <div className='ml-1 flex gap-1'>
                 {character?.active_effects.map((effect) => (
@@ -1446,7 +1483,7 @@ export function VttApp() {
           )}
 
           {character && (
-            <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/80 p-4 shadow-2xl backdrop-blur-sm'>
+            <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/60 p-4 shadow-2xl backdrop-blur-md'>
               <ResourceBar
                 label='PV'
                 current={character.resources.hp.current || 0}
@@ -1471,8 +1508,9 @@ export function VttApp() {
       {!isChatOpen && (
         <div className='pointer-events-auto absolute bottom-6 right-6 z-40 flex gap-3'>
           <button
+            id='chat-open-btn'
             onClick={() => setIsChatOpen(true)}
-            className='group relative flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-sm border border-zinc-800 bg-black/80 text-zinc-500 shadow-xl backdrop-blur-sm transition-all hover:-translate-y-1 hover:border-zinc-500'
+            className='group relative flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-sm border border-zinc-800 bg-black/60 text-zinc-500 shadow-xl backdrop-blur-md transition-all hover:-translate-y-1 hover:border-zinc-500'
           >
             <MessageSquare
               size={20}
@@ -1494,19 +1532,24 @@ export function VttApp() {
           roster={roster}
           clientId={clientId}
           isOfflineHost={isOfflineHost}
+          localClaim={localClaim}
         />
       )}
 
-      <ChatPanel
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        onOpenRoller={() => setIsRollerOpen(true)}
-      />
+      <div
+        id='chat-panel'
+        className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a]/80 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md transition-transform duration-300 ease-in-out ${isChatOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        <ChatPanel
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          onOpenRoller={() => setIsRollerOpen(true)}
+        />
+      </div>
 
       {isSheetOpen && character && (
         <CharacterSheet onClose={() => setIsSheetOpen(false)} />
       )}
-
       <FreeDiceRoller
         isOpen={isRollerOpen}
         onClose={() => setIsRollerOpen(false)}

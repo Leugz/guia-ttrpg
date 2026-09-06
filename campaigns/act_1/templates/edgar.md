@@ -1,5 +1,6 @@
 ---
 type: character
+portrait: 'assets/portraits/token_edgar.png'
 name: EDGAR
 profile: EXECUTOR
 occupation: OPERÁRIO

@@ -363,12 +363,14 @@ export const getMapImageUrl = (map: MapDefinition): Promise<string> =>
  * drawn with. Rejects when the sheet declares no `portrait:`; callers fall
  * back to initials on a coloured chip.
  */
+// Substitua o 'export const getPortraitUrl = (sheetId: string)' (aprox. linha 254) por isso:
 export const getPortraitUrl = (sheetId: string): Promise<string> =>
   dispatch(
     async () => {
-      // Only the sheet knows where its portrait lives, and a client drawing
-      // someone else's token has never loaded that sheet, so the lookup
-      // happens here rather than being pushed onto every caller.
+      // Suporte para o Mestre ter foto!
+      if (sheetId === '__GM__') {
+        return convertFileSrc(`${context.gameRoot}/assets/portraits/gm.png`);
+      }
       const document = await invoke<ParsedDocument>('load_character_sheet', {
         path: localPath(sheetId),
       });

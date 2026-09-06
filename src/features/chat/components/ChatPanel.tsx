@@ -254,6 +254,7 @@ export function ChatPanel({
 
   return (
     <div
+      id='chat-panel'
       className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a] shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
     >
       <div className='relative z-10 flex shrink-0 flex-col gap-3 border-b border-zinc-800/80 bg-zinc-950 p-4'>

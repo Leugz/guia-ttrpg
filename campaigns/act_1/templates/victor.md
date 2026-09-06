@@ -1,5 +1,6 @@
 ---
 type: character
+portrait: 'assets/portraits/token_victor.png'
 name: VICTOR
 profile: VIGILANTE
 occupation: PROFESSOR
