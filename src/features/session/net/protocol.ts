@@ -24,7 +24,6 @@ export interface LanPlayer {
   is_gm: boolean;
 }
 
-/** A character file the host is offering, addressed by its file name. */
 export interface SheetSummary {
   id: string;
   name: string;
@@ -34,22 +33,24 @@ export interface SheetSummary {
 }
 
 export type ConnectionStatus =
-  'idle' | 'connecting' | 'online' | 'reconnecting' | 'offline';
+  | 'idle'
+  | 'connecting'
+  | 'online'
+  | 'reconnecting'
+  | 'offline';
 
-// Add the payload type
 export type JukeboxPayload =
   | { action: 'play'; track_url: string; looped: boolean }
   | { action: 'pause' }
   | { action: 'resume' }
-  | { action: 'stop' };
+  | { action: 'stop' }
+  | { action: 'seek'; position: number }
+  | { action: 'set_loop'; looped: boolean };
 
-// Add to your ServerMessage union type:
 export interface JukeboxSyncMessage {
   type: 'jukebox_sync';
   payload: JukeboxPayload;
 }
-
-// --- Server -> Client -------------------------------------------------------
 
 export interface RosterSyncMessage {
   type: 'roster_sync';
@@ -97,22 +98,16 @@ export interface HandoutForceOpenMessage {
   target: string | null;
 }
 
-/** The map list changed — in practice, the GM revealed a different map. */
 export interface MapsUpdateMessage {
   type: 'maps_update';
   maps: MapDefinition[];
 }
 
-/** The full board, sent on join and after any structural change. */
 export interface TokensSyncMessage {
   type: 'tokens_sync';
   tokens: MapToken[];
 }
 
-/**
- * One token moved. The smallest message on the wire, because it is sent on
- * every animation frame of a drag.
- */
 export interface TokenMovedMessage {
   type: 'token_moved';
   tokenId: string;
@@ -134,12 +129,6 @@ export type ServerMessage =
   | TokenMovedMessage
   | ToolSyncMessage
   | JukeboxSyncMessage;
-
-// --- Client -> Server: board traffic ---------------------------------------
-//
-// Token operations are fire-and-forget broadcasts rather than RPCs. A drag
-// produces one message per frame, and waiting for a response on each would
-// both add latency and pointlessly burn request ids.
 
 export interface TokenPlaceMessage {
   type: 'token_place';
@@ -195,14 +184,11 @@ export interface ToolSyncMessage {
 }
 
 export type TokenClientMessage =
-  TokenPlaceMessage | TokenMoveMessage | TokenStateMessage | TokenRemoveMessage;
+  | TokenPlaceMessage
+  | TokenMoveMessage
+  | TokenStateMessage
+  | TokenRemoveMessage;
 
-// --- RPC --------------------------------------------------------------------
-
-/**
- * Method names understood by the host. Typed as a const map so a typo is a
- * compile error rather than an "unknown method" at the table.
- */
 export const RpcMethod = {
   listSheets: 'list_sheets',
   loadSheet: 'load_sheet',
@@ -233,16 +219,13 @@ export const RpcMethod = {
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
 
-/** The raw bytes of an image handout, ready to become a `data:` URL. */
 export interface HandoutAsset {
   mimeType: string;
   dataBase64: string;
 }
 
-/** Same shape, for map images and character portraits. */
 export type AssetPayload = HandoutAsset;
 
-/** Maps each method to the shape the host answers with. */
 export interface RpcResults {
   [RpcMethod.listSheets]: SheetSummary[];
   [RpcMethod.loadSheet]: ParsedDocument;
@@ -278,8 +261,6 @@ export interface TestRpcParams {
 
 export const buildWsUrl = (address: string) => {
   const trimmed = address.trim();
-  // Accept both "192.168.1.10" and "192.168.1.10:37373" so a player can paste
-  // whatever the GM sent them.
   const hasPort = /:\d+$/.test(trimmed);
   return `ws://${hasPort ? trimmed : `${trimmed}:${LAN_PORT}`}/ws`;
 };

@@ -52,6 +52,7 @@ import { tokenMotion } from '../map/tokenMotion';
 import { lan } from '../session/net/lanConnection';
 import { JukeboxPanel } from '../jukebox/components/JukeboxPanel';
 import { useJukeboxStore } from '../jukebox/jukeboxStore';
+import { DraggableWindow } from './components/DraggableWindow';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -73,142 +74,6 @@ const getConditionDesc = (id: string) => {
     default:
       return '';
   }
-};
-
-const MIN_WINDOW_WIDTH = 280;
-const MIN_WINDOW_HEIGHT = 200;
-
-const DraggableWindow = ({
-  title,
-  onClose,
-  children,
-  initialX = 100,
-  initialY = 100,
-  initialWidth = 288,
-  initialHeight,
-  resizable = false,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  initialX?: number;
-  initialY?: number;
-  initialWidth?: number;
-  initialHeight?: number;
-  resizable?: boolean;
-}) => {
-  const [pos, setPos] = useState({ x: initialX, y: initialY });
-  const [size, setSize] = useState({
-    width: initialWidth,
-    height: initialHeight ?? 0,
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const dragRef = useRef({ startX: 0, startY: 0 });
-  const resizeRef = useRef({ startX: 0, startY: 0, width: 0, height: 0 });
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    setIsDragging(true);
-    dragRef.current = { startX: e.clientX - pos.x, startY: e.clientY - pos.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    setPos({
-      x: e.clientX - dragRef.current.startX,
-      y: e.clientY - dragRef.current.startY,
-    });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    setIsDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-
-  const handleResizeDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    setIsResizing(true);
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      width: size.width,
-      height:
-        size.height ||
-        e.currentTarget.parentElement?.getBoundingClientRect().height ||
-        MIN_WINDOW_HEIGHT,
-    };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handleResizeMove = (e: React.PointerEvent) => {
-    if (!isResizing) return;
-    setSize({
-      width: Math.max(
-        MIN_WINDOW_WIDTH,
-        resizeRef.current.width + (e.clientX - resizeRef.current.startX)
-      ),
-      height: Math.max(
-        MIN_WINDOW_HEIGHT,
-        resizeRef.current.height + (e.clientY - resizeRef.current.startY)
-      ),
-    });
-  };
-
-  const handleResizeUp = (e: React.PointerEvent) => {
-    setIsResizing(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-
-  return (
-    <div
-      className='pointer-events-auto absolute z-30 flex flex-col gap-2 shadow-2xl'
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width: size.width,
-        height: size.height || undefined,
-      }}
-    >
-      <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-700 bg-black/70 backdrop-blur-md'>
-        <div
-          className='flex shrink-0 cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/80 px-3 py-2'
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-        >
-          <span className='flex select-none items-center gap-2 font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'>
-            <FileText
-              size={14}
-              className='shrink-0'
-              style={{ color: 'var(--theme-color)' }}
-            />
-            <span className='translate-y-[2px]'>{title}</span>
-          </span>
-          <button
-            onClick={onClose}
-            className='cursor-pointer text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
-      </div>
-
-      {resizable && (
-        <div
-          onPointerDown={handleResizeDown}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeUp}
-          className='absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize outline-none focus:outline-none'
-        >
-          <span className='pointer-events-none absolute bottom-1 right-1 block h-2 w-px rotate-45 bg-zinc-600' />
-          <span className='pointer-events-none absolute bottom-1 right-2.5 block h-2 w-px rotate-45 bg-zinc-700' />
-        </div>
-      )}
-    </div>
-  );
 };
 
 const CharacterSelectionModal = ({
@@ -418,7 +283,8 @@ const ResourceBar = ({
 
 export function VttApp() {
   const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
-  const { localVolume, setLocalVolume } = useJukeboxStore();
+  const localVolume = useJukeboxStore((state) => state.localVolume);
+  const setLocalVolume = useJukeboxStore((state) => state.setLocalVolume);
   const messages = useChatStore((state) => state.messages);
   const roster = useLanStore((state) => state.roster);
   const sheets = useLanStore((state) => state.sheets);
@@ -1552,7 +1418,7 @@ export function VttApp() {
           initialX={84}
           initialY={140} // Positioned nicely below the toolbars
           initialWidth={300}
-          initialHeight={320}
+          initialHeight={355}
         >
           <JukeboxPanel />
         </DraggableWindow>

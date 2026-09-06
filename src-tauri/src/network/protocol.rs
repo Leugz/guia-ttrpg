@@ -51,6 +51,8 @@ pub enum JukeboxPayload {
     Pause,
     Resume,
     Stop,
+    Seek { position: f64 },
+    SetLoop { looped: bool },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
