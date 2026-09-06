@@ -41,6 +41,8 @@ import {
 } from '../map/components/GameBoard';
 import { MapSelector } from '../map/components/MapSelector';
 import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
+import { DieShape } from '../../shared/components/DieShape';
+import { tokenMotion } from '../map/tokenMotion';
 
 const getInitials = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -438,7 +440,54 @@ export function VttApp() {
     setLocalClaim,
     vpnIp,
     setVpnIp,
+    activeGameId,
   } = useSessionStore();
+
+  // --- MOTOR DE RESTAURAÇÃO DE MESA (Carrega ao abrir a campanha) ---
+  const tokens = useLanStore((state) => state.tokens);
+
+  useEffect(() => {
+    if (isHosting && activeGameId && tokens.length === 0) {
+      const saved = localStorage.getItem(`guia-board-${activeGameId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.length > 0) {
+            useLanStore.setState({ tokens: parsed });
+            tokenMotion.seed(parsed); // Empurra a informação visual pro mapa
+          }
+        } catch (e) {}
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHosting, activeGameId]);
+
+  // --- MOTOR DE AUTO-SAVE DO MESTRE ---
+  useEffect(() => {
+    if (!isHosting || !activeGameId) return;
+
+    const saveBoard = () => {
+      // Puxa as posições reais da tela, não da memória antiga
+      const currentTokens = useLanStore.getState().tokens.map((t) => {
+        const pos = tokenMotion.position(t.id);
+        return pos ? { ...t, x: pos.x, y: pos.y } : t;
+      });
+      localStorage.setItem(
+        `guia-board-${activeGameId}`,
+        JSON.stringify(currentTokens)
+      );
+    };
+
+    saveBoard(); // Salva toda vez que uma miniatura for colocada ou removida
+    const interval = setInterval(saveBoard, 120000); // Salva preventivamente a cada 2 minutos
+
+    // Salva no momento exato em que o Mestre apertar o botão de fechar a janela
+    window.addEventListener('beforeunload', saveBoard);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', saveBoard);
+    };
+  }, [tokens, isHosting, activeGameId]);
 
   useEffect(() => {
     if (closedReason && !isHosting) {
@@ -793,15 +842,27 @@ export function VttApp() {
   };
 
   useEffect(() => {
-    if (!isHosting || isLanOpen) {
-      const address = isHosting ? '127.0.0.1' : lanHostAddress || '127.0.0.1';
-      connect(address, {
-        clientId,
-        username: username || 'Unknown',
-        color: identityColor,
-      });
+    if (isHosting) {
+      if (isLanOpen) {
+        connect('127.0.0.1', {
+          clientId,
+          username: username || 'Unknown',
+          color: identityColor,
+        });
+      } else {
+        // CORREÇÃO: O mestre mantém o estado da tela, apenas a porta de rede é fechada!
+        useLanStore.getState().disconnectSocketOnly();
+      }
     } else {
-      disconnect();
+      if (lanHostAddress) {
+        connect(lanHostAddress, {
+          clientId,
+          username: username || 'Unknown',
+          color: identityColor,
+        });
+      } else {
+        disconnect(); // Saiu de vez
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHosting, isLanOpen, lanHostAddress]);
@@ -892,7 +953,8 @@ export function VttApp() {
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
       if (!isChatOpenRef.current && prevMsgCount.current > 0) {
-        pushToast(messages[messages.length - 1]);
+        const newMessages = messages.slice(prevMsgCount.current);
+        newMessages.forEach((msg) => pushToast(msg));
       }
     }
     prevMsgCount.current = messages.length;
@@ -1425,41 +1487,158 @@ export function VttApp() {
         );
       })}
 
-      <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col gap-2'>
-        {toasts.map((toast) => (
-          <div
-            key={toast.toastId}
-            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/50 p-3 text-sm shadow-2xl backdrop-blur-md'
-          >
-            <span
-              className='font-serif font-bold tracking-wider'
-              style={{ color: toast.color }}
+      <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col items-end gap-3'>
+        {toasts.map((toast) => {
+          // Lógica para destacar dados de Crítico na notificação
+          let critValues = new Set<number>();
+          if (toast.type === 'roll' && toast.rollResult?.is_critical_success) {
+            const counts: Record<number, number> = {};
+            toast.rollResult.dice.forEach((d: any) => {
+              counts[d.value] = (counts[d.value] || 0) + 1;
+            });
+            Object.entries(counts).forEach(([val, count]) => {
+              if (Number(val) >= 6 && count >= 2) {
+                critValues.add(Number(val));
+              }
+            });
+          }
+
+          return (
+            <div
+              key={toast.toastId}
+              className='animate-float-up-fade w-fit min-w-[340px] max-w-md rounded-sm border border-zinc-700 bg-black/80 px-4 py-3 shadow-2xl backdrop-blur-md'
             >
-              {toast.sender}:{' '}
-            </span>
-            <span className='text-zinc-200'>
               {toast.type === 'text' ? (
-                toast.content
+                <div className='text-sm leading-relaxed'>
+                  <span
+                    className='font-serif font-bold tracking-wider'
+                    style={{ color: toast.color }}
+                  >
+                    {toast.sender}:{' '}
+                  </span>
+                  <span className='text-zinc-200'>{toast.content}</span>
+                </div>
               ) : (
-                <span className='ml-1 inline-flex items-center gap-1.5'>
-                  {toast.rollResult?.dice
-                    ?.filter((d: any) => d.counted)
-                    .map((d: any) => `d${d.sides}[${d.value}]`)
-                    .join(' + ')}
-                  <span className='mx-1' style={{ color: toast.color }}>
-                    =
-                  </span>
-                  <span className='text-lg font-black text-white'>
-                    {toast.rollResult?.total_sum}
-                  </span>
-                </span>
+                <div className='flex flex-col gap-3'>
+                  <div className='text-sm leading-none'>
+                    <span
+                      className='font-serif font-bold tracking-wider'
+                      style={{ color: toast.color }}
+                    >
+                      {toast.sender}:{' '}
+                    </span>
+                    <span className='font-bold tracking-wide text-white'>
+                      {toast.rollLabel || 'Rolagem'}
+                    </span>
+                  </div>
+
+                  {toast.rollResult && (
+                    <div className='flex items-center justify-between'>
+                      <div className='flex flex-wrap items-center gap-2 py-1'>
+                        {toast.rollResult.dice.map((d: any, i: number) => (
+                          <DieShape
+                            key={i}
+                            sides={d.sides}
+                            value={d.value}
+                            className='h-10 w-10 text-lg'
+                            colorClass={
+                              toast.rollResult.is_critical_success &&
+                              critValues.has(d.value)
+                                ? 'text-indigo-400'
+                                : toast.rollResult.is_critical_failure
+                                  ? 'text-red-500'
+                                  : !d.counted
+                                    ? 'text-zinc-500'
+                                    : 'text-white'
+                            }
+                            isDropped={!d.counted}
+                          />
+                        ))}
+                      </div>
+
+                      <div className='ml-4 flex min-w-[70px] shrink-0 flex-col items-center justify-center border-l border-zinc-700/60 pl-4'>
+                        <span className='mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+                          Total
+                        </span>
+                        <span
+                          className={`font-serif text-3xl font-black leading-none ${
+                            toast.rollResult.is_critical_success
+                              ? 'text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]'
+                              : toast.rollResult.is_critical_failure
+                                ? 'text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                                : 'text-white'
+                          }`}
+                        >
+                          {toast.rollResult.total_sum}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
-            </span>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
+        <div className='flex flex-col gap-2'>
+          <button
+            onClick={() => setIsSelectionModalOpen(true)}
+            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/50 px-2 py-1.5 text-left outline-none backdrop-blur-md transition-colors hover:border-zinc-600 focus:outline-none'
+          >
+            <span
+              className='truncate font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'
+              style={{ color: 'var(--theme-color)' }}
+              title={charName}
+            >
+              {charName}
+            </span>
+            <ChevronDown size={14} className='shrink-0 text-zinc-600' />
+          </button>
+
+          <div
+            onClick={() =>
+              character ? setIsSheetOpen(true) : setIsSelectionModalOpen(true)
+            }
+            draggable={!isTrueGM && Boolean(character)}
+            onDragStart={handleTokenDragStart}
+            className={`group relative h-32 w-32 shrink-0 rounded-sm transition-transform hover:scale-105 ${
+              !isTrueGM && character
+                ? 'cursor-grab active:cursor-grabbing'
+                : 'cursor-pointer'
+            } ${
+              portraitUrl
+                ? 'bg-transparent shadow-none'
+                : 'border-2 border-zinc-800 bg-black/50 shadow-2xl backdrop-blur-md'
+            }`}
+          >
+            {portraitUrl ? (
+              <img
+                src={portraitUrl}
+                alt={charName}
+                className='absolute inset-0 h-full w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)]'
+                draggable={false}
+              />
+            ) : (
+              <>
+                <div className='absolute inset-0 bg-gradient-to-tr from-zinc-900 to-zinc-800 opacity-50' />
+                <div className='absolute inset-x-2 bottom-0 h-3/4 rounded-t-[40%] border-x border-t border-zinc-700/50 bg-zinc-800/30' />
+              </>
+            )}
+            <div className='absolute inset-0 flex flex-col items-center justify-center p-2 text-center opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100'>
+              <span className='text-shadow-md mb-2 font-serif text-xs font-bold tracking-widest text-white'>
+                {character ? 'ABRIR FICHA' : 'SELECIONAR FICHA'}
+              </span>
+              {!isTrueGM && character && (
+                <span className='font-serif text-[10px] tracking-widest text-zinc-400'>
+                  Arraste para o mapa
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* GM PARTY TRACKER (Visível apenas para o Mestre) */}
         {isTrueGM && Object.keys(partySheets).length > 0 && (
           <div className='flex gap-4'>
@@ -1543,63 +1722,6 @@ export function VttApp() {
             )}
           </div>
         )}
-
-        <div className='flex flex-col gap-2'>
-          <button
-            onClick={() => setIsSelectionModalOpen(true)}
-            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/50 px-2 py-1.5 text-left outline-none backdrop-blur-md transition-colors hover:border-zinc-600 focus:outline-none'
-          >
-            <span
-              className='truncate font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'
-              style={{ color: 'var(--theme-color)' }}
-              title={charName}
-            >
-              {charName}
-            </span>
-            <ChevronDown size={14} className='shrink-0 text-zinc-600' />
-          </button>
-
-          <div
-            onClick={() =>
-              character ? setIsSheetOpen(true) : setIsSelectionModalOpen(true)
-            }
-            draggable={!isTrueGM && Boolean(character)}
-            onDragStart={handleTokenDragStart}
-            className={`group relative h-32 w-32 shrink-0 rounded-sm transition-transform hover:scale-105 ${
-              !isTrueGM && character
-                ? 'cursor-grab active:cursor-grabbing'
-                : 'cursor-pointer'
-            } ${
-              portraitUrl
-                ? 'bg-transparent shadow-none'
-                : 'border-2 border-zinc-800 bg-black/50 shadow-2xl backdrop-blur-md'
-            }`}
-          >
-            {portraitUrl ? (
-              <img
-                src={portraitUrl}
-                alt={charName}
-                className='absolute inset-0 h-full w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)]'
-                draggable={false}
-              />
-            ) : (
-              <>
-                <div className='absolute inset-0 bg-gradient-to-tr from-zinc-900 to-zinc-800 opacity-50' />
-                <div className='absolute inset-x-2 bottom-0 h-3/4 rounded-t-[40%] border-x border-t border-zinc-700/50 bg-zinc-800/30' />
-              </>
-            )}
-            <div className='absolute inset-0 flex flex-col items-center justify-center p-2 text-center opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100'>
-              <span className='text-shadow-md mb-2 font-serif text-xs font-bold tracking-widest text-white'>
-                {character ? 'ABRIR FICHA' : 'SELECIONAR FICHA'}
-              </span>
-              {!isTrueGM && character && (
-                <span className='font-serif text-[10px] tracking-widest text-zinc-400'>
-                  Arraste para o mapa
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
 
         {/* Player Conditions & Trackers (Visível apenas para quem NÃO É mestre) */}
         {!isTrueGM && (

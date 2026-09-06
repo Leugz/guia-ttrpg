@@ -1,7 +1,7 @@
 ---
 type: character
 portrait: 'assets/portraits/kenia.png'
-token_image: 'assets/tokens/kenia.png'
+token_image: 'assets/portraits/kenia.png'
 name: KÊNIA
 profile: ANALISTA
 occupation: PROFISSIONAL DE ESCRITÓRIO

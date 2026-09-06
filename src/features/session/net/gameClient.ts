@@ -478,9 +478,9 @@ export const removeToken = (clientId: string, tokenId: string) => {
 };
 
 export const sendToolEvent = (clientId: string, payload: ToolPayload) => {
+  localBoard?.tool(clientId, payload);
+
   if (boardIsNetworked()) {
     lan.sendTool({ type: 'tool', clientId, payload });
-    return;
   }
-  localBoard?.tool(clientId, payload);
 };

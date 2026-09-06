@@ -1,18 +1,10 @@
-/**
- * Presence: who is at the table, what they have claimed, and which characters
- * the host is offering.
- *
- * The socket itself lives in `lanConnection`; this store only reflects it into
- * React. Subscriptions are registered once at module load.
- */
-
 import { create } from 'zustand';
-
 import { tokenMotion } from '../../map/tokenMotion';
 import { lan, type Identity } from './lanConnection';
-import { setLocalBoardSink } from './gameClient';
+import { setLocalBoardSink, getGameContext } from './gameClient';
 import type { ConnectionStatus, LanPlayer, SheetSummary } from './protocol';
 import { Handout, MapDefinition, MapToken } from '../../../shared/types';
+import { useSessionStore } from '../sessionStore';
 
 interface LanState {
   status: ConnectionStatus;
@@ -34,10 +26,10 @@ interface LanState {
       color: string;
     }
   >;
-
   connect: (address: string, identity: Identity) => void;
   updateIdentity: (identity: Identity) => void;
   disconnect: () => void;
+  disconnectSocketOnly: () => void;
   claimSheet: (clientId: string, sheetId: string) => void;
   releaseSheet: (clientId: string) => void;
   setSheets: (sheets: SheetSummary[]) => void;
@@ -57,18 +49,32 @@ export const useLanStore = create<LanState>()((set) => ({
   tokens: [],
   pings: [],
   rulers: {},
-
   connect: (address, identity) => {
     set({ closedReason: null });
     lan.connect(address, identity);
   },
-
   updateIdentity: (identity) => lan.updateIdentity(identity),
 
+  // DESCONEXÃO TOTAL: Apaga tudo. Usado apenas quando você volta pro Menu Principal.
   disconnect: () => {
     lan.disconnect();
     tokenMotion.clear();
-    set({ roster: [], sheets: [], closedReason: null, tokens: [] });
+    set({
+      roster: [],
+      sheets: [],
+      closedReason: null,
+      tokens: [],
+      maps: [],
+      handouts: [],
+      pings: [],
+      rulers: {},
+    });
+  },
+
+  // DESCONEXÃO PARCIAL: Apenas desliga a rede. Mapas, Fichas e Miniaturas continuam na mesa.
+  disconnectSocketOnly: () => {
+    lan.disconnect();
+    set({ roster: [], closedReason: null });
   },
 
   claimSheet: (clientId, sheetId) => lan.claimSheet(clientId, sheetId),
@@ -83,30 +89,63 @@ export const useLanStore = create<LanState>()((set) => ({
 }));
 
 lan.on('status', (status) => useLanStore.setState({ status }));
-
 lan.on('roster', (roster) => useLanStore.setState({ roster }));
 
 lan.on('session', (session) => {
-  // The host is authoritative about the board, so a (re)joining client adopts
-  // its list wholesale rather than trusting whatever this tab remembered.
-  tokenMotion.seed(session.tokens ?? []);
-  useLanStore.setState({
-    sheets: session.sheets,
-    roster: session.players,
-    handouts: session.handouts,
-    maps: session.maps ?? [],
-    tokens: session.tokens ?? [],
-    closedReason: null,
-  });
+  const isHost = getGameContext().mode === 'host';
+
+  if (isHost) {
+    // A lógica exata que você pediu: Carrega os dados isolados DA MESA ATUAL.
+    const activeGameId = useSessionStore.getState().activeGameId;
+    const saved = localStorage.getItem(`guia-board-${activeGameId}`);
+    const tableData: MapToken[] = saved ? JSON.parse(saved) : [];
+
+    // 1. Limpa a RAM do servidor (destrói tokens de mesas anteriores)
+    session.tokens?.forEach((serverToken) => {
+      lan.sendToken({
+        type: 'token_remove',
+        clientId: 'host',
+        tokenId: serverToken.id,
+      });
+    });
+
+    // 2. Faz o upload dos dados corretos desta Mesa para a rede
+    tableData.forEach((token) => {
+      lan.sendToken({ type: 'token_place', clientId: 'host', token });
+    });
+
+    // 3. Aplica os dados da mesa na interface
+    tokenMotion.seed(tableData);
+
+    useLanStore.setState({
+      sheets: session.sheets,
+      roster: session.players,
+      handouts: session.handouts,
+      maps: session.maps ?? [],
+      tokens: tableData,
+      closedReason: null,
+    });
+  } else {
+    // Jogadores convidados apenas recebem a mesa pronta que o mestre acabou de injetar
+    const nextTokens = session.tokens ?? [];
+    tokenMotion.seed(nextTokens);
+
+    useLanStore.setState({
+      sheets: session.sheets,
+      roster: session.players,
+      handouts: session.handouts,
+      maps: session.maps ?? [],
+      tokens: nextTokens,
+      closedReason: null,
+    });
+  }
 });
 
 lan.on('maps', (message) => useLanStore.setState({ maps: message.maps }));
-
 lan.on('tokens', (message) => {
   tokenMotion.seed(message.tokens);
   useLanStore.setState({ tokens: message.tokens });
 });
-
 lan.on('tokenMoved', (message) =>
   tokenMotion.apply(message.tokenId, message.x, message.y, message.dragging)
 );
@@ -137,6 +176,12 @@ const processToolEvent = (clientId: string, payload: any) => {
     });
   }
 };
+
+lan.on('tool', (message) => {
+  // Ignora o eco do servidor se a ferramenta for sua (pois já foi processada sem lag na sua tela)
+  if (message.clientId === useSessionStore.getState().clientId) return;
+  processToolEvent(message.clientId, message.payload);
+});
 
 setLocalBoardSink({
   place: (token) =>
@@ -178,7 +223,6 @@ lan.on('handout', (message) => {
     ),
   }));
 });
-
 lan.on('handoutForceOpen', (message) => {
   useLanStore.setState((state) => ({
     forcedOpens: [
@@ -187,22 +231,12 @@ lan.on('handoutForceOpen', (message) => {
     ],
   }));
 });
-
 lan.on('closed', (reason) => useLanStore.setState({ closedReason: reason }));
 
-/**
- * Only players currently connected appear in the avatar row, matching the
- * previous behaviour. Disconnected entries are kept by the host so a
- * reconnecting player recovers their claim instead of losing their character.
- */
 export const selectPresentPlayers = (state: LanState) =>
   state.roster.filter((player) => player.connected);
-
-/** The map the table is currently looking at, if any. */
 export const selectActiveMap = (state: LanState) =>
   state.maps.find((map) => map.is_active) ?? null;
-
-/** True when someone else currently holds this sheet. */
 export const isSheetTaken = (
   roster: LanPlayer[],
   sheetId: string,
