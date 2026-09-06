@@ -30,7 +30,7 @@ export function JukeboxPanel() {
   return (
     <div className='flex flex-col gap-2 bg-black/50 p-3 text-zinc-300'>
       <span className='mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
-        Biblioteca de udio ({TRACKS.length} faixas)
+        Biblioteca de Audio ({TRACKS.length} faixas)
       </span>
 
       <div className='scrollbar-thin scrollbar-thumb-zinc-700 mb-4 flex max-h-40 flex-col gap-1 overflow-y-auto pr-1'>
