@@ -1,9 +1,9 @@
 ---
 type: "map"
-title: "O Porão"
-image: "assets/teste1.jpg"
+title: "Porão + Sala Secreta + Duto de Ventilação"
+image: "assets/ventilacao.jpg"
 grid_size: 230
-is_active: true
+is_active: false
 ---
 Mapa de exemplo, reaproveitando a imagem que já existe em `assets/`.
 

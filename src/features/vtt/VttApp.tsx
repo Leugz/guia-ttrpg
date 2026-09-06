@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Crosshair,
   Ruler,
@@ -535,7 +536,12 @@ export function VttApp() {
 
   const handleToggleHandoutPublic = async (id: string) => {
     try {
-      await gameClient.toggleHandoutPublic(id);
+      const updated = await gameClient.toggleHandoutPublic(id);
+      useLanStore.setState((state) => ({
+        handouts: state.handouts.map((h) =>
+          h.id === updated.id ? updated : h
+        ),
+      }));
     } catch (e) {
       console.error(e);
     }
@@ -546,7 +552,15 @@ export function VttApp() {
     targetClientId: string
   ) => {
     try {
-      await gameClient.toggleHandoutShare(handoutId, targetClientId);
+      const updated = await gameClient.toggleHandoutShare(
+        handoutId,
+        targetClientId
+      );
+      useLanStore.setState((state) => ({
+        handouts: state.handouts.map((h) =>
+          h.id === updated.id ? updated : h
+        ),
+      }));
     } catch (e) {
       console.error(e);
     }
@@ -567,7 +581,12 @@ export function VttApp() {
 
   const handleOpenHandoutForAll = async (id: string) => {
     try {
-      await gameClient.openHandoutForAll(id);
+      const updated = await gameClient.openHandoutForAll(id);
+      useLanStore.setState((state) => ({
+        handouts: state.handouts.map((h) =>
+          h.id === updated.id ? updated : h
+        ),
+      }));
     } catch (e) {
       console.error(e);
     }
@@ -578,7 +597,15 @@ export function VttApp() {
     targetClientId: string
   ) => {
     try {
-      await gameClient.openHandoutForPlayer(handoutId, targetClientId);
+      const updated = await gameClient.openHandoutForPlayer(
+        handoutId,
+        targetClientId
+      );
+      useLanStore.setState((state) => ({
+        handouts: state.handouts.map((h) =>
+          h.id === updated.id ? updated : h
+        ),
+      }));
     } catch (e) {
       console.error(e);
     }
@@ -1391,8 +1418,10 @@ export function VttApp() {
           >
             <div className='min-h-0 flex-1 overflow-y-auto bg-black/50 p-4 text-sm text-zinc-300 backdrop-blur-lg'>
               {handout.content_type === 'text' ? (
-                <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
-                  <ReactMarkdown>{handout.content}</ReactMarkdown>
+                <div className='leading-relaxed [&>p]:mb-3 [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-[var(--theme-color)] [&_blockquote]:bg-zinc-900/30 [&_blockquote]:py-2 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-[var(--theme-color)] [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_table]:mb-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm [&_td]:border [&_td]:border-zinc-700 [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-zinc-700 [&_th]:bg-zinc-800/50 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_th]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {handout.content}
+                  </ReactMarkdown>
                 </div>
               ) : handoutAssetUrls[id] ? (
                 <img

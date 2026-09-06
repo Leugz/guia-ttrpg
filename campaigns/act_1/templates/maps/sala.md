@@ -1,7 +1,7 @@
 ---
 type: "map"
-title: "completo"
-image: "assets/completo.jpg"
+title: "Porão + Sala Secreta"
+image: "assets/sala.jpg"
 grid_size: 230
 is_active: false
 ---

@@ -1,9 +1,9 @@
 ---
 type: "map"
-title: "Porão + Sala Secreta"
-image: "assets/teste2.jpg"
+title: "Mapa Escondido"
+image: "assets/blank.jpg"
 grid_size: 230
-is_active: false
+is_active: true
 ---
 Mapa de exemplo, reaproveitando a imagem que já existe em `assets/`.
 

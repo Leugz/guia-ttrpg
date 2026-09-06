@@ -1,7 +1,7 @@
 ---
 type: "map"
-title: "Porão + Sala Secreta + Duto de Ventilação"
-image: "assets/mapa_da_mansao.jpg"
+title: "O Porão"
+image: "assets/porao.jpg"
 grid_size: 230
 is_active: false
 ---
