@@ -123,7 +123,8 @@ export type ServerMessage =
   | HandoutForceOpenMessage
   | MapsUpdateMessage
   | TokensSyncMessage
-  | TokenMovedMessage;
+  | TokenMovedMessage
+  | ToolSyncMessage;
 
 // --- Client -> Server: board traffic ---------------------------------------
 //
@@ -160,11 +161,32 @@ export interface TokenRemoveMessage {
   tokenId: string;
 }
 
+export type ToolPayload =
+  | { action: 'ping'; x: number; y: number; color: string }
+  | {
+      action: 'ruler';
+      start_x: number;
+      start_y: number;
+      end_x: number;
+      end_y: number;
+      color: string;
+    }
+  | { action: 'ruler_clear' };
+
+export interface ToolClientMessage {
+  type: 'tool';
+  clientId: string;
+  payload: ToolPayload;
+}
+
+export interface ToolSyncMessage {
+  type: 'tool_sync';
+  clientId: string;
+  payload: ToolPayload;
+}
+
 export type TokenClientMessage =
-  | TokenPlaceMessage
-  | TokenMoveMessage
-  | TokenStateMessage
-  | TokenRemoveMessage;
+  TokenPlaceMessage | TokenMoveMessage | TokenStateMessage | TokenRemoveMessage;
 
 // --- RPC --------------------------------------------------------------------
 

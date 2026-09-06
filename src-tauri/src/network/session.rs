@@ -142,7 +142,10 @@ async fn handle_text(
             relay_chat(state, client_id.as_deref(), envelope, text).await;
             None
         }
-        ClientMessage::TokenPlace { client_id: _, token } => {
+        ClientMessage::TokenPlace {
+            client_id: _,
+            token,
+        } => {
             place_token(state, client_id.as_deref(), token).await;
             None
         }
@@ -177,6 +180,20 @@ async fn handle_text(
             token_id,
         } => {
             remove_token(state, client_id.as_deref(), &token_id).await;
+            None
+        }
+        ClientMessage::Tool {
+            client_id: _,
+            payload,
+        } => {
+            let sender = client_id.as_deref().unwrap_or("unknown").to_string();
+            let msg = ServerMessage::ToolSync {
+                client_id: sender,
+                payload,
+            };
+            if let Ok(json) = serde_json::to_string(&msg) {
+                state.send(Target::All, json);
+            }
             None
         }
         ClientMessage::Rpc {

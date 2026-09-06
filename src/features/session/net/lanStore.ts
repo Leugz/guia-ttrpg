@@ -22,12 +22,18 @@ interface LanState {
   handouts: Handout[];
   forcedOpens: { handoutId: string; target: string | null }[];
   maps: MapDefinition[];
-  /**
-   * The board's *structure*: which pieces exist and how they look. Their live
-   * positions are handled by `tokenMotion` instead, because a drag would
-   * otherwise re-render this store on every frame.
-   */
   tokens: MapToken[];
+  pings: { id: string; x: number; y: number; color: string }[];
+  rulers: Record<
+    string,
+    {
+      start_x: number;
+      start_y: number;
+      end_x: number;
+      end_y: number;
+      color: string;
+    }
+  >;
 
   connect: (address: string, identity: Identity) => void;
   updateIdentity: (identity: Identity) => void;
@@ -49,6 +55,8 @@ export const useLanStore = create<LanState>()((set) => ({
   forcedOpens: [],
   maps: [],
   tokens: [],
+  pings: [],
+  rulers: {},
 
   connect: (address, identity) => {
     set({ closedReason: null });
@@ -99,16 +107,37 @@ lan.on('tokens', (message) => {
   useLanStore.setState({ tokens: message.tokens });
 });
 
-// Movement never touches the store: it goes straight to the Konva node.
 lan.on('tokenMoved', (message) =>
   tokenMotion.apply(message.tokenId, message.x, message.y, message.dragging)
 );
 
-/**
- * With the LAN closed there is no socket to echo board changes back, so the
- * same operations are applied here directly. `gameClient` owns the decision of
- * which path a call takes; this is just the local end of it.
- */
+const processToolEvent = (clientId: string, payload: any) => {
+  if (payload.action === 'ping') {
+    const id = Date.now().toString() + Math.random();
+    useLanStore.setState((state) => ({
+      pings: [
+        ...state.pings,
+        { id, x: payload.x, y: payload.y, color: payload.color },
+      ],
+    }));
+    setTimeout(() => {
+      useLanStore.setState((state) => ({
+        pings: state.pings.filter((p) => p.id !== id),
+      }));
+    }, 1500);
+  } else if (payload.action === 'ruler') {
+    useLanStore.setState((state) => ({
+      rulers: { ...state.rulers, [clientId]: payload },
+    }));
+  } else if (payload.action === 'ruler_clear') {
+    useLanStore.setState((state) => {
+      const next = { ...state.rulers };
+      delete next[clientId];
+      return { rulers: next };
+    });
+  }
+};
+
 setLocalBoardSink({
   place: (token) =>
     useLanStore.setState((state) => {
@@ -122,7 +151,9 @@ setLocalBoardSink({
             existing.sheet_id === token.sheet_id
           )
       );
-      return { tokens: [...others, token].sort((a, b) => a.id.localeCompare(b.id)) };
+      return {
+        tokens: [...others, token].sort((a, b) => a.id.localeCompare(b.id)),
+      };
     }),
   move: (tokenId, x, y, dragging) => tokenMotion.apply(tokenId, x, y, dragging),
   restyle: (tokenId, grayscale, saveIndicator) =>
@@ -137,6 +168,7 @@ setLocalBoardSink({
     useLanStore.setState((state) => ({
       tokens: state.tokens.filter((token) => token.id !== tokenId),
     })),
+  tool: processToolEvent,
 });
 
 lan.on('handout', (message) => {

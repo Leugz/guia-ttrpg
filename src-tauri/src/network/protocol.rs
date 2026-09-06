@@ -44,6 +44,24 @@ pub struct SheetSummary {
 // Client -> Server
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum ToolPayload {
+    Ping {
+        x: f64,
+        y: f64,
+        color: String,
+    },
+    Ruler {
+        start_x: f64,
+        start_y: f64,
+        end_x: f64,
+        end_y: f64,
+        color: String,
+    },
+    RulerClear,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
@@ -112,6 +130,11 @@ pub enum ClientMessage {
         client_id: String,
         #[serde(rename = "tokenId")]
         token_id: String,
+    },
+    Tool {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        payload: ToolPayload,
     },
     /// A remote procedure call against the host's rules engine.
     Rpc {
@@ -197,6 +220,11 @@ pub enum ServerMessage {
         x: f64,
         y: f64,
         dragging: bool,
+    },
+    ToolSync {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        payload: ToolPayload,
     },
     /// Result of a `Rpc` request.
     RpcResult {

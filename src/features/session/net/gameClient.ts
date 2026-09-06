@@ -28,7 +28,7 @@ import type {
   TestRequest,
 } from '../../../shared/types';
 import { lan } from './lanConnection';
-import { RpcMethod, type SheetSummary } from './protocol';
+import { RpcMethod, ToolPayload, type SheetSummary } from './protocol';
 
 export type GameMode = 'offline' | 'host' | 'client';
 
@@ -404,6 +404,7 @@ export interface LocalBoardSink {
     saveIndicator: SaveIndicator | null
   ) => void;
   remove: (tokenId: string) => void;
+  tool: (clientId: string, payload: ToolPayload) => void;
 }
 
 let localBoard: LocalBoardSink | null = null;
@@ -462,4 +463,12 @@ export const removeToken = (clientId: string, tokenId: string) => {
     return;
   }
   localBoard?.remove(tokenId);
+};
+
+export const sendToolEvent = (clientId: string, payload: ToolPayload) => {
+  if (boardIsNetworked()) {
+    lan.sendTool({ type: 'tool', clientId, payload });
+    return;
+  }
+  localBoard?.tool(clientId, payload);
 };

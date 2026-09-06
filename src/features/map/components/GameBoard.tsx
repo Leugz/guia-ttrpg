@@ -28,7 +28,7 @@ const DEFAULT_TOKEN_SIZE = 64;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 6;
 const ZOOM_STEP = 1.08;
-const FADE_MS = 260;
+const FADE_MS = 350;
 
 export const TOKEN_DRAG_MIME = 'application/x-guia-token';
 
@@ -127,8 +127,6 @@ const TokenNode = React.memo(function TokenNode({
   const handleDragMove = useCallback(
     (event: KonvaEventObject<DragEvent>) => {
       let { x, y } = event.target.position();
-
-      // CLAMP: Impede o token de sair visualmente dos limites da imagem do mapa
       x = Math.max(0, Math.min(x, mapWidth));
       y = Math.max(0, Math.min(y, mapHeight));
       event.target.position({ x, y });
@@ -149,8 +147,6 @@ const TokenNode = React.memo(function TokenNode({
         pendingFrame.current = null;
       }
       let { x, y } = event.target.position();
-
-      // CLAMP: Garante que a posição final salva também respeite os limites
       x = Math.max(0, Math.min(x, mapWidth));
       y = Math.max(0, Math.min(y, mapHeight));
 
@@ -274,27 +270,39 @@ function SaveMarker({ token, size }: { token: MapToken; size: number }) {
 // ---------------------------------------------------------------------------
 
 function PingNode({ x, y, color }: { x: number; y: number; color: string }) {
-  const circleRef = useRef<Konva.Circle>(null);
+  const innerRef = useRef<Konva.Circle>(null);
+  const outerRef = useRef<Konva.Circle>(null);
   useEffect(() => {
-    if (circleRef.current) {
+    if (innerRef.current) {
       new Konva.Tween({
-        node: circleRef.current,
-        radius: 60,
+        node: innerRef.current,
+        radius: 100,
         opacity: 0,
-        duration: 1,
+        duration: 1.2,
+        easing: Konva.Easings.EaseOut,
+      }).play();
+    }
+    if (outerRef.current) {
+      new Konva.Tween({
+        node: outerRef.current,
+        radius: 150,
+        opacity: 0,
+        duration: 1.8,
         easing: Konva.Easings.EaseOut,
       }).play();
     }
   }, []);
   return (
-    <Circle
-      ref={circleRef}
-      x={x}
-      y={y}
-      radius={5}
-      stroke={color}
-      strokeWidth={4}
-    />
+    <Group x={x} y={y}>
+      <Circle ref={innerRef} radius={10} fill={color} opacity={0.8} />
+      <Circle
+        ref={outerRef}
+        radius={20}
+        stroke={color}
+        strokeWidth={6}
+        opacity={0.9}
+      />
+    </Group>
   );
 }
 
@@ -311,29 +319,31 @@ interface GameBoardProps {
 export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
-  const mapLayerRef = useRef<Konva.Layer | null>(null);
+  const incomingGroupRef = useRef<Konva.Group | null>(null);
   const markerLayerRef = useRef<Konva.Layer | null>(null);
 
   const activeMap = useLanStore(selectActiveMap);
-  const tokens = useLanStore((state) => state.tokens);
+
+  // FIX 2: Tokens deixaram de ser filtrados por mapa.
+  // Como as miniaturas ficam na mesa, trocar o papel do mapa não faz elas sumirem!
+  const visibleTokens = useLanStore((state) => state.tokens);
+
+  const pings = useLanStore((state) => state.pings);
+  const rulers = useLanStore((state) => state.rulers);
 
   const [shown, setShown] = useState<{
     map: MapDefinition;
     image: HTMLImageElement;
+  } | null>(null);
+  const [outgoing, setOutgoing] = useState<{
+    image: HTMLImageElement;
+    grid_size: number;
   } | null>(null);
   const [loadError, setLoadError] = useState<{
     mapId: string;
     message: string;
   } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-
-  const [pings, setPings] = useState<
-    { id: string; x: number; y: number; color: string }[]
-  >([]);
-  const [ruler, setRuler] = useState<{
-    start: { x: number; y: number };
-    end: { x: number; y: number };
-  } | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -375,24 +385,11 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
     loadMapImage(activeMap)
       .then((image) => {
         if (cancelled) return;
-        const layer = mapLayerRef.current;
-
-        const swap = () => {
-          if (cancelled) return;
-          setShown({ map: activeMap, image });
-          frameMap(image);
-          const target = mapLayerRef.current;
-          if (target) {
-            new Konva.Tween({
-              node: target,
-              opacity: 1,
-              duration: FADE_MS / 1000,
-            }).play();
-          }
-        };
-
-        if (layer) layer.opacity(0);
-        swap();
+        if (shown) {
+          setOutgoing({ image: shown.image, grid_size: shown.map.grid_size });
+        }
+        setShown({ map: activeMap, image });
+        frameMap(image);
       })
       .catch((error: Error) => {
         if (cancelled) return;
@@ -403,7 +400,22 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeMap, shownId, frameMap]);
+  }, [activeMap, shownId, frameMap, shown]);
+
+  // FIX 1: Efeito Fade-In sem piscar preto (Garante Opacidade 0 antes de animar)
+  useEffect(() => {
+    if (outgoing && incomingGroupRef.current) {
+      incomingGroupRef.current.opacity(0);
+      new Konva.Tween({
+        node: incomingGroupRef.current,
+        opacity: 1,
+        duration: FADE_MS / 1000,
+        onFinish: () => {
+          setOutgoing(null);
+        },
+      }).play();
+    }
+  }, [shown, outgoing]);
 
   const framed = useRef<string | null>(null);
   useEffect(() => {
@@ -447,7 +459,6 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
       const transform = stage.getAbsoluteTransform().copy().invert();
       const mapPos = transform.point(pos);
 
-      // Bloqueia interações fora dos limites do mapa
       if (
         mapPos.x < 0 ||
         mapPos.y < 0 ||
@@ -458,64 +469,66 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
       }
 
       if (activeTool === 'ping') {
-        const id = Date.now().toString();
-        setPings((p) => [
-          ...p,
-          { id, x: mapPos.x, y: mapPos.y, color: '#ef4444' },
-        ]);
-        setTimeout(
-          () => setPings((p) => p.filter((ping) => ping.id !== id)),
-          1000
-        );
+        gameClient.sendToolEvent(clientId, {
+          action: 'ping',
+          x: mapPos.x,
+          y: mapPos.y,
+          color: '#ef4444',
+        });
       } else if (activeTool === 'ruler') {
-        setRuler({ start: mapPos, end: mapPos });
+        gameClient.sendToolEvent(clientId, {
+          action: 'ruler',
+          start_x: mapPos.x,
+          start_y: mapPos.y,
+          end_x: mapPos.x,
+          end_y: mapPos.y,
+          color: '#3b82f6',
+        });
       }
     },
-    [activeTool, displayed]
+    [activeTool, displayed, clientId]
   );
 
   const handlePointerMove = useCallback(
     (e: KonvaEventObject<PointerEvent>) => {
-      if (activeTool === 'ruler' && ruler && displayed) {
+      if (activeTool === 'ruler' && rulers[clientId] && displayed) {
         const stage = stageRef.current;
         if (!stage) return;
         const pos = stage.getPointerPosition();
         if (!pos) return;
+
         const transform = stage.getAbsoluteTransform().copy().invert();
         const mapPos = transform.point(pos);
-
-        // Bloqueia a régua de ser puxada para fora dos limites do mapa
         const clampedX = Math.max(0, Math.min(mapPos.x, displayed.image.width));
         const clampedY = Math.max(
           0,
           Math.min(mapPos.y, displayed.image.height)
         );
 
-        setRuler((r) =>
-          r ? { ...r, end: { x: clampedX, y: clampedY } } : null
-        );
+        const myRuler = rulers[clientId];
+        gameClient.sendToolEvent(clientId, {
+          action: 'ruler',
+          start_x: myRuler.start_x,
+          start_y: myRuler.start_y,
+          end_x: clampedX,
+          end_y: clampedY,
+          color: myRuler.color,
+        });
       }
     },
-    [activeTool, ruler, displayed]
+    [activeTool, rulers, displayed, clientId]
   );
 
   const handlePointerUp = useCallback(() => {
     if (activeTool === 'ruler') {
-      setRuler(null);
+      gameClient.sendToolEvent(clientId, { action: 'ruler_clear' });
     }
-  }, [activeTool]);
+  }, [activeTool, clientId]);
 
   const tokenSize =
     displayed && displayed.map.grid_size > 0
       ? displayed.map.grid_size
       : DEFAULT_TOKEN_SIZE;
-  const visibleTokens = useMemo(
-    () =>
-      displayed
-        ? tokens.filter((token) => token.map_id === displayed.map.id)
-        : [],
-    [tokens, displayed]
-  );
   const markedTokens = useMemo(
     () => visibleTokens.filter((token) => Boolean(token.save_indicator)),
     [visibleTokens]
@@ -564,16 +577,13 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,
       };
-
       const point = stage.getAbsoluteTransform().copy().invert().point(local);
-
-      // CLAMP: Impede de soltar o token no nada (fora dos limites da imagem)
       const clampedX = Math.max(0, Math.min(point.x, displayed.image.width));
       const clampedY = Math.max(0, Math.min(point.y, displayed.image.height));
 
       gameClient.placeToken(clientId, {
         id: `token:${clientId}:${payload.sheetId ?? 'self'}`,
-        map_id: displayed.map.id,
+        map_id: displayed.map.id, // O token ainda salva o ID do mapa, mas o Frontend agora ignora
         owner_client_id: clientId,
         sheet_id: payload.sheetId,
         label: payload.label,
@@ -610,9 +620,22 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         >
-          <Layer ref={mapLayerRef} listening={false}>
+          <Layer listening={false}>
+            {/* MAPA ANTIGO (FICA EMBAIXO E SOME DEPOIS) */}
+            {outgoing && (
+              <Group>
+                <KonvaImage
+                  image={outgoing.image}
+                  width={outgoing.image.width}
+                  height={outgoing.image.height}
+                  perfectDrawEnabled={false}
+                />
+              </Group>
+            )}
+
+            {/* MAPA NOVO (SURGE POR CIMA) */}
             {displayed && (
-              <>
+              <Group ref={incomingGroupRef} opacity={outgoing ? 0 : 1}>
                 <KonvaImage
                   image={displayed.image}
                   width={displayed.image.width}
@@ -641,7 +664,7 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
                     }}
                   />
                 )}
-              </>
+              </Group>
             )}
           </Layer>
 
@@ -671,31 +694,26 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
             {pings.map((p) => (
               <PingNode key={p.id} x={p.x} y={p.y} color={p.color} />
             ))}
-            {ruler && (
-              <Group>
+            {Object.values(rulers).map((r, i) => (
+              <Group key={i}>
                 <Line
-                  points={[
-                    ruler.start.x,
-                    ruler.start.y,
-                    ruler.end.x,
-                    ruler.end.y,
-                  ]}
-                  stroke='#3b82f6'
+                  points={[r.start_x, r.start_y, r.end_x, r.end_y]}
+                  stroke={r.color}
                   strokeWidth={4}
                   dash={[10, 5]}
                 />
                 <Text
-                  x={ruler.end.x + 10}
-                  y={ruler.end.y + 10}
-                  text={`${Math.round((Math.hypot(ruler.end.x - ruler.start.x, ruler.end.y - ruler.start.y) / tokenSize) * 1.5 * 10) / 10}m`}
-                  fill='#3b82f6'
+                  x={r.end_x + 10}
+                  y={r.end_y + 10}
+                  text={`${Math.round((Math.hypot(r.end_x - r.start_x, r.end_y - r.start_y) / tokenSize) * 1.5 * 10) / 10}m`}
+                  fill={r.color}
                   fontSize={20}
                   fontStyle='bold'
                   shadowColor='black'
                   shadowBlur={4}
                 />
               </Group>
-            )}
+            ))}
           </Layer>
         </Stage>
       )}

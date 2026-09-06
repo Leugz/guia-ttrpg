@@ -11,6 +11,8 @@ import {
   HandoutForceOpenMessage,
   HandoutUpdateMessage,
   RpcMethod,
+  ToolClientMessage,
+  ToolSyncMessage,
   type ConnectionStatus,
   type LanPlayer,
   type MapsUpdateMessage,
@@ -46,6 +48,7 @@ export interface LanEvents {
   maps: MapsUpdateMessage;
   tokens: TokensSyncMessage;
   tokenMoved: TokenMovedMessage;
+  tool: ToolSyncMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -246,6 +249,10 @@ class LanConnection {
     this.send(message);
   }
 
+  sendTool(message: ToolClientMessage) {
+    this.send(message);
+  }
+
   /** Call a method on the host and wait for its answer. */
   request<M extends keyof RpcResults>(
     method: M,
@@ -349,6 +356,9 @@ class LanConnection {
         return;
       case 'token_moved':
         this.emit('tokenMoved', message as TokenMovedMessage);
+        return;
+      case 'tool_sync':
+        this.emit('tool', message as ToolSyncMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);
