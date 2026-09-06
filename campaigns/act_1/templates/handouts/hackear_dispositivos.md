@@ -14,6 +14,8 @@ Você tenta invadir um dispositivo tecnológico com base em seus conhecimentos t
 
 A dificuldade do problema varia de acordo com o teste de **Tecnologia**: quanto maior o resultado, mais fácil o problema.
 
+<br>
+
 ### HACK SOCIAL
 Outra opção para invadir um dispositivo tecnológico é fazer um hack social, ou seja, utilizar conhecimentos sobre o dono do celular ou do computador para adivinhar sua senha. Para isso, você deve fazer um teste de **`Intuição`**. Se passar, deverá responder a algumas perguntas a respeito da pessoa que criou a senha.
 

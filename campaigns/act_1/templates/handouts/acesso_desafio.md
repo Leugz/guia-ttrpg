@@ -30,6 +30,8 @@ Se o número máximo de tentativas for excedido, a fechadura é danificada e nã
 | d10 | 4 |
 | d12 | 5 |
 
+<br>
+
 ### ARROMBAR
 Você tenta abrir uma fechadura com força bruta. Para isso, gaste **`1 PV`** (pelo esforço) e faça um teste de **`Atletismo (DT definida pelo objeto)`**. Se passar, anote uma pontuação igual ao valor da **RA**. Você precisa acumular uma pontuação alvo (**PA**).
 
