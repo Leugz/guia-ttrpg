@@ -11,7 +11,7 @@
     "format:check": "prettier --check .",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "WEBKIT_DISABLE_DMABUF_RENDERER=1 pnpm tauri dev"
+    "tauri:dev": "__NV_DISABLE_EXPLICIT_SYNC=1 pnpm tauri dev"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

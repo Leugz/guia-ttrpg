@@ -882,3 +882,22 @@ pub fn get_sheet_portrait(root: &Path, sheet_id: &str) -> Result<AssetPayload, S
     };
     read_asset(root, portrait)
 }
+
+pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> Result<AssetPayload, String> {
+    let path = campaign::resolve_sheet(root, sheet_id)?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| "Sheet path is not valid UTF-8.".to_string())?;
+    let document = load_character_sheet(path)?;
+
+    // Se tiver 'token_image', usa ele. Se não, usa o 'portrait' como fallback!
+    let asset_path = if let Some(t) = document.data.token_image.as_deref() {
+        t
+    } else if let Some(p) = document.data.portrait.as_deref() {
+        p
+    } else {
+        return Err(format!("Sheet '{}' has no token or portrait.", sheet_id));
+    };
+
+    read_asset(root, asset_path)
+}

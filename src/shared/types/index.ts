@@ -138,8 +138,8 @@ export interface CharacterSheet {
   occupation: string;
   level: number;
   color?: string;
-  /** Campaign-relative path to the portrait, e.g. `assets/portraits/alan.png`. */
   portrait?: string;
+  token_image?: string;
   resources: {
     hp: ResourceStat;
     dp: ResourceStat;

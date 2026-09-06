@@ -235,12 +235,10 @@ pub struct CharacterSheet {
     #[serde(default = "default_level")]
     pub level: u32,
     pub color: Option<String>,
-    /// Optional campaign-relative path to this character's portrait, e.g.
-    /// `assets/portraits/alan.png`. It is what the player drags onto the map
-    /// to place their token, so it is resolved through the same asset rules
-    /// an image handout uses. `None` falls back to initials on a colour chip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portrait: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_image: Option<String>,
     pub resources: Resources,
     #[serde(alias = "base_attributes")]
     pub attributes: Attributes,
@@ -281,6 +279,7 @@ impl CharacterSheet {
             level: 1,
             color: Some("$dc2626".to_string()),
             portrait: None,
+            token_image: None,
             resources: Resources {
                 hp: ResourceStat {
                     current: 10,

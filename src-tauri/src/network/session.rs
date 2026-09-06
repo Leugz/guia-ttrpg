@@ -951,6 +951,11 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
             to_value(api::get_sheet_portrait(root, &p.sheet_id)?)
         }
 
+        method::GET_SHEET_TOKEN_IMAGE => {
+            let p: SheetParams = parse(params)?;
+            to_value(api::get_sheet_token_image(root, &p.sheet_id)?)
+        }
+
         unknown => Err(format!("Unknown method: {}", unknown)),
     }
 }

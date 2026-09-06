@@ -1,6 +1,7 @@
 ---
 type: character
-portrait: 'assets/portraits/token_alan.png'
+portrait: 'assets/portraits/alan.png'
+token_image: 'assets/tokens/alan.png'
 name: ALAN
 profile: EXECUTOR
 occupation: CIENTISTA

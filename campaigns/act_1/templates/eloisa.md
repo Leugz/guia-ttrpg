@@ -1,6 +1,7 @@
 ---
 type: character
-portrait: 'assets/portraits/token_eloisa.png'
+portrait: 'assets/portraits/eloisa.png'
+token_image: 'assets/tokens/eloisa.png'
 name: ELOÍSA
 profile: ANALISTA
 occupation: ARTISTA

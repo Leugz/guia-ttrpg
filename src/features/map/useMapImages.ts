@@ -48,44 +48,57 @@ const decode = (key: string, url: string): Promise<HTMLImageElement> => {
 export const loadMapImage = (map: MapDefinition) =>
   gameClient.getMapImageUrl(map).then((url) => decode(`map:${map.id}`, url));
 
-/** Decode a character's portrait, or reject when the sheet declares none. */
 export const loadPortrait = (sheetId: string) =>
   gameClient
     .getPortraitUrl(sheetId)
     .then((url) => decode(`portrait:${sheetId}`, url));
 
-/**
- * The portrait for one sheet, or `null` when there is none — in which case the
- * token falls back to initials on the player's colour.
- */
+export const loadTokenImage = (sheetId: string) =>
+  gameClient
+    .getTokenImageUrl(sheetId)
+    .then((url) => decode(`token_image:${sheetId}`, url));
+
 const withoutPortrait = new Set<string>();
+const withoutToken = new Set<string>();
 
 export function usePortrait(sheetId: string | null | undefined) {
-  // The decoded bitmap lives in the module cache, so it is read during render
-  // rather than mirrored into state. This counter exists only to schedule the
-  // one re-render that a finished decode needs.
   const [, bump] = useState(0);
-
   useEffect(() => {
     if (!sheetId || withoutPortrait.has(sheetId)) return;
     if (decoded.has(`portrait:${sheetId}`)) return;
-
     let cancelled = false;
     loadPortrait(sheetId)
       .then(() => {
-        if (!cancelled) bump((tick) => tick + 1);
+        if (!cancelled) bump((t) => t + 1);
       })
       .catch(() => {
-        // Remembered, so a sheet with no portrait is not asked for again on
-        // every render.
         withoutPortrait.add(sheetId);
-        if (!cancelled) bump((tick) => tick + 1);
+        if (!cancelled) bump((t) => t + 1);
       });
-
     return () => {
       cancelled = true;
     };
   }, [sheetId]);
-
   return sheetId ? (decoded.get(`portrait:${sheetId}`) ?? null) : null;
+}
+
+export function useTokenImage(sheetId: string | null | undefined) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!sheetId || withoutToken.has(sheetId)) return;
+    if (decoded.has(`token_image:${sheetId}`)) return;
+    let cancelled = false;
+    loadTokenImage(sheetId)
+      .then(() => {
+        if (!cancelled) bump((t) => t + 1);
+      })
+      .catch(() => {
+        withoutToken.add(sheetId);
+        if (!cancelled) bump((t) => t + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetId]);
+  return sheetId ? (decoded.get(`token_image:${sheetId}`) ?? null) : null;
 }

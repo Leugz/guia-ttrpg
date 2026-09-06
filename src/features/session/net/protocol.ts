@@ -124,6 +124,7 @@ export type ServerMessage =
   | MapsUpdateMessage
   | TokensSyncMessage
   | TokenMovedMessage
+  /** Campaign-relative path to the portrait, e.g. `assets/portraits/alan.png`. */
   | ToolSyncMessage;
 
 // --- Client -> Server: board traffic ---------------------------------------
@@ -219,6 +220,7 @@ export const RpcMethod = {
   setActiveMap: 'set_active_map',
   getMapAsset: 'get_map_asset',
   getSheetPortrait: 'get_sheet_portrait',
+  getSheetTokenImage: 'get_sheet_token_image',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -258,6 +260,7 @@ export interface RpcResults {
   [RpcMethod.setActiveMap]: MapDefinition[];
   [RpcMethod.getMapAsset]: AssetPayload;
   [RpcMethod.getSheetPortrait]: AssetPayload;
+  [RpcMethod.getSheetTokenImage]: AssetPayload;
 }
 
 export interface TestRpcParams {

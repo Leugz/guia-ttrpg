@@ -384,17 +384,29 @@ export const getPortraitUrl = (sheetId: string): Promise<string> =>
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
 
-// ---------------------------------------------------------------------------
-// Board
-//
-// Token operations are the one part of the client that does not go through
-// `dispatch`. They are fire-and-forget broadcasts, not requests: a drag emits
-// one per animation frame, so the round trip a promise implies would be pure
-// overhead. When the LAN is closed there is nobody to tell, and the operation
-// is applied to this window's own state instead.
-// ---------------------------------------------------------------------------
+export const getTokenImageUrl = (sheetId: string): Promise<string> =>
+  dispatch(
+    async () => {
+      // Token próprio para o mestre!
+      if (sheetId === '__GM__') {
+        return convertFileSrc(
+          `${context.gameRoot}/assets/portraits/gm_token.png`
+        );
+      }
+      const document = await invoke<ParsedDocument>('load_character_sheet', {
+        path: localPath(sheetId),
+      });
+      const assetPath = document.data.token_image || document.data.portrait;
+      if (!assetPath)
+        throw new Error(`A ficha "${sheetId}" não tem imagem de token.`);
+      return convertFileSrc(localPath(assetPath));
+    },
+    () =>
+      lan
+        .request(RpcMethod.getSheetTokenImage, { sheetId })
+        .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
+  );
 
-/** The local end of a board operation, registered by `lanStore`. */
 export interface LocalBoardSink {
   place: (token: MapToken) => void;
   move: (tokenId: string, x: number, y: number, dragging: boolean) => void;

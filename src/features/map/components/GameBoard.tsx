@@ -22,7 +22,7 @@ import type { MapDefinition, MapToken } from '../../../shared/types';
 import * as gameClient from '../../session/net/gameClient';
 import { selectActiveMap, useLanStore } from '../../session/net/lanStore';
 import { tokenMotion } from '../tokenMotion';
-import { loadMapImage, usePortrait } from '../useMapImages';
+import { loadMapImage, useTokenImage } from '../useMapImages';
 
 const DEFAULT_TOKEN_SIZE = 64;
 const MIN_SCALE = 0.1;
@@ -92,14 +92,16 @@ const TokenNode = React.memo(function TokenNode({
 }: TokenNodeProps) {
   const groupRef = useRef<Konva.Group | null>(null);
   const imageRef = useRef<Konva.Image | null>(null);
-  const portrait = usePortrait(token.sheet_id);
+
+  // USA A IMAGEM DO TOKEN AGORA
+  const tokenBitmap = useTokenImage(token.sheet_id);
   const radius = size / 2;
 
   useLivePosition(token.id, token.x, token.y, groupRef);
 
   useEffect(() => {
     const node = imageRef.current;
-    if (!node || !portrait) return;
+    if (!node || !tokenBitmap) return;
     if (token.grayscale) {
       node.filters([Konva.Filters.Grayscale]);
       node.cache();
@@ -108,7 +110,7 @@ const TokenNode = React.memo(function TokenNode({
       node.clearCache();
     }
     node.getLayer()?.batchDraw();
-  }, [token.grayscale, portrait]);
+  }, [token.grayscale, tokenBitmap]);
 
   const pendingFrame = useRef<number | null>(null);
   const pendingPosition = useRef<{ x: number; y: number } | null>(null);
@@ -187,10 +189,10 @@ const TokenNode = React.memo(function TokenNode({
         if (container) container.style.cursor = 'default';
       }}
     >
-      {portrait ? (
+      {tokenBitmap ? (
         <KonvaImage
           ref={imageRef}
-          image={portrait}
+          image={tokenBitmap}
           x={-radius}
           y={-radius}
           width={size}
@@ -265,10 +267,6 @@ function SaveMarker({ token, size }: { token: MapToken; size: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tool Nodes
-// ---------------------------------------------------------------------------
-
 function PingNode({ x, y, color }: { x: number; y: number; color: string }) {
   const innerRef = useRef<Konva.Circle>(null);
   const outerRef = useRef<Konva.Circle>(null);
@@ -306,27 +304,26 @@ function PingNode({ x, y, color }: { x: number; y: number; color: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Board
-// ---------------------------------------------------------------------------
-
 interface GameBoardProps {
   clientId: string;
   isGM: boolean;
   activeTool: string;
+  identityColor: string;
 }
 
-export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
+export function GameBoard({
+  clientId,
+  isGM,
+  activeTool,
+  identityColor,
+}: GameBoardProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const incomingGroupRef = useRef<Konva.Group | null>(null);
   const markerLayerRef = useRef<Konva.Layer | null>(null);
 
   const activeMap = useLanStore(selectActiveMap);
-
-  // FIX 2: Tokens deixaram de ser filtrados por mapa.
-  // Como as miniaturas ficam na mesa, trocar o papel do mapa não faz elas sumirem!
-  const visibleTokens = useLanStore((state) => state.tokens);
+  const tokens = useLanStore((state) => state.tokens); // Todas as minis sempre visíveis!
 
   const pings = useLanStore((state) => state.pings);
   const rulers = useLanStore((state) => state.rulers);
@@ -344,6 +341,61 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
     message: string;
   } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+
+  // Renderização Otimista da Régua (Zero Lag)
+  const [localRuler, setLocalRuler] = useState<{
+    start_x: number;
+    start_y: number;
+    end_x: number;
+    end_y: number;
+    color: string;
+  } | null>(null);
+
+  const keys = useRef(new Set<string>());
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+      keys.current.add(e.key.toLowerCase());
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      keys.current.delete(e.key.toLowerCase());
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    let animId: number;
+    const loop = () => {
+      const stage = stageRef.current;
+      if (stage && keys.current.size > 0) {
+        const speed = 12;
+        let dx = 0;
+        let dy = 0;
+        if (keys.current.has('w')) dy += speed;
+        if (keys.current.has('s')) dy -= speed;
+        if (keys.current.has('a')) dx += speed;
+        if (keys.current.has('d')) dx -= speed;
+        if (dx !== 0 || dy !== 0) {
+          const pos = stage.position();
+          stage.position({ x: pos.x + dx, y: pos.y + dy });
+          stage.batchDraw();
+        }
+      }
+      animId = requestAnimationFrame(loop);
+    };
+    animId = requestAnimationFrame(loop);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -402,7 +454,6 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
     };
   }, [activeMap, shownId, frameMap, shown]);
 
-  // FIX 1: Efeito Fade-In sem piscar preto (Garante Opacidade 0 antes de animar)
   useEffect(() => {
     if (outgoing && incomingGroupRef.current) {
       incomingGroupRef.current.opacity(0);
@@ -410,9 +461,7 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
         node: incomingGroupRef.current,
         opacity: 1,
         duration: FADE_MS / 1000,
-        onFinish: () => {
-          setOutgoing(null);
-        },
+        onFinish: () => setOutgoing(null),
       }).play();
     }
   }, [shown, outgoing]);
@@ -473,25 +522,26 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
           action: 'ping',
           x: mapPos.x,
           y: mapPos.y,
-          color: '#ef4444',
+          color: identityColor,
         });
       } else if (activeTool === 'ruler') {
-        gameClient.sendToolEvent(clientId, {
-          action: 'ruler',
+        const newRuler = {
           start_x: mapPos.x,
           start_y: mapPos.y,
           end_x: mapPos.x,
           end_y: mapPos.y,
-          color: '#3b82f6',
-        });
+          color: identityColor,
+        };
+        setLocalRuler(newRuler);
+        gameClient.sendToolEvent(clientId, { action: 'ruler', ...newRuler });
       }
     },
-    [activeTool, displayed, clientId]
+    [activeTool, displayed, clientId, identityColor]
   );
 
   const handlePointerMove = useCallback(
     (e: KonvaEventObject<PointerEvent>) => {
-      if (activeTool === 'ruler' && rulers[clientId] && displayed) {
+      if (activeTool === 'ruler' && localRuler && displayed) {
         const stage = stageRef.current;
         if (!stage) return;
         const pos = stage.getPointerPosition();
@@ -505,22 +555,17 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
           Math.min(mapPos.y, displayed.image.height)
         );
 
-        const myRuler = rulers[clientId];
-        gameClient.sendToolEvent(clientId, {
-          action: 'ruler',
-          start_x: myRuler.start_x,
-          start_y: myRuler.start_y,
-          end_x: clampedX,
-          end_y: clampedY,
-          color: myRuler.color,
-        });
+        const updated = { ...localRuler, end_x: clampedX, end_y: clampedY };
+        setLocalRuler(updated);
+        gameClient.sendToolEvent(clientId, { action: 'ruler', ...updated });
       }
     },
-    [activeTool, rulers, displayed, clientId]
+    [activeTool, localRuler, displayed, clientId]
   );
 
   const handlePointerUp = useCallback(() => {
     if (activeTool === 'ruler') {
+      setLocalRuler(null);
       gameClient.sendToolEvent(clientId, { action: 'ruler_clear' });
     }
   }, [activeTool, clientId]);
@@ -529,9 +574,10 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
     displayed && displayed.map.grid_size > 0
       ? displayed.map.grid_size
       : DEFAULT_TOKEN_SIZE;
+  // TODAS as miniaturas renderizam juntas, permitindo que sobrevivam a transições de mapas!
   const markedTokens = useMemo(
-    () => visibleTokens.filter((token) => Boolean(token.save_indicator)),
-    [visibleTokens]
+    () => tokens.filter((token) => Boolean(token.save_indicator)),
+    [tokens]
   );
 
   useEffect(() => {
@@ -583,7 +629,7 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
 
       gameClient.placeToken(clientId, {
         id: `token:${clientId}:${payload.sheetId ?? 'self'}`,
-        map_id: displayed.map.id, // O token ainda salva o ID do mapa, mas o Frontend agora ignora
+        map_id: displayed.map.id,
         owner_client_id: clientId,
         sheet_id: payload.sheetId,
         label: payload.label,
@@ -621,7 +667,6 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
           onPointerUp={handlePointerUp}
         >
           <Layer listening={false}>
-            {/* MAPA ANTIGO (FICA EMBAIXO E SOME DEPOIS) */}
             {outgoing && (
               <Group>
                 <KonvaImage
@@ -633,7 +678,6 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
               </Group>
             )}
 
-            {/* MAPA NOVO (SURGE POR CIMA) */}
             {displayed && (
               <Group ref={incomingGroupRef} opacity={outgoing ? 0 : 1}>
                 <KonvaImage
@@ -669,7 +713,7 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
           </Layer>
 
           <Layer>
-            {visibleTokens.map((token) => (
+            {tokens.map((token) => (
               <TokenNode
                 key={token.id}
                 token={token}
@@ -689,31 +733,62 @@ export function GameBoard({ clientId, isGM, activeTool }: GameBoardProps) {
             ))}
           </Layer>
 
-          {/* Tools Layer */}
           <Layer listening={false}>
             {pings.map((p) => (
               <PingNode key={p.id} x={p.x} y={p.y} color={p.color} />
             ))}
-            {Object.values(rulers).map((r, i) => (
-              <Group key={i}>
+
+            {/* Rulers da Rede */}
+            {Object.entries(rulers).map(([ownerId, r]) => {
+              if (ownerId === clientId) return null; // Ignora o próprio, pois usa o localRuler
+              return (
+                <Group key={ownerId}>
+                  <Line
+                    points={[r.start_x, r.start_y, r.end_x, r.end_y]}
+                    stroke={r.color}
+                    strokeWidth={4}
+                    dash={[10, 5]}
+                  />
+                  <Text
+                    x={r.end_x + 10}
+                    y={r.end_y + 10}
+                    text={`${Math.round((Math.hypot(r.end_x - r.start_x, r.end_y - r.start_y) / tokenSize) * 1.5 * 10) / 10}m`}
+                    fill={r.color}
+                    fontSize={20}
+                    fontStyle='bold'
+                    shadowColor='black'
+                    shadowBlur={4}
+                  />
+                </Group>
+              );
+            })}
+
+            {/* Ruler Local (Zero Lag) */}
+            {localRuler && (
+              <Group>
                 <Line
-                  points={[r.start_x, r.start_y, r.end_x, r.end_y]}
-                  stroke={r.color}
+                  points={[
+                    localRuler.start_x,
+                    localRuler.start_y,
+                    localRuler.end_x,
+                    localRuler.end_y,
+                  ]}
+                  stroke={localRuler.color}
                   strokeWidth={4}
                   dash={[10, 5]}
                 />
                 <Text
-                  x={r.end_x + 10}
-                  y={r.end_y + 10}
-                  text={`${Math.round((Math.hypot(r.end_x - r.start_x, r.end_y - r.start_y) / tokenSize) * 1.5 * 10) / 10}m`}
-                  fill={r.color}
+                  x={localRuler.end_x + 10}
+                  y={localRuler.end_y + 10}
+                  text={`${Math.round((Math.hypot(localRuler.end_x - localRuler.start_x, localRuler.end_y - localRuler.start_y) / tokenSize) * 1.5 * 10) / 10}m`}
+                  fill={localRuler.color}
                   fontSize={20}
                   fontStyle='bold'
                   shadowColor='black'
                   shadowBlur={4}
                 />
               </Group>
-            ))}
+            )}
           </Layer>
         </Stage>
       )}

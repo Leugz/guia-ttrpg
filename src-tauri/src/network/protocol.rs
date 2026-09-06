@@ -323,6 +323,7 @@ pub mod method {
     pub const GET_MAP_ASSET: &str = "get_map_asset";
     /// Fetches a character's portrait so remote clients can draw its token.
     pub const GET_SHEET_PORTRAIT: &str = "get_sheet_portrait";
+    pub const GET_SHEET_TOKEN_IMAGE: &str = "get_sheet_token_image";
 }
 
 #[cfg(test)]

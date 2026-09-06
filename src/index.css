@@ -1,6 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;900&family=Special+Elite&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+
+  /* Substitui a fonte padrão do HTML para Oswald */
+  html {
+    font-family: 'Oswald', sans-serif;
+  }
+}
+
+@layer utilities {
+
+  /* Força as classes de fonte do Tailwind a usarem as nossas novas fontes */
+  .font-sans {
+    font-family: 'Oswald', sans-serif !important;
+  }
+
+  .font-serif {
+    font-family: 'Special Elite', monospace !important;
+  }
+}
 
 @keyframes float-up-fade {
   0% {

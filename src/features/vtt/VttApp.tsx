@@ -27,6 +27,10 @@ import { useSessionStore } from '../session/sessionStore';
 import { useLanStore } from '../session/net/lanStore';
 import * as gameClient from '../session/net/gameClient';
 import type { LanPlayer, SheetSummary } from '../session/net/protocol';
+import type {
+  CharacterSheet as CharacterSheetData,
+  ActiveEffect,
+} from '../../shared/types';
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
@@ -147,7 +151,7 @@ const DraggableWindow = ({
 
   return (
     <div
-      className='pointer-events-auto absolute z-50 flex flex-col gap-2 shadow-2xl'
+      className='pointer-events-auto absolute z-30 flex flex-col gap-2 shadow-2xl'
       style={{
         left: pos.x,
         top: pos.y,
@@ -155,20 +159,24 @@ const DraggableWindow = ({
         height: size.height || undefined,
       }}
     >
-      <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-700 bg-black/90 backdrop-blur-md'>
+      <div className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-700 bg-black/70 backdrop-blur-md'>
         <div
-          className='flex shrink-0 cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-2'
+          className='flex shrink-0 cursor-move items-center justify-between border-b border-zinc-800 bg-zinc-900/80 px-3 py-2'
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         >
           <span className='flex select-none items-center gap-2 font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'>
-            <FileText size={14} style={{ color: 'var(--theme-color)' }} />{' '}
-            {title}
+            <FileText
+              size={14}
+              className='shrink-0'
+              style={{ color: 'var(--theme-color)' }}
+            />
+            <span className='translate-y-[2px]'>{title}</span>
           </span>
           <button
             onClick={onClose}
-            className='cursor-pointer text-zinc-500 transition-colors hover:text-white'
+            className='cursor-pointer text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
             onPointerDown={(e) => e.stopPropagation()}
           >
             <X size={14} />
@@ -182,8 +190,7 @@ const DraggableWindow = ({
           onPointerDown={handleResizeDown}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeUp}
-          className='absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize'
-          title='Redimensionar'
+          className='absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize outline-none focus:outline-none'
         >
           <span className='pointer-events-none absolute bottom-1 right-1 block h-2 w-px rotate-45 bg-zinc-600' />
           <span className='pointer-events-none absolute bottom-1 right-2.5 block h-2 w-px rotate-45 bg-zinc-700' />
@@ -221,19 +228,19 @@ const CharacterSelectionModal = ({
 
   return (
     <div
-      className='pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm'
+      className='pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm'
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-black/90 shadow-2xl backdrop-blur-md'>
+      <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-black/80 shadow-2xl backdrop-blur-md'>
         <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
           <h2 className='font-serif text-xl font-black uppercase tracking-widest text-zinc-200'>
             Selecionar Identidade
           </h2>
           <button
             onClick={onClose}
-            className='text-zinc-500 transition-colors hover:text-white'
+            className='text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
           >
             <X size={20} />
           </button>
@@ -246,7 +253,7 @@ const CharacterSelectionModal = ({
           <button
             onClick={() => onSelectSpecial('__GM__')}
             disabled={isGmClaimedByAnyone}
-            className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isGmClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
+            className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 outline-none transition-all focus:outline-none ${isGmClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
           >
             <div
               className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
@@ -281,7 +288,7 @@ const CharacterSelectionModal = ({
 
           <button
             onClick={() => onSelectSpecial(null)}
-            className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:bg-zinc-900'
+            className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 outline-none transition-all hover:bg-zinc-900 focus:outline-none'
           >
             <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
             <div className='ml-2 flex flex-col items-start'>
@@ -318,7 +325,7 @@ const CharacterSelectionModal = ({
                   key={char.id}
                   onClick={() => onSelect(char.id)}
                   disabled={isClaimedByAnyone}
-                  className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 transition-all ${isClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
+                  className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 outline-none transition-all focus:outline-none ${isClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
                 >
                   <div
                     className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
@@ -490,6 +497,48 @@ export function VttApp() {
   >({});
 
   // -------------------------------------------------------------------------
+  // Mestre View (GM Party Tracker)
+  // -------------------------------------------------------------------------
+  const [partySheets, setPartySheets] = useState<
+    Record<string, CharacterSheetData>
+  >({});
+  const [selectedPartyMember, setSelectedPartyMember] = useState<string | null>(
+    null
+  );
+
+  // Mestre carrega as fichas de todos que escolheram um personagem
+  useEffect(() => {
+    if (!isTrueGM) return;
+    const claimedIds = roster
+      .filter(
+        (p) => p.connected && p.claimed_sheet && p.claimed_sheet !== '__GM__'
+      )
+      .map((p) => p.claimed_sheet!);
+
+    claimedIds.forEach((id) => {
+      if (!partySheets[id]) {
+        gameClient
+          .loadSheet(id)
+          .then((doc) => {
+            setPartySheets((prev) => ({ ...prev, [id]: doc.data }));
+          })
+          .catch(() => {});
+      }
+    });
+  }, [isTrueGM, roster, partySheets]);
+
+  // Mestre ouve as edições ao vivo
+  useEffect(() => {
+    if (!isTrueGM) return;
+    const unsub = useLanStore.subscribe((state, prevState) => {
+      // Como a ficha não fica mais armazenada puramente no event bus,
+      // precisamos recarregar na hora para o mestre visualizar.
+      // Em uma atualização futura do backend esse evento pode ser interceptado direto.
+    });
+    return unsub;
+  }, [isTrueGM]);
+
+  // -------------------------------------------------------------------------
   // Click-Away Listeners
   // -------------------------------------------------------------------------
   useEffect(() => {
@@ -572,7 +621,7 @@ export function VttApp() {
       }
       clearForcedOpen(entry.handoutId);
     });
-  }, [forcedOpens, clientId]);
+  }, [forcedOpens, clientId, openHandoutIds, clearForcedOpen]);
 
   const handleOpenHandoutForAll = async (id: string) => {
     try {
@@ -620,6 +669,7 @@ export function VttApp() {
   // -------------------------------------------------------------------------
 
   const activeSheetId = useCharacterStore((state) => state.activeSheetId);
+
   const [resolvedPortrait, setResolvedPortrait] = useState<{
     sheetId: string;
     url: string;
@@ -643,9 +693,11 @@ export function VttApp() {
   }, [activeSheetId, isTrueGM]);
 
   const portraitUrl =
-    resolvedPortrait?.sheetId === (isTrueGM ? '__GM__' : activeSheetId)
+    resolvedPortrait &&
+    resolvedPortrait.sheetId === (isTrueGM ? '__GM__' : activeSheetId)
       ? resolvedPortrait.url
       : null;
+
   const myTokenId =
     isTrueGM || activeSheetId
       ? `token:${clientId}:${isTrueGM ? '__GM__' : activeSheetId}`
@@ -682,7 +734,6 @@ export function VttApp() {
   }, [myTokenId, clientId, character, isTrueGM]);
 
   const handleTokenDragStart = (event: React.DragEvent<HTMLDivElement>) => {
-    // Bloqueia expressamente se for o GM ou se não houver ficha carregada
     if (isTrueGM || !character || !activeSheetId) return;
 
     const payload: TokenDragPayload = {
@@ -750,7 +801,6 @@ export function VttApp() {
         color: identityColor,
       });
     } else {
-      // Disconnect cleanly if LAN is closed
       disconnect();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -762,16 +812,34 @@ export function VttApp() {
     }
   }, [isLanOpen, connectionStatus, localClaim, clientId, claimSheet]);
 
+  // -------------------------------------------------------------------------
+  // Keyboard Shortcuts
+  // -------------------------------------------------------------------------
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+      // Ignora atalhos de teclado se o usuário estiver digitando
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (key === 'r') {
         e.preventDefault();
         setIsRollerOpen((prev) => !prev);
+      } else if (key === ' ' || key === 'enter') {
+        e.preventDefault();
+        setIsChatOpen((prev) => !prev);
+      } else if (key === 'c') {
+        e.preventDefault();
+        if (character) setIsSheetOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [character]);
 
   useEffect(() => {
     updateIdentity({
@@ -866,7 +934,7 @@ export function VttApp() {
             </div>
             <button
               onClick={() => leaveGame()}
-              className='mt-4 rounded bg-zinc-800 px-6 py-2 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-zinc-700 hover:text-red-400'
+              className='mt-4 rounded bg-zinc-800 px-6 py-2 text-xs font-bold uppercase tracking-widest text-white outline-none transition-colors hover:bg-zinc-700 hover:text-red-400 focus:outline-none'
             >
               Cancelar / Sair
             </button>
@@ -879,27 +947,28 @@ export function VttApp() {
           clientId={clientId}
           isGM={isTrueGM}
           activeTool={activeTool}
+          identityColor={identityColor}
         />
       </div>
 
-      <div className='pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4'>
+      <div className='pointer-events-none absolute left-0 top-0 z-40 flex w-full items-start justify-between p-4'>
         <div className='pointer-events-auto flex gap-2'>
-          <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-[#0a0a0a]/80 p-1.5 shadow-xl backdrop-blur-md'>
+          <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-black/50 p-1.5 shadow-xl backdrop-blur-md'>
             <button
               onClick={() => setActiveTool('select')}
-              className={`rounded-sm p-2 transition-colors ${activeTool === 'select' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'select' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
             >
               <MousePointer2 size={18} />
             </button>
             <button
               onClick={() => setActiveTool('ping')}
-              className={`rounded-sm p-2 transition-colors ${activeTool === 'ping' ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'ping' ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
             >
               <Crosshair size={18} />
             </button>
             <button
               onClick={() => setActiveTool('ruler')}
-              className={`rounded-sm p-2 transition-colors ${activeTool === 'ruler' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'ruler' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
             >
               <Ruler size={18} />
             </button>
@@ -907,16 +976,14 @@ export function VttApp() {
               <button
                 id='map-selector-btn'
                 onClick={() => setIsMapSelectorOpen((open) => !open)}
-                className={`mt-2 rounded-sm p-2 transition-colors ${isMapSelectorOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
-                title='Mudar Mapa'
+                className={`mt-2 rounded-sm p-2 outline-none transition-colors focus:outline-none ${isMapSelectorOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
               >
                 <MapIcon size={18} />
               </button>
             )}
             <button
               onClick={() => setIsHandoutListOpen(!isHandoutListOpen)}
-              className={`rounded-sm p-2 transition-colors ${isHandoutListOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'} ${!isTrueGM ? 'mt-2' : ''}`}
-              title='Documentos'
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${isHandoutListOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'} ${!isTrueGM ? 'mt-2' : ''}`}
             >
               <FileText size={18} />
             </button>
@@ -931,7 +998,7 @@ export function VttApp() {
 
         <div className='pointer-events-auto flex flex-col items-end gap-2'>
           <div
-            className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/60 px-3 py-1.5 shadow-xl backdrop-blur-md'
+            className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/50 px-3 py-1.5 shadow-xl backdrop-blur-md'
             style={{ borderColor: 'var(--theme-color)' }}
           >
             <div
@@ -961,14 +1028,14 @@ export function VttApp() {
               <button
                 id='settings-btn'
                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                className='text-zinc-500 transition-colors hover:text-white'
+                className='text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
               >
                 <Settings size={14} />
               </button>
               {isSettingsOpen && (
                 <div
                   id='settings-menu'
-                  className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-[#0a0a0a]/80 py-1 shadow-2xl backdrop-blur-md'
+                  className='absolute right-0 top-full z-50 mt-3 w-56 rounded border border-zinc-800 bg-zinc-950/80 py-1 shadow-2xl backdrop-blur-md'
                 >
                   {isHosting && (
                     <div className='border-b border-zinc-800/50 px-4 py-3'>
@@ -990,7 +1057,7 @@ export function VttApp() {
                         setIsSettingsOpen(false);
                         void openLan();
                       }}
-                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-blue-400 transition-colors hover:bg-zinc-900 hover:text-blue-300'
+                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-blue-400 outline-none transition-colors hover:bg-zinc-900 hover:text-blue-300 focus:outline-none'
                     >
                       Abrir para LAN
                     </button>
@@ -1001,7 +1068,7 @@ export function VttApp() {
                         setIsSettingsOpen(false);
                         handleCopyIp();
                       }}
-                      className='flex w-full items-center justify-between border-b border-zinc-800/50 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white'
+                      className='flex w-full items-center justify-between border-b border-zinc-800/50 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-zinc-300 outline-none transition-colors hover:bg-zinc-900 hover:text-white focus:outline-none'
                     >
                       Copiar IP <Copy size={14} />
                     </button>
@@ -1012,7 +1079,7 @@ export function VttApp() {
                         setIsSettingsOpen(false);
                         void closeLan();
                       }}
-                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-yellow-500 transition-colors hover:bg-zinc-900 hover:text-yellow-400'
+                      className='w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-yellow-500 outline-none transition-colors hover:bg-zinc-900 hover:text-yellow-400 focus:outline-none'
                     >
                       Fechar LAN
                     </button>
@@ -1022,7 +1089,7 @@ export function VttApp() {
                       setIsSettingsOpen(false);
                       void leaveGame();
                     }}
-                    className={`w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-red-500 transition-colors hover:bg-zinc-900 hover:text-red-400 ${isHosting ? 'border-t border-zinc-800/50' : ''}`}
+                    className={`w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-red-500 outline-none transition-colors hover:bg-zinc-900 hover:text-red-400 focus:outline-none ${isHosting ? 'border-t border-zinc-800/50' : ''}`}
                   >
                     Sair para o Menu
                   </button>
@@ -1056,7 +1123,7 @@ export function VttApp() {
           initialHeight={520}
           resizable
         >
-          <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-zinc-950/50 pb-2'>
+          <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-black/50 pb-2 backdrop-blur-lg'>
             {(regras.length > 0 || isTrueGM) && (
               <div className='mb-2 mt-2 px-3'>
                 <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
@@ -1085,7 +1152,7 @@ export function VttApp() {
                         <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
                           <button
                             onClick={() => handleToggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.is_public ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition-colors hover:bg-green-900 focus:outline-none ${h.is_public ? 'bg-green-950/50 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                           >
                             {h.is_public ? (
                               <>
@@ -1100,8 +1167,7 @@ export function VttApp() {
 
                           <button
                             onClick={() => handleOpenHandoutForAll(h.id)}
-                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
-                            title='Torna público e abre na tela de todos'
+                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 outline-none transition-colors hover:bg-amber-900 focus:outline-none'
                           >
                             <Send size={10} /> Abrir para Todos
                           </button>
@@ -1131,7 +1197,7 @@ export function VttApp() {
                                               p.client_id
                                             )
                                           }
-                                          className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                          className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold outline-none transition-colors focus:outline-none ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
                                           style={{
                                             color: isShared
                                               ? p.color
@@ -1152,7 +1218,7 @@ export function VttApp() {
                                               p.client_id
                                             )
                                           }
-                                          className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 transition-colors hover:bg-amber-900 hover:text-amber-400'
+                                          className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 outline-none transition-colors hover:bg-amber-900 hover:text-amber-400 focus:outline-none'
                                           title={`Abrir agora só para ${p.username}`}
                                         >
                                           <Send size={9} />
@@ -1212,7 +1278,7 @@ export function VttApp() {
                         <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
                           <button
                             onClick={() => handleToggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${h.is_public ? 'bg-green-950/50 text-green-400 hover:bg-green-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition-colors hover:bg-green-900 focus:outline-none ${h.is_public ? 'bg-green-950/50 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                           >
                             {h.is_public ? (
                               <>
@@ -1227,8 +1293,7 @@ export function VttApp() {
 
                           <button
                             onClick={() => handleOpenHandoutForAll(h.id)}
-                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 transition-colors hover:bg-amber-900'
-                            title='Torna público e abre na tela de todos'
+                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 outline-none transition-colors hover:bg-amber-900 focus:outline-none'
                           >
                             <Send size={10} /> Abrir para Todos
                           </button>
@@ -1256,7 +1321,7 @@ export function VttApp() {
                                             p.client_id
                                           )
                                         }
-                                        className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
+                                        className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold outline-none transition-colors focus:outline-none ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
                                         style={{
                                           color: isShared ? p.color : undefined,
                                           borderColor: isShared
@@ -1275,7 +1340,7 @@ export function VttApp() {
                                             p.client_id
                                           )
                                         }
-                                        className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 transition-colors hover:bg-amber-900 hover:text-amber-400'
+                                        className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 outline-none transition-colors hover:bg-amber-900 hover:text-amber-400 focus:outline-none'
                                         title={`Abrir agora só para ${p.username}`}
                                       >
                                         <Send size={9} />
@@ -1338,7 +1403,7 @@ export function VttApp() {
             initialHeight={640}
             resizable
           >
-            <div className='min-h-0 flex-1 overflow-y-auto bg-zinc-950/80 p-4 text-sm text-zinc-300 backdrop-blur-md'>
+            <div className='min-h-0 flex-1 overflow-y-auto bg-black/50 p-4 text-sm text-zinc-300 backdrop-blur-lg'>
               {handout.content_type === 'text' ? (
                 <div className='leading-relaxed [&>p]:mb-3 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
                   <ReactMarkdown>{handout.content}</ReactMarkdown>
@@ -1364,7 +1429,7 @@ export function VttApp() {
         {toasts.map((toast) => (
           <div
             key={toast.toastId}
-            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/80 p-3 text-sm shadow-2xl backdrop-blur-md'
+            className='animate-float-up-fade w-72 rounded-sm border border-zinc-700 bg-black/50 p-3 text-sm shadow-2xl backdrop-blur-md'
           >
             <span
               className='font-serif font-bold tracking-wider'
@@ -1395,10 +1460,94 @@ export function VttApp() {
       </div>
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
+        {/* GM PARTY TRACKER (Visível apenas para o Mestre) */}
+        {isTrueGM && Object.keys(partySheets).length > 0 && (
+          <div className='flex gap-4'>
+            <div className='mb-2 grid grid-cols-2 content-end gap-2'>
+              {Object.entries(partySheets).map(([id, sheet]) => {
+                const color = getProfileColor(sheet.profile);
+                const isSelected = selectedPartyMember === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() =>
+                      setSelectedPartyMember(isSelected ? null : id)
+                    }
+                    className={`flex h-12 w-12 items-center justify-center rounded-sm border-2 bg-zinc-900 outline-none transition-all focus:outline-none ${isSelected ? 'scale-110 shadow-[0_0_15px_currentColor]' : 'opacity-70 hover:opacity-100'}`}
+                    style={{ borderColor: color, color: color }}
+                    title={sheet.name}
+                  >
+                    <span className='font-serif text-sm font-bold tracking-widest text-white'>
+                      {getInitials(sheet.name)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedPartyMember && partySheets[selectedPartyMember] && (
+              <div className='flex flex-col gap-2'>
+                {partySheets[selectedPartyMember].active_effects.length > 0 && (
+                  <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/50 px-3 py-1.5 shadow-md backdrop-blur-md'>
+                    <ShieldAlert size={16} className='text-yellow-500' />
+                    <div className='ml-1 flex gap-1'>
+                      {partySheets[selectedPartyMember].active_effects.map(
+                        (effect: ActiveEffect) => (
+                          <span
+                            key={effect.id}
+                            className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'
+                          >
+                            {effect.name}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/50 p-4 shadow-2xl backdrop-blur-md'>
+                  <ResourceBar
+                    label='PV'
+                    current={
+                      partySheets[selectedPartyMember].resources.hp.current || 0
+                    }
+                    max={partySheets[selectedPartyMember].resources.hp.max || 0}
+                    colorClass='text-red-500'
+                    activeColorClass='bg-red-500'
+                    onUpdate={(delta: number) =>
+                      gameClient.applyResourceChange(
+                        selectedPartyMember,
+                        'hp',
+                        delta
+                      )
+                    }
+                  />
+                  <ResourceBar
+                    label='PD'
+                    current={
+                      partySheets[selectedPartyMember].resources.dp.current || 0
+                    }
+                    max={partySheets[selectedPartyMember].resources.dp.max || 0}
+                    colorClass='text-indigo-500'
+                    activeColorClass='bg-indigo-500'
+                    onUpdate={(delta: number) =>
+                      gameClient.applyResourceChange(
+                        selectedPartyMember,
+                        'dp',
+                        delta
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className='flex flex-col gap-2'>
           <button
             onClick={() => setIsSelectionModalOpen(true)}
-            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/60 px-2 py-1.5 text-left backdrop-blur-md transition-colors hover:border-zinc-600'
+            className='flex w-32 cursor-pointer items-center justify-between gap-1 rounded-sm border border-zinc-800 bg-black/50 px-2 py-1.5 text-left outline-none backdrop-blur-md transition-colors hover:border-zinc-600 focus:outline-none'
           >
             <span
               className='truncate font-serif text-xs font-bold uppercase tracking-widest text-zinc-300'
@@ -1422,15 +1571,14 @@ export function VttApp() {
                 : 'cursor-pointer'
             } ${
               portraitUrl
-                ? 'bg-transparent shadow-none' // NO border, NO background if image exists
-                : 'border-2 border-zinc-800 bg-black/40 shadow-2xl backdrop-blur-md'
+                ? 'bg-transparent shadow-none'
+                : 'border-2 border-zinc-800 bg-black/50 shadow-2xl backdrop-blur-md'
             }`}
           >
             {portraitUrl ? (
               <img
                 src={portraitUrl}
                 alt={charName}
-                // object-contain ensures your hex shape isn't cropped, drop-shadow gives it depth against the map
                 className='absolute inset-0 h-full w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)]'
                 draggable={false}
               />
@@ -1440,11 +1588,11 @@ export function VttApp() {
                 <div className='absolute inset-x-2 bottom-0 h-3/4 rounded-t-[40%] border-x border-t border-zinc-700/50 bg-zinc-800/30' />
               </>
             )}
-            <div className='absolute inset-0 flex flex-col items-center justify-center bg-black/60 p-2 text-center opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100'>
-              <span className='mb-2 font-serif text-xs font-bold tracking-widest text-white'>
+            <div className='absolute inset-0 flex flex-col items-center justify-center p-2 text-center opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100'>
+              <span className='text-shadow-md mb-2 font-serif text-xs font-bold tracking-widest text-white'>
                 {character ? 'ABRIR FICHA' : 'SELECIONAR FICHA'}
               </span>
-              {(character || isTrueGM) && (
+              {!isTrueGM && character && (
                 <span className='font-serif text-[10px] tracking-widest text-zinc-400'>
                   Arraste para o mapa
                 </span>
@@ -1453,56 +1601,59 @@ export function VttApp() {
           </div>
         </div>
 
-        <div className='flex flex-col gap-2'>
-          {hasConditions && (
-            <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/60 px-3 py-1.5 shadow-md backdrop-blur-md'>
-              <ShieldAlert size={16} className='text-yellow-500' />
-              <div className='ml-1 flex gap-1'>
-                {character?.active_effects.map((effect) => (
-                  <div key={effect.id} className='group relative'>
-                    <span className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'>
-                      {effect.name}
-                    </span>
-                    <div className='pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-48 -translate-x-1/2 rounded border border-zinc-700 bg-[#0a0a0a] p-2 text-center text-xs text-zinc-300 opacity-0 shadow-2xl transition-opacity group-hover:opacity-100'>
-                      {getConditionDesc(effect.id)}
+        {/* Player Conditions & Trackers (Visível apenas para quem NÃO É mestre) */}
+        {!isTrueGM && (
+          <div className='flex flex-col gap-2'>
+            {hasConditions && (
+              <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/50 px-3 py-1.5 shadow-md backdrop-blur-md'>
+                <ShieldAlert size={16} className='text-yellow-500' />
+                <div className='ml-1 flex gap-1'>
+                  {character?.active_effects.map((effect) => (
+                    <div key={effect.id} className='group relative'>
+                      <span className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'>
+                        {effect.name}
+                      </span>
+                      <div className='pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-48 -translate-x-1/2 rounded border border-zinc-700 bg-[#0a0a0a] p-2 text-center text-xs text-zinc-300 opacity-0 shadow-2xl transition-opacity group-hover:opacity-100'>
+                        {getConditionDesc(effect.id)}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {ajudado && (
-                  <div className='group relative'>
-                    <span className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'>
-                      Ajudado
-                    </span>
-                    <div className='pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-48 -translate-x-1/2 rounded border border-zinc-700 bg-[#0a0a0a] p-2 text-center text-xs text-zinc-300 opacity-0 shadow-2xl transition-opacity group-hover:opacity-100'>
-                      {getConditionDesc('ajudado')}
+                  ))}
+                  {ajudado && (
+                    <div className='group relative'>
+                      <span className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'>
+                        Ajudado
+                      </span>
+                      <div className='pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-48 -translate-x-1/2 rounded border border-zinc-700 bg-[#0a0a0a] p-2 text-center text-xs text-zinc-300 opacity-0 shadow-2xl transition-opacity group-hover:opacity-100'>
+                        {getConditionDesc('ajudado')}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {character && (
-            <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/60 p-4 shadow-2xl backdrop-blur-md'>
-              <ResourceBar
-                label='PV'
-                current={character.resources.hp.current || 0}
-                max={character.resources.hp.max || 0}
-                colorClass='text-red-500'
-                activeColorClass='bg-red-500'
-                onUpdate={(delta: number) => applyResourceChange('hp', delta)}
-              />
-              <ResourceBar
-                label='PD'
-                current={character.resources.dp.current || 0}
-                max={character.resources.dp.max || 0}
-                colorClass='text-indigo-500'
-                activeColorClass='bg-indigo-500'
-                onUpdate={(delta: number) => applyResourceChange('dp', delta)}
-              />
-            </div>
-          )}
-        </div>
+            {character && (
+              <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/50 p-4 shadow-2xl backdrop-blur-md'>
+                <ResourceBar
+                  label='PV'
+                  current={character.resources.hp.current || 0}
+                  max={character.resources.hp.max || 0}
+                  colorClass='text-red-500'
+                  activeColorClass='bg-red-500'
+                  onUpdate={(delta: number) => applyResourceChange('hp', delta)}
+                />
+                <ResourceBar
+                  label='PD'
+                  current={character.resources.dp.current || 0}
+                  max={character.resources.dp.max || 0}
+                  colorClass='text-indigo-500'
+                  activeColorClass='bg-indigo-500'
+                  onUpdate={(delta: number) => applyResourceChange('dp', delta)}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {!isChatOpen && (
@@ -1510,7 +1661,7 @@ export function VttApp() {
           <button
             id='chat-open-btn'
             onClick={() => setIsChatOpen(true)}
-            className='group relative flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-sm border border-zinc-800 bg-black/60 text-zinc-500 shadow-xl backdrop-blur-md transition-all hover:-translate-y-1 hover:border-zinc-500'
+            className='group relative flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-sm border border-zinc-800 bg-black/50 text-zinc-500 shadow-xl outline-none backdrop-blur-md transition-all hover:-translate-y-1 hover:border-zinc-500 focus:outline-none'
           >
             <MessageSquare
               size={20}

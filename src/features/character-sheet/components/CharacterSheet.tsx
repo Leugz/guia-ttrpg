@@ -163,7 +163,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
           className={`relative p-2 transition-all duration-700 sm:p-6 ${isDying ? 'grayscale' : ''}`}
         >
           <div className='relative z-10'>
-            <header className='mb-8 mt-4 flex flex-col items-center justify-between px-4 sm:mb-12 sm:flex-row sm:px-12'>
+            <header className='mb-8 mt-4 flex flex-col items-center justify-between px-4 sm:mb-12 sm:flex-row sm:pr-12'>
               <h1
                 className='font-serif text-5xl font-black tracking-[0.15em] sm:text-7xl'
                 style={{ color: 'var(--theme-color)' }}
