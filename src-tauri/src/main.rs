@@ -79,6 +79,8 @@ async fn main() {
             commands::delete_game_instance,
             commands::list_game_sheets,
             commands::list_game_handouts,
+            commands::load_board,
+            commands::save_board,
             commands::start_hosting,
             commands::stop_hosting,
             commands::host_address,

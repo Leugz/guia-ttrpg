@@ -24,7 +24,11 @@ import {
   GM_COLOR,
 } from '../character-sheet/characterStore';
 import { useSessionStore } from '../session/sessionStore';
-import { useLanStore } from '../session/net/lanStore';
+import {
+  markBoardLoaded,
+  snapshotBoard,
+  useLanStore,
+} from '../session/net/lanStore';
 import * as gameClient from '../session/net/gameClient';
 import type { LanPlayer, SheetSummary } from '../session/net/protocol';
 import type {
@@ -441,53 +445,65 @@ export function VttApp() {
     vpnIp,
     setVpnIp,
     activeGameId,
+    activeGamePath,
   } = useSessionStore();
 
-  // --- MOTOR DE RESTAURAÇÃO DE MESA (Carrega ao abrir a campanha) ---
+  // --- MESA SALVA: cada mesa guarda o próprio tabuleiro em board.json ---
+  //
+  // Both effects below only run while the LAN is closed. Once a table is open
+  // the Rust host owns the file: it loaded the board as it bound the port and
+  // it has every player's positions, not just this window's.
   const tokens = useLanStore((state) => state.tokens);
 
   useEffect(() => {
-    if (isHosting && activeGameId && tokens.length === 0) {
-      const saved = localStorage.getItem(`guia-board-${activeGameId}`);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.length > 0) {
-            useLanStore.setState({ tokens: parsed });
-            tokenMotion.seed(parsed); // Empurra a informação visual pro mapa
-          }
-        } catch (e) {}
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHosting, activeGameId]);
+    if (!isHosting || isLanOpen || !activeGameId) return;
 
-  // --- MOTOR DE AUTO-SAVE DO MESTRE ---
-  useEffect(() => {
-    if (!isHosting || !activeGameId) return;
+    let cancelled = false;
 
-    const saveBoard = () => {
-      // Puxa as posições reais da tela, não da memória antiga
-      const currentTokens = useLanStore.getState().tokens.map((t) => {
-        const pos = tokenMotion.position(t.id);
-        return pos ? { ...t, x: pos.x, y: pos.y } : t;
+    gameClient
+      .loadBoard()
+      .then((saved) => {
+        if (cancelled) return;
+        // Never clobber a board that is already live on screen.
+        if (saved.length > 0 && useLanStore.getState().tokens.length === 0) {
+          tokenMotion.seed(saved);
+          useLanStore.setState({ tokens: saved });
+        }
+        // Only now may this window save: until the read came back it had no
+        // idea what was on the table.
+        markBoardLoaded();
+      })
+      .catch((error) => {
+        console.error('Falha ao carregar o tabuleiro:', error);
       });
-      localStorage.setItem(
-        `guia-board-${activeGameId}`,
-        JSON.stringify(currentTokens)
-      );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHosting, isLanOpen, activeGameId]);
+
+  useEffect(() => {
+    if (!isHosting || isLanOpen || !activeGameId) return;
+
+    // Captured, so a save in flight while the table closes still names the
+    // game it belongs to.
+    const gameRoot = activeGamePath;
+    const save = () => {
+      const board = snapshotBoard();
+      if (!board) return;
+      gameClient.saveBoard(board, gameRoot).catch((error) => {
+        console.error('Falha ao salvar o tabuleiro:', error);
+      });
     };
 
-    saveBoard(); // Salva toda vez que uma miniatura for colocada ou removida
-    const interval = setInterval(saveBoard, 120000); // Salva preventivamente a cada 2 minutos
-
-    // Salva no momento exato em que o Mestre apertar o botão de fechar a janela
-    window.addEventListener('beforeunload', saveBoard);
+    save(); // Toda vez que uma miniatura for colocada, movida ou removida
+    const interval = setInterval(save, 120000); // Rede de segurança
+    window.addEventListener('beforeunload', save);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('beforeunload', saveBoard);
+      window.removeEventListener('beforeunload', save);
     };
-  }, [tokens, isHosting, activeGameId]);
+  }, [tokens, isHosting, isLanOpen, activeGameId, activeGamePath]);
 
   useEffect(() => {
     if (closedReason && !isHosting) {

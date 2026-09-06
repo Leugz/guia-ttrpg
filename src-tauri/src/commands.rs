@@ -18,6 +18,7 @@ use crate::network::protocol::SheetSummary;
 use crate::network::{server, HostInfo};
 use crate::rules::{BuiltinDefinition, SkillDefinition};
 use crate::state::{self, AppState};
+use crate::storage;
 
 pub use crate::api::{DeathSaveOutcome, EntrySummary, ResourceOutcome, TestOutcome};
 
@@ -235,6 +236,25 @@ pub fn delete_game_instance(
 #[tauri::command]
 pub fn list_game_sheets(game_path: String) -> Result<Vec<SheetSummary>, String> {
     campaign::list_sheets(&PathBuf::from(game_path))
+}
+
+/// Read a game's saved board.
+///
+/// A GM working alone with the LAN closed has no server to hold the board for
+/// them, so their window reads and writes the very same file the host would.
+/// Opening the LAN afterwards therefore carries the pieces straight over
+/// instead of starting from an empty map.
+#[tauri::command]
+pub fn load_board(game_path: String) -> Result<Vec<crate::models::MapToken>, String> {
+    Ok(storage::read_board(std::path::Path::new(&game_path)))
+}
+
+#[tauri::command]
+pub fn save_board(
+    game_path: String,
+    tokens: Vec<crate::models::MapToken>,
+) -> Result<(), String> {
+    storage::write_board(std::path::Path::new(&game_path), &tokens)
 }
 
 /// Start hosting. Returns the address to share with players.

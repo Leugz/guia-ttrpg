@@ -70,6 +70,10 @@ pub async fn start(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
+    // Before a single player can connect, so the first `session_state` we hand
+    // out is this game's board and never the previous game's.
+    state.open_board(&game_id, &root).await;
+
     {
         let mut session = state.session.write().await;
         *session = Some(HostedSession {
@@ -114,6 +118,10 @@ pub async fn stop(state: Arc<AppState>, reason: &str) {
             None => return,
         }
     };
+
+    // First, while every piece is still on it: the sockets are about to close
+    // and the board must not be written out half-empty.
+    state.close_board().await;
 
     state::publish(
         Target::All,

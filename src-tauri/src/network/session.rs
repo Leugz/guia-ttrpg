@@ -78,6 +78,13 @@ pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 
 /// Mark the player offline but keep their claim so an automatic reconnect
 /// restores the session instead of creating a duplicate.
+///
+/// Their tokens stay where they are, for the same reason their claim does. A
+/// dropped connection is usually temporary, and wiping the piece belonging to
+/// whoever's Wi-Fi blinked used to empty the board a player at a time — most
+/// destructively at the very end of a session, when everyone disconnects at
+/// once and the board that got saved was the empty one. The GM can still move
+/// or remove anything on the table.
 async fn disconnect(state: &Arc<AppState>, client_id: Option<String>) {
     let Some(client_id) = client_id else {
         return;
@@ -88,12 +95,8 @@ async fn disconnect(state: &Arc<AppState>, client_id: Option<String>) {
             player.connected = false;
         }
     }
-    let board_changed = state.remove_tokens_owned_by(&client_id).await;
     tracing::info!(client_id, "player disconnected");
     broadcast_roster(state).await;
-    if board_changed {
-        broadcast_board(state).await;
-    }
 }
 
 /// Returns an optional direct reply for this socket only.
@@ -218,7 +221,7 @@ async fn handle_text(
 
 /// Push the whole board out. Used after structural changes, which are rare.
 async fn broadcast_board(state: &Arc<AppState>) {
-    let tokens = state.board().await;
+    let tokens = state.board_snapshot().await;
     let message = ServerMessage::TokensSync { tokens };
     match serde_json::to_string(&message) {
         Ok(payload) => state.send(Target::All, payload),
@@ -241,16 +244,22 @@ async fn place_token(state: &Arc<AppState>, sender: Option<&str>, token: MapToke
     }
 
     {
-        let mut tokens = state.tokens.write().await;
+        let mut board = state.board.write().await;
+        // No table open means nothing to place onto. Refusing here is what
+        // stops a late message during shutdown from seeding the next game.
+        if !board.is_open() {
+            return;
+        }
         // One token per owner per map: dragging your portrait out again moves
         // your piece rather than cluttering the board with copies of you.
-        tokens.retain(|_, existing| {
+        board.tokens.retain(|_, existing| {
             !(existing.owner_client_id == token.owner_client_id
                 && existing.map_id == token.map_id
                 && existing.sheet_id == token.sheet_id)
         });
-        tokens.insert(token.id.clone(), token);
+        board.tokens.insert(token.id.clone(), token);
     }
+    state.persist_board().await;
     broadcast_board(state).await;
 }
 
@@ -270,8 +279,8 @@ async fn move_token(
     }
 
     {
-        let mut tokens = state.tokens.write().await;
-        let Some(token) = tokens.get_mut(token_id) else {
+        let mut board = state.board.write().await;
+        let Some(token) = board.tokens.get_mut(token_id) else {
             return;
         };
         token.x = x;
@@ -286,6 +295,11 @@ async fn move_token(
     };
     if let Ok(payload) = serde_json::to_string(&message) {
         state.send(Target::All, payload);
+    }
+
+    // Once the pointer lifts, not once per frame while it is down.
+    if !dragging {
+        state.persist_board().await;
     }
 }
 
@@ -304,13 +318,14 @@ async fn restyle_token(
     }
 
     {
-        let mut tokens = state.tokens.write().await;
-        let Some(token) = tokens.get_mut(token_id) else {
+        let mut board = state.board.write().await;
+        let Some(token) = board.tokens.get_mut(token_id) else {
             return;
         };
         token.grayscale = grayscale;
         token.save_indicator = save_indicator;
     }
+    state.persist_board().await;
     broadcast_board(state).await;
 }
 
@@ -322,9 +337,10 @@ async fn remove_token(state: &Arc<AppState>, sender: Option<&str>, token_id: &st
         return;
     }
     {
-        let mut tokens = state.tokens.write().await;
-        tokens.remove(token_id);
+        let mut board = state.board.write().await;
+        board.tokens.remove(token_id);
     }
+    state.persist_board().await;
     broadcast_board(state).await;
 }
 
@@ -460,7 +476,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         tracing::error!(%error, "failed to list maps for a joining client");
         Vec::new()
     });
-    let tokens = state.board().await;
+    let tokens = state.board_snapshot().await;
     let players = state.players().await;
 
     let message = ServerMessage::SessionState {

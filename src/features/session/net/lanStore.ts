@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { tokenMotion } from '../../map/tokenMotion';
 import { lan, type Identity } from './lanConnection';
-import { setLocalBoardSink, getGameContext } from './gameClient';
+import { setLocalBoardSink } from './gameClient';
 import type { ConnectionStatus, LanPlayer, SheetSummary } from './protocol';
 import { Handout, MapDefinition, MapToken } from '../../../shared/types';
 import { useSessionStore } from '../sessionStore';
@@ -35,8 +35,39 @@ interface LanState {
   setSheets: (sheets: SheetSummary[]) => void;
   setHandouts: (handouts: Handout[]) => void;
   setMaps: (maps: MapDefinition[]) => void;
+  clearBoard: () => void;
   clearForcedOpen: (handoutId: string) => void;
 }
+
+/**
+ * Whether this window has an authoritative view of the current game's board:
+ * it has either read the file or been handed the board by the host.
+ *
+ * An empty board is a perfectly legitimate thing to save — the GM is allowed
+ * to clear the table — but only once we know the table really is empty. Saving
+ * before the read comes back would overwrite the very file we are reading.
+ */
+let boardLoaded = false;
+
+export const markBoardLoaded = () => {
+  boardLoaded = true;
+};
+
+/**
+ * The board as it stands right now, with live drag positions folded back in,
+ * or `null` when this window has not read the current game's board yet.
+ *
+ * Positions during a drag live in `tokenMotion` rather than in the store, so
+ * reading `tokens` alone would save every piece at its last structural
+ * position instead of where it actually sits.
+ */
+export const snapshotBoard = (): MapToken[] | null => {
+  if (!boardLoaded) return null;
+  return useLanStore.getState().tokens.map((token) => {
+    const position = tokenMotion.position(token.id);
+    return position ? { ...token, x: position.x, y: position.y } : token;
+  });
+};
 
 export const useLanStore = create<LanState>()((set) => ({
   status: 'idle',
@@ -82,6 +113,14 @@ export const useLanStore = create<LanState>()((set) => ({
   setSheets: (sheets) => set({ sheets }),
   setHandouts: (handouts) => set({ handouts }),
   setMaps: (maps) => set({ maps }),
+
+  // Leaving one table must not carry its pieces into the next one.
+  clearBoard: () => {
+    boardLoaded = false;
+    tokenMotion.clear();
+    set({ tokens: [] });
+  },
+
   clearForcedOpen: (handoutId) =>
     set((state) => ({
       forcedOpens: state.forcedOpens.filter((f) => f.handoutId !== handoutId),
@@ -92,53 +131,26 @@ lan.on('status', (status) => useLanStore.setState({ status }));
 lan.on('roster', (roster) => useLanStore.setState({ roster }));
 
 lan.on('session', (session) => {
-  const isHost = getGameContext().mode === 'host';
+  // The host is authoritative about the board as it is about everything else.
+  // It loads this game's `board.json` as it binds the port, so both the GM's
+  // own window and a joining player take the same list from the same message.
+  //
+  // This used to be two branches, with the host wiping the server's board and
+  // re-uploading a copy it kept in browser storage. That is what let one
+  // table's pieces turn up on another and what made a reconnect stamp on
+  // whatever the players had moved in the meantime.
+  const nextTokens = session.tokens ?? [];
+  tokenMotion.seed(nextTokens);
+  markBoardLoaded();
 
-  if (isHost) {
-    // A lógica exata que você pediu: Carrega os dados isolados DA MESA ATUAL.
-    const activeGameId = useSessionStore.getState().activeGameId;
-    const saved = localStorage.getItem(`guia-board-${activeGameId}`);
-    const tableData: MapToken[] = saved ? JSON.parse(saved) : [];
-
-    // 1. Limpa a RAM do servidor (destrói tokens de mesas anteriores)
-    session.tokens?.forEach((serverToken) => {
-      lan.sendToken({
-        type: 'token_remove',
-        clientId: 'host',
-        tokenId: serverToken.id,
-      });
-    });
-
-    // 2. Faz o upload dos dados corretos desta Mesa para a rede
-    tableData.forEach((token) => {
-      lan.sendToken({ type: 'token_place', clientId: 'host', token });
-    });
-
-    // 3. Aplica os dados da mesa na interface
-    tokenMotion.seed(tableData);
-
-    useLanStore.setState({
-      sheets: session.sheets,
-      roster: session.players,
-      handouts: session.handouts,
-      maps: session.maps ?? [],
-      tokens: tableData,
-      closedReason: null,
-    });
-  } else {
-    // Jogadores convidados apenas recebem a mesa pronta que o mestre acabou de injetar
-    const nextTokens = session.tokens ?? [];
-    tokenMotion.seed(nextTokens);
-
-    useLanStore.setState({
-      sheets: session.sheets,
-      roster: session.players,
-      handouts: session.handouts,
-      maps: session.maps ?? [],
-      tokens: nextTokens,
-      closedReason: null,
-    });
-  }
+  useLanStore.setState({
+    sheets: session.sheets,
+    roster: session.players,
+    handouts: session.handouts,
+    maps: session.maps ?? [],
+    tokens: nextTokens,
+    closedReason: null,
+  });
 });
 
 lan.on('maps', (message) => useLanStore.setState({ maps: message.maps }));
@@ -200,7 +212,19 @@ setLocalBoardSink({
         tokens: [...others, token].sort((a, b) => a.id.localeCompare(b.id)),
       };
     }),
-  move: (tokenId, x, y, dragging) => tokenMotion.apply(tokenId, x, y, dragging),
+  move: (tokenId, x, y, dragging) => {
+    tokenMotion.apply(tokenId, x, y, dragging);
+    // Offline there is no host to echo the final position back, so record it
+    // here when the pointer lifts. Without this the saved board has every
+    // piece at the spot it was first dropped on.
+    if (!dragging) {
+      useLanStore.setState((state) => ({
+        tokens: state.tokens.map((token) =>
+          token.id === tokenId ? { ...token, x, y } : token
+        ),
+      }));
+    }
+  },
   restyle: (tokenId, grayscale, saveIndicator) =>
     useLanStore.setState((state) => ({
       tokens: state.tokens.map((token) =>

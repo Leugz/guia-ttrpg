@@ -531,3 +531,94 @@ mod map_tests {
         assert!(parse_map("vazio", raw).is_err());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Board
+//
+// A table's pieces belong to the game they were placed in, so they are stored
+// inside that game instance instead of in shared, application-wide state.
+// Deleting a game deletes its board along with its sheets.
+// ---------------------------------------------------------------------------
+
+use crate::models::MapToken;
+
+pub fn board_path(root: &Path) -> PathBuf {
+    root.join("board.json")
+}
+
+/// Read a game's board.
+///
+/// A missing file means the table has never been played, and a corrupt one is
+/// worth no more than an empty board, so neither is an error: the alternative
+/// is refusing to open a table over a file the GM cannot even see.
+pub fn read_board(root: &Path) -> Vec<MapToken> {
+    let path = board_path(root);
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    match serde_json::from_str::<Vec<MapToken>>(&raw) {
+        Ok(tokens) => tokens,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "discarding an unreadable board");
+            Vec::new()
+        }
+    }
+}
+
+pub fn write_board(root: &Path, tokens: &[MapToken]) -> Result<(), String> {
+    let contents = serde_json::to_string_pretty(tokens)
+        .map_err(|e| format!("Failed to serialise the board: {}", e))?;
+    write_atomic(&board_path(root), &contents)
+}
+
+#[cfg(test)]
+mod board_tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("guia-storage-board-{tag}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn token(id: &str) -> MapToken {
+        MapToken {
+            id: id.into(),
+            map_id: "terreo".into(),
+            owner_client_id: "gm".into(),
+            sheet_id: Some("alan.md".into()),
+            label: "ALAN".into(),
+            color: "#71717a".into(),
+            x: 12.5,
+            y: 40.0,
+            grayscale: false,
+            save_indicator: None,
+        }
+    }
+
+    #[test]
+    fn a_board_survives_a_round_trip() {
+        let root = scratch("roundtrip");
+        write_board(&root, &[token("t1")]).unwrap();
+
+        let read = read_board(&root);
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].id, "t1");
+        assert_eq!(read[0].x, 12.5);
+        assert_eq!(read[0].sheet_id.as_deref(), Some("alan.md"));
+    }
+
+    #[test]
+    fn a_game_that_was_never_played_opens_with_an_empty_board() {
+        let root = scratch("missing");
+        assert!(read_board(&root).is_empty());
+    }
+
+    #[test]
+    fn a_corrupt_board_does_not_stop_the_table_opening() {
+        let root = scratch("corrupt");
+        fs::write(board_path(&root), "{ not json").unwrap();
+        assert!(read_board(&root).is_empty());
+    }
+}

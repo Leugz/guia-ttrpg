@@ -3,9 +3,9 @@ import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { useCharacterStore } from '../character-sheet/characterStore';
 import { useChatStore } from '../chat/chatStore';
-import { setGameContext } from './net/gameClient';
+import { saveBoard, setGameContext } from './net/gameClient';
 import { lan } from './net/lanConnection';
-import { useLanStore } from './net/lanStore';
+import { snapshotBoard, useLanStore } from './net/lanStore';
 
 export interface HostedGame {
   id: string;
@@ -60,6 +60,24 @@ const generateClientId = () => {
 const resetTableState = () => {
   useCharacterStore.getState().clearCharacter();
   useChatStore.getState().clear();
+  useLanStore.getState().clearBoard();
+};
+
+/**
+ * Write the current board into the game instance it belongs to.
+ *
+ * Only needed while the LAN is closed: once a table is open the Rust host owns
+ * the file, and it saves the authoritative board rather than one window's view
+ * of it.
+ */
+const persistBoard = async (gameRoot: string | null) => {
+  const board = snapshotBoard();
+  if (!gameRoot || !board) return;
+  try {
+    await saveBoard(board, gameRoot);
+  } catch (error) {
+    console.error('Failed to save the board:', error);
+  }
 };
 
 export const useSessionStore = create<SessionState>()(
@@ -152,8 +170,12 @@ export const useSessionStore = create<SessionState>()(
       },
 
       openLan: async () => {
-        const { activeGameId, activeGamePath, clientId } = get();
+        const { activeGameId, activeGamePath, clientId, isLanOpen } = get();
         if (!activeGameId || !activeGamePath) return;
+
+        // The host reads this game's board as it binds the port, so anything
+        // placed while the table was offline has to reach the file first.
+        if (!isLanOpen) await persistBoard(activeGamePath);
 
         try {
           const info = await invoke<HostInfo>('start_hosting', {
@@ -195,7 +217,12 @@ export const useSessionStore = create<SessionState>()(
       },
 
       leaveGame: async () => {
-        const { isHosting, isLanOpen, clientId } = get();
+        const { isHosting, isLanOpen, clientId, activeGamePath } = get();
+
+        // Before anything clears the board. A hosted table is saved by the
+        // Rust side in `stop_hosting` below; an offline one has only this
+        // window to do it.
+        if (isHosting && !isLanOpen) await persistBoard(activeGamePath);
 
         if (!isHosting) lan.releaseSheet(clientId);
         useLanStore.getState().disconnect();

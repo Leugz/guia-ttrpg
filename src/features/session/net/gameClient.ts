@@ -407,6 +407,36 @@ export const getTokenImageUrl = (sheetId: string): Promise<string> =>
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
 
+// ---------------------------------------------------------------------------
+// Board persistence
+//
+// A board belongs to one game instance and is stored inside it, next to the
+// sheets, so two tables can never read or overwrite each other's pieces and a
+// table survives closing the application.
+//
+// Only the machine that owns the campaign files does this. A joined player has
+// no copy of the folder and nothing to save; the host hands them the board.
+// While the LAN is open the host saves in Rust, where it has everyone's
+// positions rather than just this window's.
+// ---------------------------------------------------------------------------
+
+export const loadBoard = (): Promise<MapToken[]> => {
+  if (context.mode !== 'host' || !context.gameRoot) return Promise.resolve([]);
+  return invoke<MapToken[]>('load_board', { gamePath: context.gameRoot });
+};
+
+/**
+ * `gameRoot` is explicit so a caller tearing a table down can still name the
+ * game it is saving, after the ambient context has been cleared.
+ */
+export const saveBoard = (
+  tokens: MapToken[],
+  gameRoot: string | null = context.gameRoot
+): Promise<void> => {
+  if (!gameRoot) return Promise.resolve();
+  return invoke('save_board', { gamePath: gameRoot, tokens });
+};
+
 export interface LocalBoardSink {
   place: (token: MapToken) => void;
   move: (tokenId: string, x: number, y: number, dragging: boolean) => void;
