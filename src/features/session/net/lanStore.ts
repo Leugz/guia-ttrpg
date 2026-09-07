@@ -3,8 +3,54 @@ import { tokenMotion } from '../../map/tokenMotion';
 import { lan, type Identity } from './lanConnection';
 import { setLocalBoardSink } from './gameClient';
 import type { ConnectionStatus, LanPlayer, SheetSummary } from './protocol';
-import { Handout, MapDefinition, MapToken } from '../../../shared/types';
+import {
+  Handout,
+  MapDefinition,
+  MapToken,
+  SaveIndicator,
+} from '../../../shared/types';
 import { useSessionStore } from '../sessionStore';
+
+/**
+ * The one place a `MapToken` is built.
+ *
+ * Same reasoning as `createChatMessage` in `chatStore`, but it bites harder
+ * here: `tokens` is re-read by `GameBoard` on every structural change and each
+ * entry is destructured by `TokenNode`. Tokens used to arrive from three
+ * sources with three different key orders — `JSON.parse` off the socket,
+ * `{ ...token, x, y }` after a local drag, and `{ ...token, grayscale }` after
+ * a restyle — so the array held a fresh hidden class per mutation path.
+ *
+ * Every field is listed in the order `MapToken` declares them, optionals
+ * included, so the shape is identical no matter which path produced it.
+ */
+const createToken = (
+  source: MapToken,
+  overrides?: {
+    x?: number;
+    y?: number;
+    grayscale?: boolean;
+    saveIndicator?: SaveIndicator | null;
+  }
+): MapToken => ({
+  id: source.id,
+  map_id: source.map_id,
+  owner_client_id: source.owner_client_id,
+  sheet_id: source.sheet_id ?? null,
+  label: source.label,
+  color: source.color,
+  x: overrides?.x ?? source.x,
+  y: overrides?.y ?? source.y,
+  grayscale: overrides?.grayscale ?? source.grayscale,
+  save_indicator:
+    overrides?.saveIndicator !== undefined
+      ? overrides.saveIndicator
+      : (source.save_indicator ?? null),
+});
+
+/** Normalize a whole board straight off the wire. */
+const createTokens = (tokens: MapToken[]): MapToken[] =>
+  tokens.map((token) => createToken(token));
 
 interface LanState {
   status: ConnectionStatus;
@@ -12,7 +58,6 @@ interface LanState {
   sheets: SheetSummary[];
   closedReason: string | null;
   handouts: Handout[];
-  forcedOpens: { handoutId: string; target: string | null }[];
   maps: MapDefinition[];
   tokens: MapToken[];
   pings: { id: string; x: number; y: number; color: string }[];
@@ -36,7 +81,6 @@ interface LanState {
   setHandouts: (handouts: Handout[]) => void;
   setMaps: (maps: MapDefinition[]) => void;
   clearBoard: () => void;
-  clearForcedOpen: (handoutId: string) => void;
 }
 
 /**
@@ -65,7 +109,9 @@ export const snapshotBoard = (): MapToken[] | null => {
   if (!boardLoaded) return null;
   return useLanStore.getState().tokens.map((token) => {
     const position = tokenMotion.position(token.id);
-    return position ? { ...token, x: position.x, y: position.y } : token;
+    return position
+      ? createToken(token, { x: position.x, y: position.y })
+      : token;
   });
 };
 
@@ -75,7 +121,6 @@ export const useLanStore = create<LanState>()((set) => ({
   sheets: [],
   handouts: [],
   closedReason: null,
-  forcedOpens: [],
   maps: [],
   tokens: [],
   pings: [],
@@ -120,11 +165,6 @@ export const useLanStore = create<LanState>()((set) => ({
     tokenMotion.clear();
     set({ tokens: [] });
   },
-
-  clearForcedOpen: (handoutId) =>
-    set((state) => ({
-      forcedOpens: state.forcedOpens.filter((f) => f.handoutId !== handoutId),
-    })),
 }));
 
 lan.on('status', (status) => useLanStore.setState({ status }));
@@ -139,7 +179,7 @@ lan.on('session', (session) => {
   // re-uploading a copy it kept in browser storage. That is what let one
   // table's pieces turn up on another and what made a reconnect stamp on
   // whatever the players had moved in the meantime.
-  const nextTokens = session.tokens ?? [];
+  const nextTokens = createTokens(session.tokens ?? []);
   tokenMotion.seed(nextTokens);
   markBoardLoaded();
 
@@ -155,8 +195,9 @@ lan.on('session', (session) => {
 
 lan.on('maps', (message) => useLanStore.setState({ maps: message.maps }));
 lan.on('tokens', (message) => {
-  tokenMotion.seed(message.tokens);
-  useLanStore.setState({ tokens: message.tokens });
+  const tokens = createTokens(message.tokens);
+  tokenMotion.seed(tokens);
+  useLanStore.setState({ tokens });
 });
 lan.on('tokenMoved', (message) =>
   tokenMotion.apply(message.tokenId, message.x, message.y, message.dragging)
@@ -209,7 +250,9 @@ setLocalBoardSink({
           )
       );
       return {
-        tokens: [...others, token].sort((a, b) => a.id.localeCompare(b.id)),
+        tokens: [...others, createToken(token)].sort((a, b) =>
+          a.id.localeCompare(b.id)
+        ),
       };
     }),
   move: (tokenId, x, y, dragging) => {
@@ -220,7 +263,7 @@ setLocalBoardSink({
     if (!dragging) {
       useLanStore.setState((state) => ({
         tokens: state.tokens.map((token) =>
-          token.id === tokenId ? { ...token, x, y } : token
+          token.id === tokenId ? createToken(token, { x, y }) : token
         ),
       }));
     }
@@ -229,7 +272,7 @@ setLocalBoardSink({
     useLanStore.setState((state) => ({
       tokens: state.tokens.map((token) =>
         token.id === tokenId
-          ? { ...token, grayscale, save_indicator: saveIndicator }
+          ? createToken(token, { grayscale, saveIndicator })
           : token
       ),
     })),
@@ -247,14 +290,11 @@ lan.on('handout', (message) => {
     ),
   }));
 });
-lan.on('handoutForceOpen', (message) => {
-  useLanStore.setState((state) => ({
-    forcedOpens: [
-      ...state.forcedOpens,
-      { handoutId: message.handoutId, target: message.target ?? null },
-    ],
-  }));
-});
+// `handoutForceOpen` is deliberately *not* mirrored into the store. It is an
+// instruction, not state: the only correct response is to open a window once,
+// and parking it in an array meant whoever consumed it also had to remember to
+// drain the queue afterwards. `HandoutWindowManager` subscribes to the event
+// directly instead.
 lan.on('closed', (reason) => useLanStore.setState({ closedReason: reason }));
 
 export const selectPresentPlayers = (state: LanState) =>

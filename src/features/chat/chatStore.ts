@@ -29,6 +29,45 @@ interface ChatStore {
   clear: () => void;
 }
 
+/**
+ * The one place a `ChatMessage` is built.
+ *
+ * Every property is written out explicitly, in the exact order the interface
+ * declares them, including the optional ones — an absent field is stored as
+ * `undefined` rather than omitted. That matters because the log is a single
+ * array that a render loop walks on every new message: objects built by
+ * spreading (`{ ...msg }`) and objects handed back by `JSON.parse` off the
+ * socket carry whatever key order their source happened to have, so the array
+ * ended up holding several hidden classes at once and every property read in
+ * `ChatPanel` went megamorphic. Funnelling all three entry points — local
+ * sends, host echoes and the join backlog — through this factory keeps the
+ * array monomorphic.
+ *
+ * `undefined` values are dropped by `JSON.stringify`, so the wire format is
+ * byte-for-byte what it was before.
+ */
+const createChatMessage = (input: {
+  id: string;
+  sender: string;
+  username?: string;
+  timestamp?: number;
+  color?: string;
+  type: 'text' | 'roll';
+  content?: string;
+  rollLabel?: string;
+  rollResult?: RollResult;
+}): ChatMessage => ({
+  id: input.id,
+  sender: input.sender,
+  username: input.username,
+  timestamp: input.timestamp ?? Date.now(),
+  color: input.color || '#71717a',
+  type: input.type,
+  content: input.content,
+  rollLabel: input.rollLabel,
+  rollResult: input.rollResult,
+});
+
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -45,12 +84,17 @@ const appendUnique = (messages: ChatMessage[], incoming: ChatMessage) =>
 export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
   addMessage: (msg) => {
-    const fullMsg: ChatMessage = {
-      ...msg,
-      color: msg.color || '#71717a',
+    const fullMsg = createChatMessage({
       id: generateId(),
-      timestamp: msg.timestamp || Date.now(),
-    };
+      sender: msg.sender,
+      username: msg.username,
+      timestamp: msg.timestamp,
+      color: msg.color,
+      type: msg.type,
+      content: msg.content,
+      rollLabel: msg.rollLabel,
+      rollResult: msg.rollResult,
+    });
     // Shown locally straight away; the host echoes it back to everyone else and
     // the id keeps that echo from duplicating.
     set((state) => ({ messages: appendUnique(state.messages, fullMsg) }));
@@ -61,7 +105,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       );
     }
   },
-  setHistory: (messages) => set({ messages }),
+  setHistory: (messages) => set({ messages: messages.map(createChatMessage) }),
   clear: () => set({ messages: [] }),
 }));
 
@@ -77,14 +121,16 @@ const isChatMessage = (value: unknown): value is ChatMessage => {
 
 lan.on('chat', (payload) => {
   if (!isChatMessage(payload)) return;
+  // Rebuilt rather than stored as parsed: the socket's key order is whatever
+  // the host serialised, which is not the order the rest of the log uses.
   useChatStore.setState((state) => ({
-    messages: appendUnique(state.messages, payload),
+    messages: appendUnique(state.messages, createChatMessage(payload)),
   }));
 });
 
 // Backlog on join. Anything already on screen is preserved by id.
 lan.on('session', (session) => {
-  const restored = session.history.filter(isChatMessage);
+  const restored = session.history.filter(isChatMessage).map(createChatMessage);
   if (restored.length === 0) return;
 
   useChatStore.setState((state) => {

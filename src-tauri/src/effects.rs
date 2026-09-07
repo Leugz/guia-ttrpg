@@ -1,5 +1,6 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 use std::fmt;
 
 use crate::dice::{PoolEntry, StepDice, MAX_POOL_SIZE};
@@ -24,10 +25,10 @@ impl EffectUnit {
         matches!(self, EffectUnit::Step)
     }
 
-    pub fn label(self) -> String {
+    pub fn label(self) -> Cow<'static, str> {
         match self {
-            EffectUnit::Step => "passo".to_string(),
-            EffectUnit::Die(die) => die.notation(),
+            EffectUnit::Step => Cow::Borrowed("passo"),
+            EffectUnit::Die(die) => Cow::Borrowed(die.notation()),
         }
     }
 }
@@ -96,13 +97,16 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Effect {
     pub operation: EffectOperation,
-    pub quantity: u32,
+    /// Bounded by `MAX_EFFECT_QUANTITY`, so a byte is ample. Combined with the
+    /// one-byte `EffectOperation` and `EffectUnit` discriminants this lets the
+    /// whole non-`target` prefix of an `Effect` sit in a single word.
+    pub quantity: u8,
     pub unit: EffectUnit,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 }
 
-pub const MAX_EFFECT_QUANTITY: u32 = 10;
+pub const MAX_EFFECT_QUANTITY: u8 = 10;
 
 impl Effect {
     pub fn is_toggle(&self) -> bool {
@@ -166,12 +170,12 @@ impl Effect {
             (EffectOperation::Subtract, EffectUnit::Step) => "Reduz",
             (EffectOperation::Subtract, EffectUnit::Die(_)) => "Remove",
         };
-        let unit = match self.unit {
+        let unit: &'static str = match self.unit {
             EffectUnit::Step => {
                 if self.quantity == 1 {
-                    "passo".to_string()
+                    "passo"
                 } else {
-                    "passos".to_string()
+                    "passos"
                 }
             }
             EffectUnit::Die(die) => die.notation(),
@@ -212,7 +216,7 @@ pub struct TestRequest {
     #[serde(default)]
     pub triggered: Vec<String>,
     #[serde(default)]
-    pub help: Option<u32>,
+    pub help: Option<u8>,
     #[serde(default)]
     pub extra_dice: Vec<StepDice>,
     #[serde(default)]
@@ -222,7 +226,10 @@ pub struct TestRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedDie {
     pub sides: u8,
-    pub source: String,
+    /// Attribute names and the "Bônus" placeholder are compile-time constants
+    /// and are now borrowed; only skill, ability and inventory names — which
+    /// really do come off a sheet — still own their bytes.
+    pub source: Cow<'static, str>,
     pub base: bool,
 }
 
@@ -238,15 +245,14 @@ pub struct ResolvedPool {
 
 impl ResolvedPool {
     pub fn to_pool_entries(&self) -> Vec<PoolEntry> {
-        self.dice
-            .iter()
-            .map(|die| {
-                PoolEntry::new(
-                    crate::dice::Die::new(die.sides).unwrap_or_else(|_| StepDice::D4.into()),
-                    die.source.clone(),
-                )
-            })
-            .collect()
+        let mut entries = Vec::with_capacity(self.dice.len());
+        for die in &self.dice {
+            entries.push(PoolEntry::new(
+                crate::dice::Die::new(die.sides).unwrap_or_else(|_| StepDice::D4.into()),
+                die.source.clone(),
+            ));
+        }
+        entries
     }
 }
 
@@ -307,7 +313,7 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
         if !(1..=2).contains(&help) {
             return Err("Ajuda must grant either 1 or 2 steps.".into());
         }
-        attribute_steps += help as i32;
+        attribute_steps += i32::from(help);
         applied.push(format!(
             "Ajuda: Avança {} {}",
             help,
@@ -341,7 +347,7 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
                     for _ in 0..effect.quantity {
                         bonus.push(ResolvedDie {
                             sides: die.sides(),
-                            source: entry.name.clone(),
+                            source: Cow::Owned(entry.name.clone()),
                             base: false,
                         });
                     }
@@ -385,23 +391,24 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
     for &die in &request.extra_dice {
         bonus.push(ResolvedDie {
             sides: die.sides(),
-            source: "Bônus".to_string(),
+            source: Cow::Borrowed("Bônus"),
             base: false,
         });
     }
 
     // --- Base dice ----------------------------------------------------------
     let attribute_die = sheet.attributes.get(attribute).apply_steps(attribute_steps);
-    let mut dice = vec![ResolvedDie {
+    let mut dice = Vec::with_capacity(MAX_POOL_SIZE);
+    dice.push(ResolvedDie {
         sides: attribute_die.sides(),
-        source: attribute.display_pt().to_string(),
+        source: Cow::Borrowed(attribute.display_pt()),
         base: true,
-    }];
+    });
     if let Some(skill) = skill {
         let skill_die = skill.value.apply_steps(skill_steps);
         dice.push(ResolvedDie {
             sides: skill_die.sides(),
-            source: skill.name.clone(),
+            source: Cow::Owned(skill.name.clone()),
             base: true,
         });
     }
@@ -439,7 +446,7 @@ mod tests {
     use crate::models::Entry;
     use crate::rules;
 
-    fn effect(op: EffectOperation, quantity: u32, unit: EffectUnit, target: Option<&str>) -> Effect {
+    fn effect(op: EffectOperation, quantity: u8, unit: EffectUnit, target: Option<&str>) -> Effect {
         Effect {
             operation: op,
             quantity,

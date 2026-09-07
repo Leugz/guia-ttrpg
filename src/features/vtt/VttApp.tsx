@@ -1,7 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Crosshair,
   Ruler,
@@ -15,9 +12,6 @@ import {
   X,
   ChevronDown,
   Copy,
-  Eye,
-  EyeOff,
-  Send,
   Music,
   Volume2,
 } from 'lucide-react';
@@ -35,10 +29,6 @@ import {
 } from '../session/net/lanStore';
 import * as gameClient from '../session/net/gameClient';
 import type { LanPlayer, SheetSummary } from '../session/net/protocol';
-import type {
-  CharacterSheet as CharacterSheetData,
-  ActiveEffect,
-} from '../../shared/types';
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
@@ -48,20 +38,16 @@ import {
   type TokenDragPayload,
 } from '../map/components/GameBoard';
 import { MapSelector } from '../map/components/MapSelector';
-import { ResourceMathInput } from '../character-sheet/components/ResourceMathInput';
 import { DieShape } from '../../shared/components/DieShape';
 import { tokenMotion } from '../map/tokenMotion';
-import { lan } from '../session/net/lanConnection';
 import { JukeboxPanel } from '../jukebox/components/JukeboxPanel';
 import { useJukeboxStore } from '../jukebox/jukeboxStore';
 import { DraggableWindow } from './components/DraggableWindow';
-
-const getInitials = (name: string) => {
-  const words = name.trim().split(/\s+/);
-  if (words.length === 0 || words[0] === '') return '?';
-  if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
+import { GmPartyTracker } from './components/GmPartyTracker';
+import { HandoutWindowManager } from './components/HandoutWindowManager';
+import { TrackerResourceBar } from './components/TrackerResourceBar';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { getInitials } from '../../shared/lib/initials';
 
 const getConditionDesc = (id: string) => {
   switch (id) {
@@ -249,40 +235,6 @@ const CharacterSelectionModal = ({
   );
 };
 
-const ResourceBar = ({
-  label,
-  current,
-  max,
-  colorClass,
-  activeColorClass,
-  onUpdate,
-}: any) => {
-  const VISUAL_BLOCKS = 10;
-  const percentage = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
-  const activeCount = Math.round(percentage * VISUAL_BLOCKS);
-  const blocks = Array.from(
-    { length: VISUAL_BLOCKS },
-    (_, i) => i < activeCount
-  );
-
-  return (
-    <div className='flex items-center gap-1'>
-      <div className={`w-8 font-serif text-lg font-bold ${colorClass}`}>
-        {label}
-      </div>
-      <ResourceMathInput current={current} max={max} onUpdate={onUpdate} />
-      <div className='ml-2 flex flex-nowrap gap-1'>
-        {blocks.map((isActive, i) => (
-          <div
-            key={i}
-            className={`h-4 w-3.5 -skew-x-12 border border-black/50 shadow-sm transition-colors ${isActive ? activeColorClass : 'bg-zinc-800/80'}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-
 export function VttApp() {
   const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
   const localVolume = useJukeboxStore((state) => state.localVolume);
@@ -292,7 +244,6 @@ export function VttApp() {
   const sheets = useLanStore((state) => state.sheets);
   const setSheets = useLanStore((state) => state.setSheets);
 
-  const handouts = useLanStore((state) => state.handouts) || [];
   const setHandouts = useLanStore((state) => state.setHandouts);
   const setMaps = useLanStore((state) => state.setMaps);
 
@@ -431,56 +382,6 @@ export function VttApp() {
   const [toasts, setToasts] = useState<any[]>([]);
 
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
-  const [openHandoutIds, setOpenHandoutIds] = useState<string[]>([]);
-  const [handoutAssetUrls, setHandoutAssetUrls] = useState<
-    Record<string, string>
-  >({});
-
-  // -------------------------------------------------------------------------
-  // Mestre View (GM Party Tracker)
-  // -------------------------------------------------------------------------
-  const [partySheets, setPartySheets] = useState<
-    Record<string, CharacterSheetData>
-  >({});
-  const [selectedPartyMember, setSelectedPartyMember] = useState<string | null>(
-    null
-  );
-
-  // Mestre carrega as fichas de todos que escolheram um personagem
-  useEffect(() => {
-    if (!isTrueGM) return;
-    const claimedIds = roster
-      .filter(
-        (p) => p.connected && p.claimed_sheet && p.claimed_sheet !== '__GM__'
-      )
-      .map((p) => p.claimed_sheet!);
-
-    claimedIds.forEach((id) => {
-      if (!partySheets[id]) {
-        gameClient
-          .loadSheet(id)
-          .then((doc) => {
-            setPartySheets((prev) => ({ ...prev, [id]: doc.data }));
-          })
-          .catch(() => {});
-      }
-    });
-  }, [isTrueGM, roster, partySheets]);
-
-  // Mestre ouve as edições ao vivo
-  useEffect(() => {
-    if (!isTrueGM) return;
-    const unsubscribe = lan.on('sheet', (message) => {
-      setPartySheets((prev) => {
-        // Se a ficha alterada já estiver sendo acompanhada pelo mestre, atualiza a tela
-        if (prev[message.sheetId]) {
-          return { ...prev, [message.sheetId]: message.sheet };
-        }
-        return prev;
-      });
-    });
-    return unsubscribe;
-  }, [isTrueGM]);
 
   // -------------------------------------------------------------------------
   // Click-Away Listeners
@@ -523,116 +424,6 @@ export function VttApp() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMapSelectorOpen, isSettingsOpen, isChatOpen]);
-
-  // -------------------------------------------------------------------------
-  // Handouts Logic
-  // -------------------------------------------------------------------------
-
-  const visibleHandouts = isTrueGM
-    ? handouts
-    : handouts.filter((h) => h.is_public || h.shared_with?.includes(clientId));
-
-  const documentos = visibleHandouts.filter((h) => h.category === 'documentos');
-  const regras = visibleHandouts.filter((h) => h.category === 'regras');
-
-  const handleToggleHandoutPublic = async (id: string) => {
-    try {
-      const updated = await gameClient.toggleHandoutPublic(id);
-      useLanStore.setState((state) => ({
-        handouts: state.handouts.map((h) =>
-          h.id === updated.id ? updated : h
-        ),
-      }));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleToggleHandoutShare = async (
-    handoutId: string,
-    targetClientId: string
-  ) => {
-    try {
-      const updated = await gameClient.toggleHandoutShare(
-        handoutId,
-        targetClientId
-      );
-      useLanStore.setState((state) => ({
-        handouts: state.handouts.map((h) =>
-          h.id === updated.id ? updated : h
-        ),
-      }));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const forcedOpens = useLanStore((state) => state.forcedOpens);
-  const clearForcedOpen = useLanStore((state) => state.clearForcedOpen);
-
-  useEffect(() => {
-    forcedOpens.forEach((entry) => {
-      const forMe = entry.target === null || entry.target === clientId;
-      if (forMe && !openHandoutIds.includes(entry.handoutId)) {
-        setOpenHandoutIds((prev) => [...prev, entry.handoutId]);
-      }
-      clearForcedOpen(entry.handoutId);
-    });
-  }, [forcedOpens, clientId, openHandoutIds, clearForcedOpen]);
-
-  const handleOpenHandoutForAll = async (id: string) => {
-    try {
-      const updated = await gameClient.openHandoutForAll(id);
-      useLanStore.setState((state) => ({
-        handouts: state.handouts.map((h) =>
-          h.id === updated.id ? updated : h
-        ),
-      }));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleOpenHandoutForPlayer = async (
-    handoutId: string,
-    targetClientId: string
-  ) => {
-    try {
-      const updated = await gameClient.openHandoutForPlayer(
-        handoutId,
-        targetClientId
-      );
-      useLanStore.setState((state) => ({
-        handouts: state.handouts.map((h) =>
-          h.id === updated.id ? updated : h
-        ),
-      }));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    openHandoutIds.forEach((id) => {
-      const handout = handouts.find((h) => h.id === id);
-      if (!handout || handout.content_type === 'text') return;
-      if (handoutAssetUrls[id]) return;
-
-      gameClient
-        .getHandoutAssetUrl(handout)
-        .then((url) => {
-          if (cancelled) return;
-          setHandoutAssetUrls((prev) => ({ ...prev, [id]: url }));
-        })
-        .catch((error) => {
-          console.error(`Failed to load the image for handout "${id}":`, error);
-        });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [openHandoutIds, handouts, handoutAssetUrls]);
 
   // -------------------------------------------------------------------------
   // Core Connections
@@ -794,34 +585,16 @@ export function VttApp() {
     }
   }, [isLanOpen, connectionStatus, localClaim, clientId, claimSheet]);
 
-  // -------------------------------------------------------------------------
-  // Keyboard Shortcuts
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Ignora atalhos de teclado se o usuário estiver digitando
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
+  const toggleRoller = useCallback(() => setIsRollerOpen((open) => !open), []);
+  const toggleChat = useCallback(() => setIsChatOpen((open) => !open), []);
+  const toggleSheet = useCallback(() => setIsSheetOpen((open) => !open), []);
 
-      const key = e.key.toLowerCase();
-      if (key === 'r') {
-        e.preventDefault();
-        setIsRollerOpen((prev) => !prev);
-      } else if (key === ' ' || key === 'enter') {
-        e.preventDefault();
-        setIsChatOpen((prev) => !prev);
-      } else if (key === 'c') {
-        e.preventDefault();
-        if (character) setIsSheetOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [character]);
+  useGlobalShortcuts({
+    onToggleRoller: toggleRoller,
+    onToggleChat: toggleChat,
+    onToggleSheet: toggleSheet,
+    canOpenSheet: Boolean(character),
+  });
 
   useEffect(() => {
     updateIdentity({
@@ -1127,322 +900,13 @@ export function VttApp() {
         </div>
       </div>
 
-      {isHandoutListOpen && (
-        <DraggableWindow
-          title='Arquivos & Documentos'
-          onClose={() => setIsHandoutListOpen(false)}
-          initialX={84}
-          initialY={80}
-          initialWidth={320}
-          initialHeight={520}
-          resizable
-        >
-          <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-black/50 pb-2 backdrop-blur-lg'>
-            {(regras.length > 0 || isTrueGM) && (
-              <div className='mb-2 mt-2 px-3'>
-                <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
-                  Regras do Sistema
-                </span>
-                <div className='mt-1 flex flex-col gap-1'>
-                  {regras.map((h) => (
-                    <div
-                      key={h.id}
-                      className='flex flex-col gap-2 rounded border border-transparent bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-800 hover:bg-zinc-900/80'
-                    >
-                      <div
-                        className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
-                        onClick={() =>
-                          !openHandoutIds.includes(h.id) &&
-                          setOpenHandoutIds((prev) => [...prev, h.id])
-                        }
-                      >
-                        <div
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.is_public ? 'bg-green-500' : h.shared_with && h.shared_with.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
-                        />
-                        <span className='truncate font-medium'>{h.title}</span>
-                      </div>
-
-                      {isTrueGM && (
-                        <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
-                          <button
-                            onClick={() => handleToggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition-colors hover:bg-green-900 focus:outline-none ${h.is_public ? 'bg-green-950/50 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-                          >
-                            {h.is_public ? (
-                              <>
-                                <Eye size={10} /> Público (Todos)
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff size={10} /> Privado
-                              </>
-                            )}
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenHandoutForAll(h.id)}
-                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 outline-none transition-colors hover:bg-amber-900 focus:outline-none'
-                          >
-                            <Send size={10} /> Abrir para Todos
-                          </button>
-
-                          {!h.is_public && (
-                            <>
-                              <div className='flex flex-wrap items-center gap-1'>
-                                <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
-                                  Visível para:
-                                </span>
-                                {roster
-                                  .filter(
-                                    (p) =>
-                                      p.connected &&
-                                      p.claimed_sheet !== '__GM__'
-                                  )
-                                  .map((p) => {
-                                    const isShared =
-                                      h.shared_with &&
-                                      h.shared_with.includes(p.client_id);
-                                    return (
-                                      <React.Fragment key={p.client_id}>
-                                        <button
-                                          onClick={() =>
-                                            handleToggleHandoutShare(
-                                              h.id,
-                                              p.client_id
-                                            )
-                                          }
-                                          className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold outline-none transition-colors focus:outline-none ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
-                                          style={{
-                                            color: isShared
-                                              ? p.color
-                                              : undefined,
-                                            borderColor: isShared
-                                              ? p.color
-                                              : '#27272a',
-                                            borderWidth: '1px',
-                                          }}
-                                          title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
-                                        >
-                                          {getInitials(p.username)}
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleOpenHandoutForPlayer(
-                                              h.id,
-                                              p.client_id
-                                            )
-                                          }
-                                          className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 outline-none transition-colors hover:bg-amber-900 hover:text-amber-400 focus:outline-none'
-                                          title={`Abrir agora só para ${p.username}`}
-                                        >
-                                          <Send size={9} />
-                                        </button>
-                                      </React.Fragment>
-                                    );
-                                  })}
-                                {roster.filter(
-                                  (p) =>
-                                    p.connected && p.claimed_sheet !== '__GM__'
-                                ).length === 0 && (
-                                  <span className='text-[9px] text-zinc-600'>
-                                    Nenhum jogador
-                                  </span>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {regras.length === 0 && (
-                    <span className='py-2 text-xs italic text-zinc-600'>
-                      Nenhuma regra disponível.
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {(documentos.length > 0 || isTrueGM) && (
-              <div className='mb-2 mt-2 px-3'>
-                <span className='block w-full border-b border-zinc-800 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
-                  Documentos & Pistas
-                </span>
-                <div className='mt-1 flex flex-col gap-1'>
-                  {documentos.map((h) => (
-                    <div
-                      key={h.id}
-                      className='flex flex-col gap-2 rounded border border-transparent bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-800 hover:bg-zinc-900/80'
-                    >
-                      <div
-                        className='flex cursor-pointer items-center gap-2 transition-colors hover:text-white'
-                        onClick={() =>
-                          !openHandoutIds.includes(h.id) &&
-                          setOpenHandoutIds((prev) => [...prev, h.id])
-                        }
-                      >
-                        <div
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.is_public ? 'bg-green-500' : h.shared_with && h.shared_with.length > 0 ? 'bg-blue-500' : 'bg-zinc-600'}`}
-                        />
-                        <span className='truncate font-medium'>{h.title}</span>
-                      </div>
-
-                      {isTrueGM && (
-                        <div className='ml-3 mt-1 flex flex-col gap-2 border-t border-zinc-800/50 pt-2'>
-                          <button
-                            onClick={() => handleToggleHandoutPublic(h.id)}
-                            className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider outline-none transition-colors hover:bg-green-900 focus:outline-none ${h.is_public ? 'bg-green-950/50 text-green-400' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-                          >
-                            {h.is_public ? (
-                              <>
-                                <Eye size={10} /> Público (Todos)
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff size={10} /> Privado
-                              </>
-                            )}
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenHandoutForAll(h.id)}
-                            className='flex w-full items-center justify-center gap-1 rounded bg-amber-950/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 outline-none transition-colors hover:bg-amber-900 focus:outline-none'
-                          >
-                            <Send size={10} /> Abrir para Todos
-                          </button>
-
-                          {!h.is_public && (
-                            <div className='flex flex-wrap items-center gap-1'>
-                              <span className='mr-1 text-[9px] uppercase tracking-widest text-zinc-500'>
-                                Visível para:
-                              </span>
-                              {roster
-                                .filter(
-                                  (p) =>
-                                    p.connected && p.claimed_sheet !== '__GM__'
-                                )
-                                .map((p) => {
-                                  const isShared =
-                                    h.shared_with &&
-                                    h.shared_with.includes(p.client_id);
-                                  return (
-                                    <React.Fragment key={p.client_id}>
-                                      <button
-                                        onClick={() =>
-                                          handleToggleHandoutShare(
-                                            h.id,
-                                            p.client_id
-                                          )
-                                        }
-                                        className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-bold outline-none transition-colors focus:outline-none ${isShared ? 'bg-zinc-800 text-white shadow-[0_0_5px_currentColor]' : 'bg-zinc-950 text-zinc-600 hover:bg-zinc-800'}`}
-                                        style={{
-                                          color: isShared ? p.color : undefined,
-                                          borderColor: isShared
-                                            ? p.color
-                                            : '#27272a',
-                                          borderWidth: '1px',
-                                        }}
-                                        title={`${isShared ? 'Remover' : 'Compartilhar com'} ${p.username}`}
-                                      >
-                                        {getInitials(p.username)}
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          handleOpenHandoutForPlayer(
-                                            h.id,
-                                            p.client_id
-                                          )
-                                        }
-                                        className='flex h-5 w-5 items-center justify-center rounded-sm bg-zinc-950 text-zinc-600 outline-none transition-colors hover:bg-amber-900 hover:text-amber-400 focus:outline-none'
-                                        title={`Abrir agora só para ${p.username}`}
-                                      >
-                                        <Send size={9} />
-                                      </button>
-                                    </React.Fragment>
-                                  );
-                                })}
-                              {roster.filter(
-                                (p) =>
-                                  p.connected && p.claimed_sheet !== '__GM__'
-                              ).length === 0 && (
-                                <span className='text-[9px] text-zinc-600'>
-                                  Nenhum jogador
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {documentos.length === 0 && (
-                    <span className='py-2 text-xs italic text-zinc-600'>
-                      Nenhum documento disponível.
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </DraggableWindow>
-      )}
-
-      {openHandoutIds.map((id, index) => {
-        const handout = handouts.find((h) => h.id === id);
-        if (!handout) return null;
-        if (
-          !isTrueGM &&
-          !handout.is_public &&
-          (!handout.shared_with || !handout.shared_with.includes(clientId))
-        )
-          return null;
-
-        return (
-          <DraggableWindow
-            key={id}
-            title={handout.title}
-            onClose={() => {
-              setOpenHandoutIds((prev) => prev.filter((i) => i !== id));
-              setHandoutAssetUrls((prev) => {
-                if (!(id in prev)) return prev;
-                const next = { ...prev };
-                delete next[id];
-                return next;
-              });
-            }}
-            initialX={220 + index * 30}
-            initialY={120 + index * 30}
-            initialWidth={560}
-            initialHeight={640}
-            resizable
-          >
-            <div className='min-h-0 flex-1 overflow-y-auto bg-black/50 p-4 text-sm text-zinc-300 backdrop-blur-lg'>
-              {handout.content_type === 'text' ? (
-                <div className='leading-relaxed [&>p]:mb-3 [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-[var(--theme-color)] [&_blockquote]:bg-zinc-900/30 [&_blockquote]:py-2 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-[var(--theme-color)] [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-inside [&_ol]:list-decimal [&_strong]:font-bold [&_strong]:text-white [&_table]:mb-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm [&_td]:border [&_td]:border-zinc-700 [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-zinc-700 [&_th]:bg-zinc-800/50 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-bold [&_th]:text-white [&_ul]:mb-3 [&_ul]:list-inside [&_ul]:list-disc'>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeRaw]}
-                  >
-                    {handout.content}
-                  </ReactMarkdown>
-                </div>
-              ) : handoutAssetUrls[id] ? (
-                <img
-                  src={handoutAssetUrls[id]}
-                  alt={handout.title}
-                  className='w-full rounded border border-zinc-800 object-contain'
-                  draggable={false}
-                />
-              ) : (
-                <div className='py-8 text-center text-zinc-500'>
-                  Carregando imagem…
-                </div>
-              )}
-            </div>
-          </DraggableWindow>
-        );
-      })}
+      <HandoutWindowManager
+        isGM={isTrueGM}
+        clientId={clientId}
+        roster={roster}
+        isListOpen={isHandoutListOpen}
+        onCloseList={() => setIsHandoutListOpen(false)}
+      />
 
       {isJukeboxOpen && isTrueGM && (
         <DraggableWindow
@@ -1460,7 +924,7 @@ export function VttApp() {
       <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col items-end gap-3'>
         {toasts.map((toast) => {
           // Lógica para destacar dados de Crítico na notificação
-          let critValues = new Set<number>();
+          const critValues = new Set<number>();
           if (toast.type === 'roll' && toast.rollResult?.is_critical_success) {
             const counts: Record<number, number> = {};
             toast.rollResult.dice.forEach((d: any) => {
@@ -1610,94 +1074,7 @@ export function VttApp() {
         </div>
 
         {/* GM PARTY TRACKER (Visível apenas para o Mestre) */}
-        {isTrueGM && Object.keys(partySheets).length > 0 && (
-          <div className='flex gap-4'>
-            <div className='mb-2 grid grid-cols-2 content-end gap-2'>
-              {Object.entries(partySheets).map(([id, sheet]) => {
-                const color = getProfileColor(sheet.profile);
-                const isSelected = selectedPartyMember === id;
-                return (
-                  <button
-                    key={id}
-                    onClick={() =>
-                      setSelectedPartyMember(isSelected ? null : id)
-                    }
-                    className={`flex h-12 w-12 items-center justify-center rounded-sm border-2 bg-zinc-900 outline-none transition-all focus:outline-none ${isSelected ? 'scale-110 shadow-[0_0_15px_currentColor]' : 'opacity-70 hover:opacity-100'}`}
-                    style={{ borderColor: color, color: color }}
-                    title={sheet.name}
-                  >
-                    <span className='font-serif text-sm font-bold tracking-widest text-white'>
-                      {getInitials(sheet.name)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {selectedPartyMember && partySheets[selectedPartyMember] && (
-              <div className='flex flex-col gap-2'>
-                {partySheets[selectedPartyMember].active_effects.length > 0 && (
-                  <div className='flex w-fit items-center gap-2 rounded-sm border border-zinc-800 bg-black/50 px-3 py-1.5 shadow-md backdrop-blur-md'>
-                    <ShieldAlert size={16} className='text-yellow-500' />
-                    <div className='ml-1 flex gap-1'>
-                      {partySheets[selectedPartyMember].active_effects.map(
-                        (effect: ActiveEffect) => (
-                          <span
-                            key={effect.id}
-                            className='cursor-help rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:bg-zinc-800'
-                          >
-                            {effect.name}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/50 p-4 shadow-2xl backdrop-blur-md'>
-                  <ResourceBar
-                    label='PV'
-                    current={
-                      partySheets[selectedPartyMember].resources.hp.current || 0
-                    }
-                    max={partySheets[selectedPartyMember].resources.hp.max || 0}
-                    colorClass='text-red-500'
-                    activeColorClass='bg-red-500'
-                    onUpdate={(delta: number) =>
-                      gameClient
-                        .applyResourceChange(selectedPartyMember, 'hp', delta)
-                        .then((outcome) => {
-                          setPartySheets((prev) => ({
-                            ...prev,
-                            [selectedPartyMember]: outcome.character,
-                          }));
-                        })
-                    }
-                  />
-                  <ResourceBar
-                    label='PD'
-                    current={
-                      partySheets[selectedPartyMember].resources.dp.current || 0
-                    }
-                    max={partySheets[selectedPartyMember].resources.dp.max || 0}
-                    colorClass='text-indigo-500'
-                    activeColorClass='bg-indigo-500'
-                    onUpdate={(delta: number) =>
-                      gameClient
-                        .applyResourceChange(selectedPartyMember, 'dp', delta)
-                        .then((outcome) => {
-                          setPartySheets((prev) => ({
-                            ...prev,
-                            [selectedPartyMember]: outcome.character,
-                          }));
-                        })
-                    }
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        <GmPartyTracker isGM={isTrueGM} roster={roster} />
 
         {/* Player Conditions & Trackers (Visível apenas para quem NÃO É mestre) */}
         {!isTrueGM && (
@@ -1732,7 +1109,7 @@ export function VttApp() {
 
             {character && (
               <div className='flex flex-col gap-2 rounded-sm border border-zinc-800/80 bg-black/50 p-4 shadow-2xl backdrop-blur-md'>
-                <ResourceBar
+                <TrackerResourceBar
                   label='PV'
                   current={character.resources.hp.current || 0}
                   max={character.resources.hp.max || 0}
@@ -1740,7 +1117,7 @@ export function VttApp() {
                   activeColorClass='bg-red-500'
                   onUpdate={(delta: number) => applyResourceChange('hp', delta)}
                 />
-                <ResourceBar
+                <TrackerResourceBar
                   label='PD'
                   current={character.resources.dp.current || 0}
                   max={character.resources.dp.max || 0}

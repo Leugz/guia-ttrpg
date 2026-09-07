@@ -4,8 +4,8 @@ use crate::dice::StepDice;
 use crate::effects::{Effect, EffectOperation, EffectUnit};
 use crate::models::{ActiveEffect, Attribute, EffectSource, ResourceKind, Skill};
 
-pub const DEATH_SAVE_INITIAL_DC: i32 = 7;
-pub const DEATH_SAVE_DC_INCREMENT: i32 = 3;
+pub const DEATH_SAVE_INITIAL_DC: i16 = 7;
+pub const DEATH_SAVE_DC_INCREMENT: i16 = 3;
 pub const UNTRAINED_SKILL_DIE: StepDice = StepDice::D4;
 pub const HP_SAVE_SKILL: &str = "vigor";
 pub const DP_SAVE_SKILL: &str = "disciplina";
@@ -121,7 +121,7 @@ pub struct BuiltinDefinition {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
-    pub magnitudes: &'static [u32],
+    pub magnitudes: &'static [u8],
     pub per_test: bool,
 }
 
@@ -163,7 +163,7 @@ pub fn builtin_definition(id: &str) -> Option<&'static BuiltinDefinition> {
         .find(|definition| definition.id.eq_ignore_ascii_case(id))
 }
 
-pub fn builtin(id: &str, magnitude: Option<u32>) -> Result<ActiveEffect, String> {
+pub fn builtin(id: &str, magnitude: Option<u8>) -> Result<ActiveEffect, String> {
     let definition =
         builtin_definition(id).ok_or_else(|| format!("Unknown built-in effect: {}", id))?;
 

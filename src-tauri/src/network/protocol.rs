@@ -37,7 +37,7 @@ pub struct SheetSummary {
     pub name: String,
     pub profile: String,
     pub occupation: String,
-    pub level: u32,
+    pub level: u8,
 }
 
 // ---------------------------------------------------------------------------

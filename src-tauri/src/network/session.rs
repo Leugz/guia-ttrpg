@@ -525,7 +525,7 @@ struct ResourceParams {
     sheet_id: String,
     resource: String,
     #[serde(default)]
-    delta: i32,
+    delta: i16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -561,7 +561,7 @@ struct EffectParams {
     #[serde(rename = "effectId")]
     effect_id: String,
     #[serde(default)]
-    magnitude: Option<u32>,
+    magnitude: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]

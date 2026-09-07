@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::dice::StepDice;
@@ -154,8 +156,13 @@ impl ResourceKind {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResourceStat {
-    pub current: i32,
-    pub max: i32,
+    /// `i16` rather than `i32`: the rules cap a sheet at two digits of PV/PD,
+    /// so 15 bits of headroom is already three orders of magnitude of slack.
+    /// Halving these two fields shrinks `Resources` from 16 to 8 bytes, which
+    /// keeps `CharacterSheet`'s fixed-size prefix inside fewer cache lines on
+    /// the hot read-mutate-write path.
+    pub current: i16,
+    pub max: i16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -182,7 +189,7 @@ impl Resources {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SaveState {
-    pub dc: i32,
+    pub dc: i16,
     pub failed: bool,
 }
 
@@ -232,8 +239,10 @@ pub struct CharacterSheet {
     pub profile: String,
     #[serde(default)]
     pub occupation: String,
+    /// Validated to 1..=99, so `u8` is the smallest type that can hold every
+    /// legal value.
     #[serde(default = "default_level")]
-    pub level: u32,
+    pub level: u8,
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portrait: Option<String>,
@@ -256,15 +265,15 @@ pub struct CharacterSheet {
     pub death_saves: DeathSaves,
 }
 
-fn default_level() -> u32 {
+fn default_level() -> u8 {
     1
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResourceChange {
     pub kind: ResourceKind,
-    pub previous: i32,
-    pub current: i32,
+    pub previous: i16,
+    pub current: i16,
     pub triggered_save: bool,
     pub recovered: bool,
 }
@@ -304,10 +313,12 @@ impl CharacterSheet {
     }
 
     pub fn skill_mut(&mut self, id: &str) -> Option<&mut Skill> {
-        let id = id.trim().to_string();
+        // `id` is an independent borrow, so the owned copy this used to make
+        // bought nothing and cost an allocation on every skill edit.
+        let id = id.trim();
         self.skills
             .iter_mut()
-            .find(|skill| skill.id.eq_ignore_ascii_case(&id))
+            .find(|skill| skill.id.eq_ignore_ascii_case(id))
     }
 
     pub fn set_skill_value(&mut self, id: &str, value: StepDice) -> Result<(), String> {
@@ -335,11 +346,11 @@ impl CharacterSheet {
     }
 
     pub fn entry_mut(&mut self, id: &str) -> Option<&mut Entry> {
-        let id = id.trim().to_string();
+        let id = id.trim();
         self.abilities
             .iter_mut()
             .chain(self.inventory.iter_mut())
-            .find(|entry| entry.id.eq_ignore_ascii_case(&id))
+            .find(|entry| entry.id.eq_ignore_ascii_case(id))
     }
 
     pub fn standing_effects(&self) -> Vec<StandingEffect<'_>> {
@@ -358,17 +369,23 @@ impl CharacterSheet {
             name: &effect.name,
             effects: &effect.effects,
         });
-        entries.chain(applied).collect()
+        let mut collected =
+            Vec::with_capacity(self.abilities.len() + self.inventory.len() + self.active_effects.len());
+        collected.extend(entries.chain(applied));
+        collected
     }
 
     pub fn is_downed(&self, kind: ResourceKind) -> bool {
         self.resources.get(kind).current <= 0
     }
 
-    pub fn apply_resource_delta(&mut self, kind: ResourceKind, delta: i32) -> ResourceChange {
+    pub fn apply_resource_delta(&mut self, kind: ResourceKind, delta: i16) -> ResourceChange {
         let stat = self.resources.get_mut(kind);
         let previous = stat.current;
-        stat.current = (stat.current + delta).clamp(0, stat.max);
+        // Saturating rather than wrapping: a narrower type means a large heal
+        // or hit is now within reach of the bound, and clamping to `max`
+        // straight after makes the saturation invisible to the caller.
+        stat.current = stat.current.saturating_add(delta).clamp(0, stat.max);
         let current = stat.current;
 
         let recovered = previous <= 0 && current > 0;
@@ -385,7 +402,7 @@ impl CharacterSheet {
         }
     }
 
-    pub fn death_save_test(&self, kind: ResourceKind) -> Result<(&Skill, i32), String> {
+    pub fn death_save_test(&self, kind: ResourceKind) -> Result<(&Skill, i16), String> {
         if !self.is_downed(kind) {
             return Err(format!(
                 "{} is above zero; no saving throw is required.",
@@ -402,7 +419,7 @@ impl CharacterSheet {
     pub fn register_death_save(&mut self, kind: ResourceKind, success: bool) -> SaveState {
         let state = self.death_saves.get_mut(kind);
         if success {
-            state.dc += rules::DEATH_SAVE_DC_INCREMENT;
+            state.dc = state.dc.saturating_add(rules::DEATH_SAVE_DC_INCREMENT);
         } else {
             state.failed = true;
         }
@@ -512,7 +529,9 @@ impl CharacterSheet {
             }
         }
 
-        let mut seen_skills = Vec::new();
+        // `Vec::contains` made both of these loops quadratic and allocated a
+        // lowercase String per comparison round; a set is linear.
+        let mut seen_skills: HashSet<String> = HashSet::with_capacity(self.skills.len());
         for skill in &self.skills {
             if skill.id.trim().is_empty() {
                 return Err("Every skill needs a stable id.".into());
@@ -536,10 +555,11 @@ impl CharacterSheet {
                     ));
                 }
             }
-            seen_skills.push(key);
+            seen_skills.insert(key);
         }
 
-        let mut seen_entries = Vec::new();
+        let mut seen_entries: HashSet<String> =
+            HashSet::with_capacity(self.abilities.len() + self.inventory.len());
         for entry in self.abilities.iter().chain(self.inventory.iter()) {
             if entry.id.trim().is_empty() {
                 return Err(format!("Entry '{}' needs a stable id.", entry.name));
@@ -551,7 +571,7 @@ impl CharacterSheet {
             if seen_entries.contains(&key) {
                 return Err(format!("Duplicate ability/inventory id: {}", entry.id));
             }
-            seen_entries.push(key);
+            seen_entries.insert(key);
             for effect in &entry.effects {
                 effect
                     .validate()

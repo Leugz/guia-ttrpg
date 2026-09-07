@@ -3,6 +3,7 @@ mod campaign;
 mod commands;
 mod dice;
 mod effects;
+mod error;
 mod history;
 mod logging;
 mod models;

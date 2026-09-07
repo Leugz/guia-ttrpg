@@ -32,6 +32,14 @@ const FADE_MS = 350;
 
 export const TOKEN_DRAG_MIME = 'application/x-guia-token';
 
+interface RulerShape {
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  color: string;
+}
+
 export interface TokenDragPayload {
   sheetId: string | null;
   label: string;
@@ -343,13 +351,35 @@ export function GameBoard({
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   // Renderização Otimista da Régua (Zero Lag)
-  const [localRuler, setLocalRuler] = useState<{
-    start_x: number;
-    start_y: number;
-    end_x: number;
-    end_y: number;
-    color: string;
-  } | null>(null);
+  const [localRuler, setLocalRuler] = useState<RulerShape | null>(null);
+
+  // A ruler drag fires a pointer event per hardware sample — on a high-polling
+  // mouse that is several hundred a second, and each one used to do two
+  // expensive things at once: a `setState` that reconciled the entire Stage
+  // (every token, marker and ping) and a socket write. Token drags in this
+  // same file already solved this by buffering into a `requestAnimationFrame`;
+  // the ruler now does the same, so both the redraw and the network traffic
+  // are capped at one per frame.
+  const rulerFrame = useRef<number | null>(null);
+  const pendingRuler = useRef<RulerShape | null>(null);
+
+  const flushRuler = useCallback(() => {
+    rulerFrame.current = null;
+    const next = pendingRuler.current;
+    if (!next) return;
+    setLocalRuler(next);
+    gameClient.sendToolEvent(clientId, { action: 'ruler', ...next });
+  }, [clientId]);
+
+  const cancelRulerFrame = useCallback(() => {
+    if (rulerFrame.current !== null) {
+      cancelAnimationFrame(rulerFrame.current);
+      rulerFrame.current = null;
+    }
+    pendingRuler.current = null;
+  }, []);
+
+  useEffect(() => cancelRulerFrame, [cancelRulerFrame]);
 
   const keys = useRef(new Set<string>());
 
@@ -497,78 +527,74 @@ export function GameBoard({
     stage.batchDraw();
   }, []);
 
-  const handlePointerDown = useCallback(
-    (e: KonvaEventObject<PointerEvent>) => {
-      if (activeTool === 'select' || !displayed) return;
-      const stage = stageRef.current;
-      if (!stage) return;
-      const pos = stage.getPointerPosition();
-      if (!pos) return;
+  const handlePointerDown = useCallback(() => {
+    if (activeTool === 'select' || !displayed) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
 
-      const transform = stage.getAbsoluteTransform().copy().invert();
-      const mapPos = transform.point(pos);
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const mapPos = transform.point(pos);
 
-      if (
-        mapPos.x < 0 ||
-        mapPos.y < 0 ||
-        mapPos.x > displayed.image.width ||
-        mapPos.y > displayed.image.height
-      ) {
-        return;
-      }
+    if (
+      mapPos.x < 0 ||
+      mapPos.y < 0 ||
+      mapPos.x > displayed.image.width ||
+      mapPos.y > displayed.image.height
+    ) {
+      return;
+    }
 
-      if (activeTool === 'ping') {
-        gameClient.sendToolEvent(clientId, {
-          action: 'ping',
-          x: mapPos.x,
-          y: mapPos.y,
-          color: identityColor,
-        });
-      } else if (activeTool === 'ruler') {
-        const newRuler = {
-          start_x: mapPos.x,
-          start_y: mapPos.y,
-          end_x: mapPos.x,
-          end_y: mapPos.y,
-          color: identityColor,
-        };
-        setLocalRuler(newRuler);
-        gameClient.sendToolEvent(clientId, { action: 'ruler', ...newRuler });
-      }
-    },
-    [activeTool, displayed, clientId, identityColor]
-  );
+    if (activeTool === 'ping') {
+      gameClient.sendToolEvent(clientId, {
+        action: 'ping',
+        x: mapPos.x,
+        y: mapPos.y,
+        color: identityColor,
+      });
+    } else if (activeTool === 'ruler') {
+      const newRuler: RulerShape = {
+        start_x: mapPos.x,
+        start_y: mapPos.y,
+        end_x: mapPos.x,
+        end_y: mapPos.y,
+        color: identityColor,
+      };
+      setLocalRuler(newRuler);
+      gameClient.sendToolEvent(clientId, { action: 'ruler', ...newRuler });
+    }
+  }, [activeTool, displayed, clientId, identityColor]);
 
-  const handlePointerMove = useCallback(
-    (e: KonvaEventObject<PointerEvent>) => {
-      if (activeTool === 'ruler' && localRuler && displayed) {
-        const stage = stageRef.current;
-        if (!stage) return;
-        const pos = stage.getPointerPosition();
-        if (!pos) return;
+  const handlePointerMove = useCallback(() => {
+    if (activeTool !== 'ruler' || !localRuler || !displayed) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
 
-        const transform = stage.getAbsoluteTransform().copy().invert();
-        const mapPos = transform.point(pos);
-        const clampedX = Math.max(0, Math.min(mapPos.x, displayed.image.width));
-        const clampedY = Math.max(
-          0,
-          Math.min(mapPos.y, displayed.image.height)
-        );
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const mapPos = transform.point(pos);
 
-        const updated = { ...localRuler, end_x: clampedX, end_y: clampedY };
-        setLocalRuler(updated);
-        gameClient.sendToolEvent(clientId, { action: 'ruler', ...updated });
-      }
-    },
-    [activeTool, localRuler, displayed, clientId]
-  );
+    pendingRuler.current = {
+      start_x: localRuler.start_x,
+      start_y: localRuler.start_y,
+      end_x: Math.max(0, Math.min(mapPos.x, displayed.image.width)),
+      end_y: Math.max(0, Math.min(mapPos.y, displayed.image.height)),
+      color: localRuler.color,
+    };
+    if (rulerFrame.current === null) {
+      rulerFrame.current = requestAnimationFrame(flushRuler);
+    }
+  }, [activeTool, localRuler, displayed, flushRuler]);
 
   const handlePointerUp = useCallback(() => {
     if (activeTool === 'ruler') {
+      cancelRulerFrame();
       setLocalRuler(null);
       gameClient.sendToolEvent(clientId, { action: 'ruler_clear' });
     }
-  }, [activeTool, clientId]);
+  }, [activeTool, clientId, cancelRulerFrame]);
 
   const tokenSize =
     displayed && displayed.map.grid_size > 0

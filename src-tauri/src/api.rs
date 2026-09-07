@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::campaign;
 use crate::dice::{roll_freeform, roll_pool_entries, RollResult, StepDice};
 use crate::effects::{resolve_test, EntryBehavior, ResolvedPool, TestRequest};
+use crate::error::{AppError, AppResult};
 use crate::models::{
     Attribute, CharacterSheet, ParsedDocument, ResourceChange, ResourceKind, SaveState,
 };
@@ -41,13 +42,13 @@ fn notify_sheet(path: &str, sheet: &CharacterSheet) {
 }
 
 /// Read, mutate, validate, write, announce.
-fn mutate<F>(path: &str, mutation: F) -> Result<CharacterSheet, String>
+fn mutate<F>(path: &str, mutation: F) -> AppResult<CharacterSheet>
 where
-    F: FnOnce(&mut CharacterSheet) -> Result<(), String>,
+    F: FnOnce(&mut CharacterSheet) -> AppResult<()>,
 {
     let mut document = storage::read_document(path)?;
     mutation(&mut document.data)?;
-    document.data.validate()?;
+    document.data.validate().map_err(AppError::Validation)?;
     storage::write_document(path, &document.data, &document.body)?;
     notify_sheet(path, &document.data);
     Ok(document.data)
@@ -57,7 +58,7 @@ where
 // Documents
 // ---------------------------------------------------------------------------
 
-pub fn load_character_sheet(path: &str) -> Result<ParsedDocument, String> {
+pub fn load_character_sheet(path: &str) -> AppResult<ParsedDocument> {
     let document = storage::read_document(path)?;
     for note in &document.notes {
         tracing::info!(%path, note, "character sheet normalized on load");
@@ -65,7 +66,7 @@ pub fn load_character_sheet(path: &str) -> Result<ParsedDocument, String> {
     Ok(document)
 }
 
-pub fn save_character_sheet(path: &str, data: CharacterSheet, body: &str) -> Result<(), String> {
+pub fn save_character_sheet(path: &str, data: CharacterSheet, body: &str) -> AppResult<()> {
     storage::write_document(path, &data, body)?;
     notify_sheet(path, &data);
     Ok(())
@@ -76,9 +77,9 @@ pub fn create_character_sheet(
     name: &str,
     profile: &str,
     occupation: &str,
-) -> Result<ParsedDocument, String> {
+) -> AppResult<ParsedDocument> {
     let sheet = CharacterSheet::new(name, profile, occupation);
-    sheet.validate()?;
+    sheet.validate().map_err(AppError::Validation)?;
     let body = format!(
         "# Histórico do Personagem\n\nAnotações livres de {}.\n",
         sheet.name
@@ -95,17 +96,17 @@ pub fn create_character_sheet(
 // Dice
 // ---------------------------------------------------------------------------
 
-pub fn execute_roll(pool: &[StepDice]) -> Result<RollResult, String> {
-    StepDice::roll_pool(pool)
+pub fn execute_roll(pool: &[StepDice]) -> AppResult<RollResult> {
+    StepDice::roll_pool(pool).map_err(AppError::InvalidInput)
 }
 
-pub fn roll_dice(sides: &[u8], secret: bool) -> Result<RollResult, String> {
-    roll_freeform(sides, secret)
+pub fn roll_dice(sides: &[u8], secret: bool) -> AppResult<RollResult> {
+    roll_freeform(sides, secret).map_err(AppError::InvalidInput)
 }
 
-pub fn preview_test(path: &str, request: &TestRequest) -> Result<ResolvedPool, String> {
+pub fn preview_test(path: &str, request: &TestRequest) -> AppResult<ResolvedPool> {
     let document = storage::read_document(path)?;
-    resolve_test(&document.data, request)
+    Ok(resolve_test(&document.data, request)?)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,7 +115,7 @@ pub struct TestOutcome {
     pub result: RollResult,
 }
 
-pub fn roll_test(path: &str, request: &TestRequest) -> Result<TestOutcome, String> {
+pub fn roll_test(path: &str, request: &TestRequest) -> AppResult<TestOutcome> {
     let document = storage::read_document(path)?;
     let pool = resolve_test(&document.data, request)?;
     let result = roll_pool_entries(&pool.to_pool_entries(), pool.label.clone(), pool.secret)?;
@@ -125,9 +126,9 @@ pub fn roll_test(path: &str, request: &TestRequest) -> Result<TestOutcome, Strin
 // Resources and saving throws
 // ---------------------------------------------------------------------------
 
-pub fn modify_resource(path: &str, resource: &str, delta: i32) -> Result<CharacterSheet, String> {
+pub fn modify_resource(path: &str, resource: &str, delta: i16) -> AppResult<CharacterSheet> {
     let kind = ResourceKind::from_key(resource)
-        .ok_or_else(|| format!("Invalid resource type: {}", resource))?;
+        .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
     mutate(path, |sheet| {
         sheet.apply_resource_delta(kind, delta);
         Ok(())
@@ -139,20 +140,20 @@ pub struct ResourceOutcome {
     pub character: CharacterSheet,
     pub change: ResourceChange,
     pub save_skill: Option<String>,
-    pub save_dc: Option<i32>,
+    pub save_dc: Option<i16>,
 }
 
 pub fn apply_resource_change(
     path: &str,
     resource: &str,
-    delta: i32,
-) -> Result<ResourceOutcome, String> {
+    delta: i16,
+) -> AppResult<ResourceOutcome> {
     let kind = ResourceKind::from_key(resource)
-        .ok_or_else(|| format!("Invalid resource type: {}", resource))?;
+        .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
 
     let mut document = storage::read_document(path)?;
     let change = document.data.apply_resource_delta(kind, delta);
-    document.data.validate()?;
+    document.data.validate().map_err(AppError::Validation)?;
     storage::write_document(path, &document.data, &document.body)?;
     notify_sheet(path, &document.data);
 
@@ -169,18 +170,18 @@ pub fn apply_resource_change(
 pub struct DeathSaveOutcome {
     pub resource: ResourceKind,
     pub result: RollResult,
-    pub dc: i32,
+    pub dc: i16,
     pub success: bool,
     pub state: SaveState,
     pub character: CharacterSheet,
 }
 
-pub fn roll_death_save(path: &str, resource: &str) -> Result<DeathSaveOutcome, String> {
+pub fn roll_death_save(path: &str, resource: &str) -> AppResult<DeathSaveOutcome> {
     let kind = ResourceKind::from_key(resource)
-        .ok_or_else(|| format!("Invalid resource type: {}", resource))?;
+        .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
 
     let mut document = storage::read_document(path)?;
-    let (skill, dc) = document.data.death_save_test(kind)?;
+    let (skill, dc) = document.data.death_save_test(kind).map_err(AppError::Conflict)?;
 
     let skill_id = skill.id.clone();
     let skill_name = skill.name.clone();
@@ -195,10 +196,12 @@ pub fn roll_death_save(path: &str, resource: &str) -> Result<DeathSaveOutcome, S
 
     let label = format!("Salvamento de {} (CD {})", skill_name, dc);
     let result = roll_pool_entries(&pool.to_pool_entries(), label, false)?;
-    let success = result.total_sum as i32 >= dc;
+    // Widen rather than narrow: `total_sum` is a `u32` and a narrowing cast
+    // would silently wrap on an absurd pool.
+    let success = result.total_sum as i32 >= i32::from(dc);
 
     let state = document.data.register_death_save(kind, success);
-    document.data.validate()?;
+    document.data.validate().map_err(AppError::Validation)?;
     storage::write_document(path, &document.data, &document.body)?;
     notify_sheet(path, &document.data);
 
@@ -220,18 +223,18 @@ pub fn set_attribute(
     path: &str,
     attribute: &str,
     value: StepDice,
-) -> Result<CharacterSheet, String> {
+) -> AppResult<CharacterSheet> {
     let attribute = Attribute::from_key(attribute)
-        .ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
+        .ok_or_else(|| AppError::invalid_input(format!("Invalid attribute: {}", attribute)))?;
     mutate(path, |sheet| {
         sheet.attributes.set(attribute, value);
         Ok(())
     })
 }
 
-pub fn step_attribute(path: &str, attribute: &str, steps: i32) -> Result<CharacterSheet, String> {
+pub fn step_attribute(path: &str, attribute: &str, steps: i32) -> AppResult<CharacterSheet> {
     let attribute = Attribute::from_key(attribute)
-        .ok_or_else(|| format!("Invalid attribute: {}", attribute))?;
+        .ok_or_else(|| AppError::invalid_input(format!("Invalid attribute: {}", attribute)))?;
     mutate(path, |sheet| {
         let stepped = sheet.attributes.get(attribute).apply_steps(steps);
         sheet.attributes.set(attribute, stepped);
@@ -243,30 +246,34 @@ pub fn set_skill_value(
     path: &str,
     skill_id: &str,
     value: StepDice,
-) -> Result<CharacterSheet, String> {
-    mutate(path, |sheet| sheet.set_skill_value(skill_id, value))
+) -> AppResult<CharacterSheet> {
+    mutate(path, |sheet| {
+        sheet
+            .set_skill_value(skill_id, value)
+            .map_err(AppError::NotFound)
+    })
 }
 
-pub fn step_skill(path: &str, skill_id: &str, steps: i32) -> Result<CharacterSheet, String> {
+pub fn step_skill(path: &str, skill_id: &str, steps: i32) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
         let skill = sheet
             .skill_mut(skill_id)
-            .ok_or_else(|| format!("Unknown skill id: {}", skill_id))?;
+            .ok_or_else(|| AppError::not_found(format!("Unknown skill id: {}", skill_id)))?;
         skill.value = skill.value.apply_steps(steps);
         Ok(())
     })
 }
 
-pub fn toggle_entry(path: &str, entry_id: &str, active: bool) -> Result<CharacterSheet, String> {
+pub fn toggle_entry(path: &str, entry_id: &str, active: bool) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
-        let entry = sheet
-            .entry_mut(entry_id)
-            .ok_or_else(|| format!("Unknown ability or inventory id: {}", entry_id))?;
+        let entry = sheet.entry_mut(entry_id).ok_or_else(|| {
+            AppError::not_found(format!("Unknown ability or inventory id: {}", entry_id))
+        })?;
         if matches!(entry.behavior(), EntryBehavior::Trigger) {
-            return Err(format!(
+            return Err(AppError::conflict(format!(
                 "'{}' only has trigger-driven effects and cannot be toggled.",
                 entry.name
-            ));
+            )));
         }
         entry.active = active;
         Ok(())
@@ -288,17 +295,17 @@ pub fn list_default_skills() -> Vec<SkillDefinition> {
 pub fn apply_builtin_effect(
     path: &str,
     effect_id: &str,
-    magnitude: Option<u32>,
-) -> Result<CharacterSheet, String> {
+    magnitude: Option<u8>,
+) -> AppResult<CharacterSheet> {
     let definition = rules::builtin_definition(effect_id)
-        .ok_or_else(|| format!("Unknown built-in effect: {}", effect_id))?;
+        .ok_or_else(|| AppError::not_found(format!("Unknown built-in effect: {}", effect_id)))?;
     if definition.per_test {
-        return Err(format!(
+        return Err(AppError::conflict(format!(
             "'{}' is applied to a single test and is not a standing effect.",
             definition.name
-        ));
+        )));
     }
-    let effect = rules::builtin(effect_id, magnitude)?;
+    let effect = rules::builtin(effect_id, magnitude).map_err(AppError::InvalidInput)?;
     mutate(path, |sheet| {
         sheet
             .active_effects
@@ -308,14 +315,17 @@ pub fn apply_builtin_effect(
     })
 }
 
-pub fn remove_active_effect(path: &str, effect_id: &str) -> Result<CharacterSheet, String> {
+pub fn remove_active_effect(path: &str, effect_id: &str) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
         let before = sheet.active_effects.len();
         sheet
             .active_effects
             .retain(|existing| !existing.id.eq_ignore_ascii_case(effect_id));
         if sheet.active_effects.len() == before {
-            return Err(format!("No active effect with id: {}", effect_id));
+            return Err(AppError::not_found(format!(
+                "No active effect with id: {}",
+                effect_id
+            )));
         }
         Ok(())
     })
@@ -331,12 +341,11 @@ pub struct EntrySummary {
     pub effects: Vec<String>,
 }
 
-pub fn describe_entry(path: &str, entry_id: &str) -> Result<EntrySummary, String> {
+pub fn describe_entry(path: &str, entry_id: &str) -> AppResult<EntrySummary> {
     let document = storage::read_document(path)?;
-    let entry = document
-        .data
-        .entry(entry_id)
-        .ok_or_else(|| format!("Unknown ability or inventory id: {}", entry_id))?;
+    let entry = document.data.entry(entry_id).ok_or_else(|| {
+        AppError::not_found(format!("Unknown ability or inventory id: {}", entry_id))
+    })?;
     Ok(EntrySummary {
         id: entry.id.clone(),
         name: entry.name.clone(),
@@ -351,7 +360,7 @@ pub fn describe_entry(path: &str, entry_id: &str) -> Result<EntrySummary, String
 // Multi-sheet access
 // ---------------------------------------------------------------------------
 
-pub fn grant_sheet_access(path: &str, reference: &str) -> Result<CharacterSheet, String> {
+pub fn grant_sheet_access(path: &str, reference: &str) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
         if !sheet
             .accessible_sheets
@@ -364,7 +373,7 @@ pub fn grant_sheet_access(path: &str, reference: &str) -> Result<CharacterSheet,
     })
 }
 
-pub fn revoke_sheet_access(path: &str, reference: &str) -> Result<CharacterSheet, String> {
+pub fn revoke_sheet_access(path: &str, reference: &str) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
         sheet
             .accessible_sheets
@@ -649,9 +658,17 @@ mod tests {
 
 use crate::models::Handout;
 
-pub fn toggle_handout_public(root: &Path, handout_id: &str) -> Result<Handout, String> {
+/// Read a handout's Markdown file, naming it in any failure. The four call
+/// sites below all used `map_err(|e| e.to_string())`, which produced a bare
+/// "No such file or directory" with nothing to identify it by.
+fn read_handout_file(path: &Path, handout_id: &str) -> AppResult<String> {
+    std::fs::read_to_string(path)
+        .map_err(|error| AppError::io(format!("Failed to read handout '{}'", handout_id), error))
+}
+
+pub fn toggle_handout_public(root: &Path, handout_id: &str) -> AppResult<Handout> {
     let path = campaign::resolve_handout(root, handout_id)?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = read_handout_file(&path, handout_id)?;
     let mut handout = storage::parse_handout(handout_id, &raw)?;
 
     handout.is_public = !handout.is_public;
@@ -673,9 +690,9 @@ pub fn toggle_handout_share(
     root: &Path,
     handout_id: &str,
     target_client_id: &str,
-) -> Result<Handout, String> {
+) -> AppResult<Handout> {
     let path = campaign::resolve_handout(root, handout_id)?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = read_handout_file(&path, handout_id)?;
     let mut handout = storage::parse_handout(handout_id, &raw)?;
 
     let target = target_client_id.to_string();
@@ -698,9 +715,9 @@ pub fn toggle_handout_share(
     Ok(handout)
 }
 
-pub fn open_handout_for_all(root: &Path, handout_id: &str) -> Result<Handout, String> {
+pub fn open_handout_for_all(root: &Path, handout_id: &str) -> AppResult<Handout> {
     let path = campaign::resolve_handout(root, handout_id)?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = read_handout_file(&path, handout_id)?;
     let mut handout = storage::parse_handout(handout_id, &raw)?;
 
     handout.is_public = true; // force — not a toggle
@@ -729,9 +746,9 @@ pub fn open_handout_for_player(
     root: &Path,
     handout_id: &str,
     target_client_id: &str,
-) -> Result<Handout, String> {
+) -> AppResult<Handout> {
     let path = campaign::resolve_handout(root, handout_id)?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = read_handout_file(&path, handout_id)?;
     let mut handout = storage::parse_handout(handout_id, &raw)?;
 
     let target = target_client_id.to_string();
@@ -772,18 +789,19 @@ pub struct HandoutAsset {
     pub data_base64: String,
 }
 
-pub fn get_handout_asset(root: &Path, handout_id: &str) -> Result<HandoutAsset, String> {
+pub fn get_handout_asset(root: &Path, handout_id: &str) -> AppResult<HandoutAsset> {
     let path = campaign::resolve_handout(root, handout_id)?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = read_handout_file(&path, handout_id)?;
     let handout = storage::parse_handout(handout_id, &raw)?;
 
     if handout.content_type == "text" {
-        return Err("This handout has no image asset.".into());
+        return Err(AppError::conflict("This handout has no image asset."));
     }
 
     let asset_path = storage::resolve_asset_within(root, &handout.content)?;
-    let bytes = std::fs::read(&asset_path)
-        .map_err(|e| format!("Failed to read image at {}: {}", asset_path.display(), e))?;
+    let bytes = std::fs::read(&asset_path).map_err(|error| {
+        AppError::io(format!("Failed to read image at {}", asset_path.display()), error)
+    })?;
 
     Ok(HandoutAsset {
         mime_type: storage::mime_for_asset(&asset_path).to_string(),
@@ -809,18 +827,19 @@ pub struct AssetPayload {
     pub data_base64: String,
 }
 
-fn read_asset(root: &Path, reference: &str) -> Result<AssetPayload, String> {
+fn read_asset(root: &Path, reference: &str) -> AppResult<AssetPayload> {
     let asset_path = storage::resolve_asset_within(root, reference)?;
-    let bytes = std::fs::read(&asset_path)
-        .map_err(|e| format!("Failed to read image at {}: {}", asset_path.display(), e))?;
+    let bytes = std::fs::read(&asset_path).map_err(|error| {
+        AppError::io(format!("Failed to read image at {}", asset_path.display()), error)
+    })?;
     Ok(AssetPayload {
         mime_type: storage::mime_for_asset(&asset_path).to_string(),
         data_base64: storage::base64_encode(&bytes),
     })
 }
 
-pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
-    campaign::list_maps(root)
+pub fn list_maps(root: &Path) -> AppResult<Vec<MapDefinition>> {
+    Ok(campaign::list_maps(root)?)
 }
 
 /// Reveal one map to the whole table.
@@ -828,10 +847,13 @@ pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
 /// Activation is exclusive: every other map is deactivated in the same pass,
 /// so "which map are we looking at" has exactly one answer and reconnecting
 /// clients read it off disk rather than being told by another client.
-pub fn set_active_map(root: &Path, map_id: &str) -> Result<Vec<MapDefinition>, String> {
+pub fn set_active_map(root: &Path, map_id: &str) -> AppResult<Vec<MapDefinition>> {
     let maps = campaign::list_maps(root)?;
     if !maps.iter().any(|map| map.id == map_id) {
-        return Err(format!("Map '{}' does not exist in this campaign.", map_id));
+        return Err(AppError::not_found(format!(
+            "Map '{}' does not exist in this campaign.",
+            map_id
+        )));
     }
 
     let mut updated = Vec::with_capacity(maps.len());
@@ -841,8 +863,9 @@ pub fn set_active_map(root: &Path, map_id: &str) -> Result<Vec<MapDefinition>, S
         if map.is_active != should_be_active {
             map.is_active = should_be_active;
             let path = campaign::resolve_map(root, &map.id)?;
-            let raw = std::fs::read_to_string(&path)
-                .map_err(|e| format!("Failed to read map '{}': {}", map.id, e))?;
+            let raw = std::fs::read_to_string(&path).map_err(|error| {
+                AppError::io(format!("Failed to read map '{}'", map.id), error)
+            })?;
             let rendered = storage::render_map(&map, &storage::document_body(&raw))?;
             storage::write_atomic(&path, &rendered)?;
         }
@@ -860,10 +883,10 @@ pub fn set_active_map(root: &Path, map_id: &str) -> Result<Vec<MapDefinition>, S
 }
 
 /// The bytes of a map image, for a client that cannot reach the host's disk.
-pub fn get_map_asset(root: &Path, map_id: &str) -> Result<AssetPayload, String> {
+pub fn get_map_asset(root: &Path, map_id: &str) -> AppResult<AssetPayload> {
     let path = campaign::resolve_map(root, map_id)?;
     let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read map '{}': {}", map_id, e))?;
+        .map_err(|error| AppError::io(format!("Failed to read map '{}'", map_id), error))?;
     let map = storage::parse_map(map_id, &raw)?;
     read_asset(root, &map.image)
 }
@@ -871,23 +894,26 @@ pub fn get_map_asset(root: &Path, map_id: &str) -> Result<AssetPayload, String> 
 /// The bytes of a character's portrait, which is what their token is drawn
 /// with. Returns an error when the sheet declares no portrait, and the caller
 /// falls back to initials on a coloured chip.
-pub fn get_sheet_portrait(root: &Path, sheet_id: &str) -> Result<AssetPayload, String> {
+pub fn get_sheet_portrait(root: &Path, sheet_id: &str) -> AppResult<AssetPayload> {
     let path = campaign::resolve_sheet(root, sheet_id)?;
     let path = path
         .to_str()
-        .ok_or_else(|| "Sheet path is not valid UTF-8.".to_string())?;
+        .ok_or_else(|| AppError::invalid_input("Sheet path is not valid UTF-8."))?;
     let document = load_character_sheet(path)?;
     let Some(portrait) = document.data.portrait.as_deref() else {
-        return Err(format!("Sheet '{}' has no portrait.", sheet_id));
+        return Err(AppError::not_found(format!(
+            "Sheet '{}' has no portrait.",
+            sheet_id
+        )));
     };
     read_asset(root, portrait)
 }
 
-pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> Result<AssetPayload, String> {
+pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> AppResult<AssetPayload> {
     let path = campaign::resolve_sheet(root, sheet_id)?;
     let path = path
         .to_str()
-        .ok_or_else(|| "Sheet path is not valid UTF-8.".to_string())?;
+        .ok_or_else(|| AppError::invalid_input("Sheet path is not valid UTF-8."))?;
     let document = load_character_sheet(path)?;
 
     // Se tiver 'token_image', usa ele. Se não, usa o 'portrait' como fallback!
@@ -896,7 +922,10 @@ pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> Result<AssetPayload
     } else if let Some(p) = document.data.portrait.as_deref() {
         p
     } else {
-        return Err(format!("Sheet '{}' has no token or portrait.", sheet_id));
+        return Err(AppError::not_found(format!(
+            "Sheet '{}' has no token or portrait.",
+            sheet_id
+        )));
     };
 
     read_asset(root, asset_path)

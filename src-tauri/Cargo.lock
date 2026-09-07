@@ -1356,6 +1356,7 @@ dependencies = [
  "serde_yaml",
  "tauri",
  "tauri-build",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "tracing-appender",

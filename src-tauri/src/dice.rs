@@ -1,6 +1,7 @@
 use rand::Rng;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 use std::fmt;
 
 pub const STEP_LADDER: [u8; 5] = [4, 6, 8, 10, 12];
@@ -10,6 +11,24 @@ pub const COUNTED_DICE: usize = 3;
 
 pub const CRITICAL_SUCCESS_THRESHOLD: u32 = 6;
 pub const CRITICAL_SUCCESS_COUNT: usize = 2;
+
+/// `d4`, `d6`, ... as borrowed statics.
+///
+/// A roll used to `format!("d{}", sides)` once per die, then clone that String
+/// again into every `RolledDie`. There are exactly six possible answers and
+/// they are known at compile time, so a pool of four dice now costs zero
+/// allocations for its source labels instead of eight.
+pub fn notation_for_sides(sides: u8) -> &'static str {
+    match sides {
+        4 => "d4",
+        6 => "d6",
+        8 => "d8",
+        10 => "d10",
+        12 => "d12",
+        20 => "d20",
+        _ => "d?",
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StepDice {
@@ -93,14 +112,14 @@ impl StepDice {
         StepDice::LADDER[target as usize]
     }
 
-    pub fn notation(self) -> String {
-        format!("d{}", self.sides())
+    pub fn notation(self) -> &'static str {
+        notation_for_sides(self.sides())
     }
 }
 
 impl fmt::Display for StepDice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.notation())
+        f.write_str(self.notation())
     }
 }
 
@@ -186,8 +205,8 @@ impl Die {
         self.0
     }
 
-    pub fn notation(self) -> String {
-        format!("d{}", self.0)
+    pub fn notation(self) -> &'static str {
+        notation_for_sides(self.0)
     }
 }
 
@@ -215,7 +234,10 @@ pub struct RolledDie {
     pub sides: u8,
     pub value: u32,
     pub counted: bool,
-    pub source: String,
+    /// Borrowed for the `dN` labels a free roll produces, owned only for the
+    /// ability and skill names a test pulls off a sheet. Serialises as a plain
+    /// string either way, so the wire format is unchanged.
+    pub source: Cow<'static, str>,
     pub is_highest: bool,
     pub is_lowest: bool,
 }
@@ -239,11 +261,11 @@ pub struct RollResult {
 #[derive(Debug, Clone)]
 pub struct PoolEntry {
     pub die: Die,
-    pub source: String,
+    pub source: Cow<'static, str>,
 }
 
 impl PoolEntry {
-    pub fn new(die: impl Into<Die>, source: impl Into<String>) -> Self {
+    pub fn new(die: impl Into<Die>, source: impl Into<Cow<'static, str>>) -> Self {
         PoolEntry {
             die: die.into(),
             source: source.into(),
@@ -278,26 +300,26 @@ pub fn roll_pool_entries_with<R: Rng + ?Sized>(
         ));
     }
 
-    let values: Vec<u32> = entries
-        .iter()
-        .map(|entry| rng.gen_range(1..=entry.die.sides() as u32))
-        .collect();
+    let mut values: Vec<u32> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        values.push(rng.gen_range(1..=entry.die.sides() as u32));
+    }
 
     let resolution = resolve_values(&values);
 
-    let dice = entries
-        .iter()
-        .zip(values.iter())
-        .enumerate()
-        .map(|(index, (entry, &value))| RolledDie {
+    let mut dice: Vec<RolledDie> = Vec::with_capacity(entries.len());
+    for (index, (entry, &value)) in entries.iter().zip(values.iter()).enumerate() {
+        dice.push(RolledDie {
             sides: entry.die.sides(),
             value,
             counted: resolution.counted.contains(&index),
+            // Free for the borrowed `dN` labels; only the owned sheet-derived
+            // names still copy, and those are at most two per pool.
             source: entry.source.clone(),
             is_highest: index == resolution.highest_index,
             is_lowest: index == resolution.lowest_index,
-        })
-        .collect();
+        });
+    }
 
     Ok(RollResult {
         dice,
@@ -335,12 +357,28 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
     // Sort descending by value; break ties by retaining original insertion order
     ranked.sort_by(|&a, &b| values[b].cmp(&values[a]).then(a.cmp(&b)));
 
-    let counted: Vec<usize> = ranked.iter().copied().take(COUNTED_DICE).collect();
+    let mut counted: Vec<usize> = Vec::with_capacity(COUNTED_DICE.min(ranked.len()));
+    counted.extend(ranked.iter().copied().take(COUNTED_DICE));
     let dropped = ranked.get(COUNTED_DICE).copied();
 
     let total: u32 = counted.iter().map(|&i| values[i]).sum();
-    let highest = *values.iter().max().expect("pool is non-empty");
-    let lowest = *values.iter().min().expect("pool is non-empty");
+
+    // One pass instead of four: `max`, `min` and the two `position` scans all
+    // walked the pool separately.
+    let mut highest = values[0];
+    let mut lowest = values[0];
+    let mut highest_index = 0usize;
+    let mut lowest_index = 0usize;
+    for (index, &value) in values.iter().enumerate().skip(1) {
+        if value > highest {
+            highest = value;
+            highest_index = index;
+        }
+        if value < lowest {
+            lowest = value;
+            lowest_index = index;
+        }
+    }
 
     let mut is_critical_success = false;
     for &v in values {
@@ -353,8 +391,8 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
     }
 
     Resolution {
-        highest_index: values.iter().position(|&v| v == highest).unwrap(),
-        lowest_index: values.iter().position(|&v| v == lowest).unwrap(),
+        highest_index,
+        lowest_index,
         counted,
         dropped,
         total,
@@ -371,6 +409,7 @@ impl StepDice {
             .iter()
             .map(|&die| PoolEntry::new(die, die.notation()))
             .collect();
+
         roll_pool_entries(&entries, "Rolagem", false)
     }
 }
@@ -381,8 +420,8 @@ pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
         return Err("Dice pool cannot be empty.".into());
     }
 
-    let mut dice = Vec::new();
-    let mut rolls = Vec::new();
+    let mut dice = Vec::with_capacity(sides.len());
+    let mut rolls = Vec::with_capacity(sides.len());
     let mut total_sum = 0;
     let mut highest = 0;
     let mut lowest = u32::MAX;
@@ -410,7 +449,7 @@ pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
             sides: side,
             value,
             counted: true,
-            source: format!("d{}", side),
+            source: Cow::Borrowed(notation_for_sides(side)),
             is_highest: index == highest_index,
             is_lowest: index == lowest_index,
         });
@@ -427,11 +466,15 @@ pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
         }
     }
 
-    let label = sides
-        .iter()
-        .map(|s| format!("d{}", s))
-        .collect::<Vec<_>>()
-        .join(" + ");
+    // Built into one buffer rather than a Vec<String> that is immediately
+    // joined and thrown away.
+    let mut label = String::with_capacity(sides.len() * 6);
+    for (index, &side) in sides.iter().enumerate() {
+        if index > 0 {
+            label.push_str(" + ");
+        }
+        label.push_str(notation_for_sides(side));
+    }
 
     Ok(RollResult {
         dice,
@@ -458,7 +501,7 @@ mod tests {
     fn entries(sides: &[u8]) -> Vec<PoolEntry> {
         sides
             .iter()
-            .map(|&s| PoolEntry::new(Die::new(s).unwrap(), format!("d{}", s)))
+            .map(|&s| PoolEntry::new(Die::new(s).unwrap(), notation_for_sides(s)))
             .collect()
     }
 

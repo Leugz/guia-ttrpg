@@ -12,6 +12,7 @@ use crate::api;
 use crate::campaign;
 use crate::dice::{RollResult, StepDice};
 use crate::effects::{ResolvedPool, TestRequest};
+use crate::error::{AppError, AppResult};
 use crate::history;
 use crate::models::{CharacterSheet, ParsedDocument};
 use crate::network::protocol::SheetSummary;
@@ -22,8 +23,8 @@ use crate::storage;
 
 pub use crate::api::{DeathSaveOutcome, EntrySummary, ResourceOutcome, TestOutcome};
 
-fn shared_state() -> Result<Arc<AppState>, String> {
-    state::hub().ok_or_else(|| "Application state is not initialised.".to_string())
+fn shared_state() -> AppResult<Arc<AppState>> {
+    state::hub().ok_or_else(|| AppError::state("Application state is not initialised."))
 }
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@ fn shared_state() -> Result<Arc<AppState>, String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn load_character_sheet(path: String) -> Result<ParsedDocument, String> {
+pub fn load_character_sheet(path: String) -> AppResult<ParsedDocument> {
     api::load_character_sheet(&path)
 }
 
@@ -40,7 +41,7 @@ pub fn save_character_sheet(
     path: String,
     data: CharacterSheet,
     body: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     api::save_character_sheet(&path, data, &body)
 }
 
@@ -50,7 +51,7 @@ pub fn create_character_sheet(
     name: String,
     profile: String,
     occupation: String,
-) -> Result<ParsedDocument, String> {
+) -> AppResult<ParsedDocument> {
     api::create_character_sheet(&path, &name, &profile, &occupation)
 }
 
@@ -59,22 +60,22 @@ pub fn create_character_sheet(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn execute_roll(pool: Vec<StepDice>) -> Result<RollResult, String> {
+pub fn execute_roll(pool: Vec<StepDice>) -> AppResult<RollResult> {
     api::execute_roll(&pool)
 }
 
 #[tauri::command]
-pub fn roll_dice(sides: Vec<u8>, secret: Option<bool>) -> Result<RollResult, String> {
+pub fn roll_dice(sides: Vec<u8>, secret: Option<bool>) -> AppResult<RollResult> {
     api::roll_dice(&sides, secret.unwrap_or(false))
 }
 
 #[tauri::command]
-pub fn preview_test(path: String, request: TestRequest) -> Result<ResolvedPool, String> {
+pub fn preview_test(path: String, request: TestRequest) -> AppResult<ResolvedPool> {
     api::preview_test(&path, &request)
 }
 
 #[tauri::command]
-pub fn roll_test(path: String, request: TestRequest) -> Result<TestOutcome, String> {
+pub fn roll_test(path: String, request: TestRequest) -> AppResult<TestOutcome> {
     api::roll_test(&path, &request)
 }
 
@@ -86,8 +87,8 @@ pub fn roll_test(path: String, request: TestRequest) -> Result<TestOutcome, Stri
 pub fn modify_resource(
     path: String,
     resource: String,
-    delta: i32,
-) -> Result<CharacterSheet, String> {
+    delta: i16,
+) -> AppResult<CharacterSheet> {
     api::modify_resource(&path, &resource, delta)
 }
 
@@ -95,13 +96,13 @@ pub fn modify_resource(
 pub fn apply_resource_change(
     path: String,
     resource: String,
-    delta: i32,
-) -> Result<ResourceOutcome, String> {
+    delta: i16,
+) -> AppResult<ResourceOutcome> {
     api::apply_resource_change(&path, &resource, delta)
 }
 
 #[tauri::command]
-pub fn roll_death_save(path: String, resource: String) -> Result<DeathSaveOutcome, String> {
+pub fn roll_death_save(path: String, resource: String) -> AppResult<DeathSaveOutcome> {
     api::roll_death_save(&path, &resource)
 }
 
@@ -114,7 +115,7 @@ pub fn set_attribute(
     path: String,
     attribute: String,
     value: StepDice,
-) -> Result<CharacterSheet, String> {
+) -> AppResult<CharacterSheet> {
     api::set_attribute(&path, &attribute, value)
 }
 
@@ -123,7 +124,7 @@ pub fn step_attribute(
     path: String,
     attribute: String,
     steps: i32,
-) -> Result<CharacterSheet, String> {
+) -> AppResult<CharacterSheet> {
     api::step_attribute(&path, &attribute, steps)
 }
 
@@ -132,12 +133,12 @@ pub fn set_skill_value(
     path: String,
     skill_id: String,
     value: StepDice,
-) -> Result<CharacterSheet, String> {
+) -> AppResult<CharacterSheet> {
     api::set_skill_value(&path, &skill_id, value)
 }
 
 #[tauri::command]
-pub fn step_skill(path: String, skill_id: String, steps: i32) -> Result<CharacterSheet, String> {
+pub fn step_skill(path: String, skill_id: String, steps: i32) -> AppResult<CharacterSheet> {
     api::step_skill(&path, &skill_id, steps)
 }
 
@@ -146,7 +147,7 @@ pub fn toggle_entry(
     path: String,
     entry_id: String,
     active: bool,
-) -> Result<CharacterSheet, String> {
+) -> AppResult<CharacterSheet> {
     api::toggle_entry(&path, &entry_id, active)
 }
 
@@ -168,18 +169,18 @@ pub fn list_default_skills() -> Vec<SkillDefinition> {
 pub fn apply_builtin_effect(
     path: String,
     effect_id: String,
-    magnitude: Option<u32>,
-) -> Result<CharacterSheet, String> {
+    magnitude: Option<u8>,
+) -> AppResult<CharacterSheet> {
     api::apply_builtin_effect(&path, &effect_id, magnitude)
 }
 
 #[tauri::command]
-pub fn remove_active_effect(path: String, effect_id: String) -> Result<CharacterSheet, String> {
+pub fn remove_active_effect(path: String, effect_id: String) -> AppResult<CharacterSheet> {
     api::remove_active_effect(&path, &effect_id)
 }
 
 #[tauri::command]
-pub fn describe_entry(path: String, entry_id: String) -> Result<EntrySummary, String> {
+pub fn describe_entry(path: String, entry_id: String) -> AppResult<EntrySummary> {
     api::describe_entry(&path, &entry_id)
 }
 
@@ -188,12 +189,12 @@ pub fn describe_entry(path: String, entry_id: String) -> Result<EntrySummary, St
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn grant_sheet_access(path: String, reference: String) -> Result<CharacterSheet, String> {
+pub fn grant_sheet_access(path: String, reference: String) -> AppResult<CharacterSheet> {
     api::grant_sheet_access(&path, &reference)
 }
 
 #[tauri::command]
-pub fn revoke_sheet_access(path: String, reference: String) -> Result<CharacterSheet, String> {
+pub fn revoke_sheet_access(path: String, reference: String) -> AppResult<CharacterSheet> {
     api::revoke_sheet_access(&path, &reference)
 }
 
@@ -211,11 +212,11 @@ pub fn create_game_instance(
     app: tauri::AppHandle,
     game_id: String,
     act_id: String,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let path = campaign::ensure_instance(&app, &game_id, &act_id)?;
     path.to_str()
         .map(str::to_string)
-        .ok_or_else(|| "Game instance path is not valid UTF-8.".to_string())
+        .ok_or_else(|| AppError::invalid_input("Game instance path is not valid UTF-8."))
 }
 
 #[tauri::command]
@@ -223,7 +224,7 @@ pub fn delete_game_instance(
     app: tauri::AppHandle,
     game_id: String,
     act_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     campaign::delete_instance(&app, &game_id, &act_id)?;
     if let Ok(state) = shared_state() {
         let _ = history::clear(&state.db_path, &game_id);
@@ -234,8 +235,8 @@ pub fn delete_game_instance(
 /// List the characters a table offers. The selection screen used to hardcode
 /// the Act 1 party, which meant a joined client had no way to discover them.
 #[tauri::command]
-pub fn list_game_sheets(game_path: String) -> Result<Vec<SheetSummary>, String> {
-    campaign::list_sheets(&PathBuf::from(game_path))
+pub fn list_game_sheets(game_path: String) -> AppResult<Vec<SheetSummary>> {
+    Ok(campaign::list_sheets(&PathBuf::from(game_path))?)
 }
 
 /// Read a game's saved board.
@@ -245,7 +246,7 @@ pub fn list_game_sheets(game_path: String) -> Result<Vec<SheetSummary>, String> 
 /// Opening the LAN afterwards therefore carries the pieces straight over
 /// instead of starting from an empty map.
 #[tauri::command]
-pub fn load_board(game_path: String) -> Result<Vec<crate::models::MapToken>, String> {
+pub fn load_board(game_path: String) -> AppResult<Vec<crate::models::MapToken>> {
     Ok(storage::read_board(std::path::Path::new(&game_path)))
 }
 
@@ -253,8 +254,11 @@ pub fn load_board(game_path: String) -> Result<Vec<crate::models::MapToken>, Str
 pub fn save_board(
     game_path: String,
     tokens: Vec<crate::models::MapToken>,
-) -> Result<(), String> {
-    storage::write_board(std::path::Path::new(&game_path), &tokens)
+) -> AppResult<()> {
+    Ok(storage::write_board(
+        std::path::Path::new(&game_path),
+        &tokens,
+    )?)
 }
 
 /// Start hosting. Returns the address to share with players.
@@ -263,13 +267,13 @@ pub async fn start_hosting(
     game_id: String,
     game_path: String,
     client_id: String,
-) -> Result<HostInfo, String> {
+) -> AppResult<HostInfo> {
     let state = shared_state()?;
-    server::start(state, game_id, PathBuf::from(game_path), client_id).await
+    Ok(server::start(state, game_id, PathBuf::from(game_path), client_id).await?)
 }
 
 #[tauri::command]
-pub async fn stop_hosting() -> Result<(), String> {
+pub async fn stop_hosting() -> AppResult<()> {
     let state = shared_state()?;
     server::stop(state, "O mestre encerrou a sessão.").await;
     Ok(())
@@ -277,7 +281,7 @@ pub async fn stop_hosting() -> Result<(), String> {
 
 /// The address players should dial, or `null` when not hosting.
 #[tauri::command]
-pub async fn host_address() -> Result<Option<String>, String> {
+pub async fn host_address() -> AppResult<Option<String>> {
     let state = shared_state()?;
     let session = state.session.read().await;
     Ok(session.as_ref().map(|session| session.address.clone()))
@@ -287,7 +291,7 @@ pub async fn host_address() -> Result<Option<String>, String> {
 pub async fn toggle_handout_public(
     game_root: String,
     handout_id: String,
-) -> Result<crate::models::Handout, String> {
+) -> AppResult<crate::models::Handout> {
     api::toggle_handout_public(std::path::Path::new(&game_root), &handout_id)
 }
 
@@ -296,7 +300,7 @@ pub async fn toggle_handout_share(
     game_root: String,
     handout_id: String,
     target_client_id: String,
-) -> Result<crate::models::Handout, String> {
+) -> AppResult<crate::models::Handout> {
     api::toggle_handout_share(
         std::path::Path::new(&game_root),
         &handout_id,
@@ -305,15 +309,17 @@ pub async fn toggle_handout_share(
 }
 
 #[tauri::command]
-pub fn list_game_handouts(game_path: String) -> Result<Vec<crate::models::Handout>, String> {
-    crate::campaign::list_handouts(std::path::Path::new(&game_path))
+pub fn list_game_handouts(game_path: String) -> AppResult<Vec<crate::models::Handout>> {
+    Ok(crate::campaign::list_handouts(std::path::Path::new(
+        &game_path,
+    ))?)
 }
 
 #[tauri::command]
 pub async fn open_handout_for_all(
     game_root: String,
     handout_id: String,
-) -> Result<crate::models::Handout, String> {
+) -> AppResult<crate::models::Handout> {
     api::open_handout_for_all(std::path::Path::new(&game_root), &handout_id)
 }
 
@@ -322,7 +328,7 @@ pub async fn open_handout_for_player(
     game_root: String,
     handout_id: String,
     target_client_id: String,
-) -> Result<crate::models::Handout, String> {
+) -> AppResult<crate::models::Handout> {
     api::open_handout_for_player(
         std::path::Path::new(&game_root),
         &handout_id,
@@ -338,7 +344,7 @@ pub async fn open_handout_for_player(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn list_game_maps(game_path: String) -> Result<Vec<crate::models::MapDefinition>, String> {
+pub fn list_game_maps(game_path: String) -> AppResult<Vec<crate::models::MapDefinition>> {
     api::list_maps(std::path::Path::new(&game_path))
 }
 
@@ -346,6 +352,6 @@ pub fn list_game_maps(game_path: String) -> Result<Vec<crate::models::MapDefinit
 pub async fn set_active_map(
     game_root: String,
     map_id: String,
-) -> Result<Vec<crate::models::MapDefinition>, String> {
+) -> AppResult<Vec<crate::models::MapDefinition>> {
     api::set_active_map(std::path::Path::new(&game_root), &map_id)
 }
