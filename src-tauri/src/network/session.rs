@@ -180,6 +180,13 @@ async fn handle_text(
         } => {
             let sender = client_id.as_deref().unwrap_or("");
             if state.is_gm(sender).await {
+                {
+                    let mut session_lock = state.session.write().await;
+                    if let Some(session) = session_lock.as_mut() {
+                        session.jukebox = Some(payload.clone());
+                    }
+                }
+
                 let msg = ServerMessage::JukeboxSync { payload };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     state.send(Target::All, json);
@@ -429,10 +436,14 @@ pub async fn broadcast_roster(state: &Arc<AppState>) {
 }
 
 async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
-    let (game_id, root) = {
+    let (game_id, root, jukebox) = {
         let session = state.session.read().await;
         match session.as_ref() {
-            Some(session) => (session.game_id.clone(), session.root.clone()),
+            Some(session) => (
+                session.game_id.clone(),
+                session.root.clone(),
+                session.jukebox.clone(),
+            ),
             None => return,
         }
     };
@@ -458,7 +469,9 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         handouts,
         maps,
         tokens,
+        jukebox,
     };
+
     match serde_json::to_string(&message) {
         Ok(payload) => state.send(Target::Only(vec![client_id.to_string()]), payload),
         Err(error) => tracing::error!(%error, "failed to serialise the session state"),

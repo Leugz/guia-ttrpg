@@ -33,11 +33,7 @@ export interface SheetSummary {
 }
 
 export type ConnectionStatus =
-  | 'idle'
-  | 'connecting'
-  | 'online'
-  | 'reconnecting'
-  | 'offline';
+  'idle' | 'connecting' | 'online' | 'reconnecting' | 'offline';
 
 export type JukeboxPayload =
   | { action: 'play'; track_url: string; looped: boolean }
@@ -66,6 +62,7 @@ export interface SessionStateMessage {
   handouts: Handout[];
   maps: MapDefinition[];
   tokens: MapToken[];
+  jukebox?: JukeboxPayload;
 }
 
 export interface SheetUpdateMessage {
@@ -184,10 +181,7 @@ export interface ToolSyncMessage {
 }
 
 export type TokenClientMessage =
-  | TokenPlaceMessage
-  | TokenMoveMessage
-  | TokenStateMessage
-  | TokenRemoveMessage;
+  TokenPlaceMessage | TokenMoveMessage | TokenStateMessage | TokenRemoveMessage;
 
 export const RpcMethod = {
   listSheets: 'list_sheets',

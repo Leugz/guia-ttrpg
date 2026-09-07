@@ -162,6 +162,8 @@ pub enum ServerMessage {
         handouts: Vec<crate::models::Handout>,
         maps: Vec<MapDefinition>,
         tokens: Vec<MapToken>,
+        #[serde(default)]
+        jukebox: Option<JukeboxPayload>,
     },
     SheetUpdate {
         #[serde(rename = "sheetId")]

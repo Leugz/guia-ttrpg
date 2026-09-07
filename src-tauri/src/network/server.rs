@@ -69,6 +69,7 @@ pub async fn start(
             host_client_id,
             address: address.clone(),
             shutdown: Some(shutdown_tx),
+            jukebox: None,
         });
     }
 

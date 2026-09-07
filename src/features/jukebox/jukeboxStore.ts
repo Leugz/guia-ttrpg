@@ -122,3 +122,11 @@ jukeboxAudioEngine.onEnded(() => {
 lan.on('jukeboxSync', (message) => {
   executeJukeboxCommand(message.payload);
 });
+
+lan.on('session', (session) => {
+  if (session.jukebox) {
+    executeJukeboxCommand(session.jukebox);
+  } else {
+    executeJukeboxCommand({ action: 'stop' });
+  }
+});
