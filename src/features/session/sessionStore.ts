@@ -6,6 +6,8 @@ import { useChatStore } from '../chat/chatStore';
 import { saveBoard, setGameContext } from './net/gameClient';
 import { lan } from './net/lanConnection';
 import { snapshotBoard, useLanStore } from './net/lanStore';
+import { useJukeboxStore } from '../jukebox/jukeboxStore';
+import { jukeboxAudioEngine } from '../jukebox/lib/jukeboxAudioEngine';
 
 export interface HostedGame {
   id: string;
@@ -61,6 +63,8 @@ const resetTableState = () => {
   useCharacterStore.getState().clearCharacter();
   useChatStore.getState().clear();
   useLanStore.getState().clearBoard();
+  useJukeboxStore.setState({ currentTrack: null, isPlaying: false });
+  jukeboxAudioEngine.stop();
 };
 
 const persistBoard = async (gameRoot: string | null) => {

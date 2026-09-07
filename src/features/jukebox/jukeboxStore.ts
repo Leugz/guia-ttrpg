@@ -145,3 +145,14 @@ lan.on('session', (session) => {
     jukeboxAudioEngine.stop();
   }
 });
+
+lan.on('status', (status) => {
+  const { isHosting } = useSessionStore.getState();
+  if (
+    !isHosting &&
+    (status === 'offline' || status === 'reconnecting' || status === 'idle')
+  ) {
+    useJukeboxStore.setState({ currentTrack: null, isPlaying: false });
+    jukeboxAudioEngine.stop();
+  }
+});
