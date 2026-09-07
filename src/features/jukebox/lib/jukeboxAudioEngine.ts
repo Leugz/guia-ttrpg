@@ -48,7 +48,11 @@ class JukeboxAudioEngine {
   }
 
   setVolume(volume: number) {
-    this.localVolume = clamp(Number.isFinite(volume) ? volume : DEFAULT_VOLUME, 0, 1);
+    this.localVolume = clamp(
+      Number.isFinite(volume) ? volume : DEFAULT_VOLUME,
+      0,
+      1
+    );
     this.applyVolumes();
   }
 
@@ -143,7 +147,16 @@ class JukeboxAudioEngine {
       if (audio === this.activeAudio) this.updateProgress();
     };
 
-    audio.addEventListener('loadedmetadata', update);
+    audio.addEventListener('loadedmetadata', () => {
+      if (
+        audio.loop &&
+        audio.duration > 0 &&
+        audio.currentTime > audio.duration
+      ) {
+        audio.currentTime = audio.currentTime % audio.duration;
+      }
+      update();
+    });
     audio.addEventListener('durationchange', update);
     audio.addEventListener('timeupdate', update);
     audio.addEventListener('seeking', update);
@@ -156,7 +169,9 @@ class JukeboxAudioEngine {
   }
 
   private getDuration(audio: HTMLAudioElement) {
-    return Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+    return Number.isFinite(audio.duration) && audio.duration > 0
+      ? audio.duration
+      : 0;
   }
 
   private updateProgress(force = false) {
@@ -177,7 +192,11 @@ class JukeboxAudioEngine {
     this.progressListeners.forEach((listener) => listener());
   }
 
-  private fadeTo(activeTarget: number, inactiveTarget: number, onDone: () => void) {
+  private fadeTo(
+    activeTarget: number,
+    inactiveTarget: number,
+    onDone: () => void
+  ) {
     const tick = () => {
       this.activeFade = moveTowards(this.activeFade, activeTarget);
       this.inactiveFade = moveTowards(this.inactiveFade, inactiveTarget);

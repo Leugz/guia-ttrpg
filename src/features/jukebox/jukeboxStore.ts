@@ -125,8 +125,23 @@ lan.on('jukeboxSync', (message) => {
 
 lan.on('session', (session) => {
   if (session.jukebox) {
-    executeJukeboxCommand(session.jukebox);
+    const { track_url, looped, playing, position, timestamp } = session.jukebox;
+    let currentPos = position;
+    if (playing) {
+      currentPos += (Date.now() - timestamp) / 1000;
+    }
+    useJukeboxStore.setState({
+      currentTrack: track_url,
+      isPlaying: playing,
+      isLooped: looped,
+    });
+    jukeboxAudioEngine.play(track_url, looped);
+    jukeboxAudioEngine.seek(currentPos);
+    if (!playing) {
+      jukeboxAudioEngine.pause();
+    }
   } else {
-    executeJukeboxCommand({ action: 'stop' });
+    useJukeboxStore.setState({ currentTrack: null, isPlaying: false });
+    jukeboxAudioEngine.stop();
   }
 });

@@ -247,6 +247,12 @@ export function VttApp() {
 
   useHostCatalogSync(isHosting);
 
+  useEffect(() => {
+    return () => {
+      useJukeboxStore.getState().stop();
+    };
+  }, []);
+
   const { toasts, pushToast } = useToastQueue(messages, isChatOpen);
 
   const themeColor = getProfileColor(character?.profile);

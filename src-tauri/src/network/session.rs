@@ -11,6 +11,7 @@ use crate::campaign;
 use crate::effects::TestRequest;
 use crate::history;
 use crate::models::{MapToken, SaveIndicator};
+use crate::network::protocol::JukeboxPayload;
 use crate::network::protocol::{
     method, ChatEnvelope, ClientMessage, Player, ServerMessage, Target, HISTORY_LIMIT,
 };
@@ -183,10 +184,54 @@ async fn handle_text(
                 {
                     let mut session_lock = state.session.write().await;
                     if let Some(session) = session_lock.as_mut() {
-                        session.jukebox = Some(payload.clone());
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+
+                        match &payload {
+                            JukeboxPayload::Play { track_url, looped } => {
+                                session.jukebox = Some(crate::network::protocol::JukeboxState {
+                                    track_url: track_url.clone(),
+                                    looped: *looped,
+                                    playing: true,
+                                    position: 0.0,
+                                    timestamp: now,
+                                });
+                            }
+                            JukeboxPayload::Pause => {
+                                if let Some(j) = &mut session.jukebox {
+                                    if j.playing {
+                                        j.position +=
+                                            (now.saturating_sub(j.timestamp)) as f64 / 1000.0;
+                                        j.playing = false;
+                                    }
+                                    j.timestamp = now;
+                                }
+                            }
+                            JukeboxPayload::Resume => {
+                                if let Some(j) = &mut session.jukebox {
+                                    j.playing = true;
+                                    j.timestamp = now;
+                                }
+                            }
+                            JukeboxPayload::Stop => {
+                                session.jukebox = None;
+                            }
+                            JukeboxPayload::Seek { position } => {
+                                if let Some(j) = &mut session.jukebox {
+                                    j.position = *position;
+                                    j.timestamp = now;
+                                }
+                            }
+                            JukeboxPayload::SetLoop { looped } => {
+                                if let Some(j) = &mut session.jukebox {
+                                    j.looped = *looped;
+                                }
+                            }
+                        }
                     }
                 }
-
                 let msg = ServerMessage::JukeboxSync { payload };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     state.send(Target::All, json);

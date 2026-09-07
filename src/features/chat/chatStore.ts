@@ -57,10 +57,12 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
-const appendUnique = (messages: ChatMessage[], incoming: ChatMessage) =>
-  messages.some((m) => m.id === incoming.id)
-    ? messages
-    : [...messages, incoming];
+const appendUnique = (messages: ChatMessage[], incoming: ChatMessage) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].id === incoming.id) return messages;
+  }
+  return [...messages, incoming];
+};
 
 export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
@@ -112,9 +114,10 @@ lan.on('session', (session) => {
   if (restored.length === 0) return;
 
   useChatStore.setState((state) => {
+    const restoredIds = new Set(restored.map((m) => m.id));
     const merged = [...restored];
     for (const message of state.messages) {
-      if (!merged.some((m) => m.id === message.id)) merged.push(message);
+      if (!restoredIds.has(message.id)) merged.push(message);
     }
     return { messages: merged };
   });

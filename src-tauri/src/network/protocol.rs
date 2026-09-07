@@ -20,6 +20,15 @@ pub struct Player {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JukeboxState {
+    pub track_url: String,
+    pub looped: bool,
+    pub playing: bool,
+    pub position: f64,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SheetSummary {
     pub id: String,
     pub name: String,
@@ -163,7 +172,7 @@ pub enum ServerMessage {
         maps: Vec<MapDefinition>,
         tokens: Vec<MapToken>,
         #[serde(default)]
-        jukebox: Option<JukeboxPayload>,
+        jukebox: Option<JukeboxState>,
     },
     SheetUpdate {
         #[serde(rename = "sheetId")]

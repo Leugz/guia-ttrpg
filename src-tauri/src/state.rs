@@ -16,7 +16,7 @@ pub struct HostedSession {
     pub host_client_id: String,
     pub address: String,
     pub shutdown: Option<oneshot::Sender<()>>,
-    pub jukebox: Option<crate::network::protocol::JukeboxPayload>,
+    pub jukebox: Option<crate::network::protocol::JukeboxState>,
 }
 
 #[derive(Default)]

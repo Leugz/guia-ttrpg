@@ -43,6 +43,14 @@ export type JukeboxPayload =
   | { action: 'seek'; position: number }
   | { action: 'set_loop'; looped: boolean };
 
+export interface JukeboxState {
+  track_url: string;
+  looped: boolean;
+  playing: boolean;
+  position: number;
+  timestamp: number;
+}
+
 export interface JukeboxSyncMessage {
   type: 'jukebox_sync';
   payload: JukeboxPayload;
@@ -62,7 +70,7 @@ export interface SessionStateMessage {
   handouts: Handout[];
   maps: MapDefinition[];
   tokens: MapToken[];
-  jukebox?: JukeboxPayload;
+  jukebox?: JukeboxState;
 }
 
 export interface SheetUpdateMessage {
