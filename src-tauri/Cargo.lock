@@ -3,6 +3,27 @@
 version = 4
 
 [[package]]
+name = "OP2-Playtest"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "gray_matter",
+ "rand",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tauri",
+ "tauri-build",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1341,27 +1362,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "guia-ttrpg"
-version = "1.0.0"
-dependencies = [
- "axum",
- "gray_matter",
- "rand",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "tauri",
- "tauri-build",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
