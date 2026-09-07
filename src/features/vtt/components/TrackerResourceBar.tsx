@@ -11,14 +11,6 @@ export interface TrackerResourceBarProps {
   onUpdate: (delta: number) => void;
 }
 
-/**
- * The PV/PD pip bar shown on the table overlay, for the player's own sheet and
- * for each party member the GM has selected.
- *
- * Lifted out of `VttApp`, where it was declared inline with a `props: any`
- * signature. Distinct from `character-sheet/components/ResourceBar`, which is
- * a read-only summary tile inside the sheet itself.
- */
 export function TrackerResourceBar({
   label,
   current,

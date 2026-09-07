@@ -11,12 +11,10 @@ export interface ToastItem {
   rollResult?: RollResult;
 }
 
-/** Transient bottom-right feed for chat lines and rolls while chat is closed. */
 export function ToastFeed({ toasts }: { toasts: ToastItem[] }) {
   return (
     <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col items-end gap-3'>
       {toasts.map((toast) => {
-        // Lógica para destacar dados de Crítico na notificação
         const critValues = new Set<number>();
         if (toast.type === 'roll' && toast.rollResult?.is_critical_success) {
           const counts: Record<number, number> = {};

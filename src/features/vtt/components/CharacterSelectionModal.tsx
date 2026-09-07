@@ -16,7 +16,6 @@ export interface CharacterSelectionModalProps {
   localClaim: string | null;
 }
 
-/** Lets the local window claim the GM seat, a guest identity, or a sheet. */
 export function CharacterSelectionModal({
   onClose,
   onSelect,

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as gameClient from '../../session/net/gameClient';
 
-/** Resolves the portrait asset URL for whichever identity is active. */
 export function usePortraitUrl(
   activeSheetId: string | null,
   isTrueGM: boolean

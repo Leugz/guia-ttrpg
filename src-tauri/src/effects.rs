@@ -24,13 +24,6 @@ impl EffectUnit {
     pub fn is_step(self) -> bool {
         matches!(self, EffectUnit::Step)
     }
-
-    pub fn label(self) -> Cow<'static, str> {
-        match self {
-            EffectUnit::Step => Cow::Borrowed("passo"),
-            EffectUnit::Die(die) => Cow::Borrowed(die.notation()),
-        }
-    }
 }
 
 impl Serialize for EffectUnit {
@@ -58,8 +51,8 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
     }
 
     fn visit_i64<E: de::Error>(self, value: i64) -> Result<EffectUnit, E> {
-        Ok(EffectUnit::Die(
-            StepDice::from_sides(value).unwrap_or_else(|| {
+        Ok(EffectUnit::Die(StepDice::from_sides(value).unwrap_or_else(
+            || {
                 let normalized = StepDice::nearest(value);
                 tracing::warn!(
                     invalid = value,
@@ -67,8 +60,8 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
                     "unsupported effect unit normalized to nearest valid die"
                 );
                 normalized
-            }),
-        ))
+            },
+        )))
     }
 
     fn visit_u64<E: de::Error>(self, value: u64) -> Result<EffectUnit, E> {
@@ -97,9 +90,6 @@ impl<'de> Visitor<'de> for EffectUnitVisitor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Effect {
     pub operation: EffectOperation,
-    /// Bounded by `MAX_EFFECT_QUANTITY`, so a byte is ample. Combined with the
-    /// one-byte `EffectOperation` and `EffectUnit` discriminants this lets the
-    /// whole non-`target` prefix of an `Effect` sit in a single word.
     pub quantity: u8,
     pub unit: EffectUnit,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,9 +146,7 @@ impl Effect {
             ));
         }
         if matches!(self.operation, EffectOperation::Advance) && !self.unit.is_step() {
-            return Err(
-                "The 'advance' operation is only valid together with 'unit: step'.".into(),
-            );
+            return Err("The 'advance' operation is only valid together with 'unit: step'.".into());
         }
         Ok(())
     }
@@ -226,9 +214,6 @@ pub struct TestRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedDie {
     pub sides: u8,
-    /// Attribute names and the "Bônus" placeholder are compile-time constants
-    /// and are now borrowed; only skill, ability and inventory names — which
-    /// really do come off a sheet — still own their bytes.
     pub source: Cow<'static, str>,
     pub base: bool,
 }
@@ -290,7 +275,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
     let mut applied: Vec<String> = Vec::new();
     let mut ignored: Vec<String> = Vec::new();
 
-    // --- Standing (toggle) effects -----------------------------------------
     for source in sheet.standing_effects() {
         for effect in source.effects {
             if !effect.is_toggle() {
@@ -308,7 +292,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
         }
     }
 
-    // --- Built-in "Ajuda" ---------------------------------------------------
     if let Some(help) = request.help {
         if !(1..=2).contains(&help) {
             return Err("Ajuda must grant either 1 or 2 steps.".into());
@@ -321,7 +304,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
         ));
     }
 
-    // --- Triggered (die) effects -------------------------------------------
     for entry_id in &request.triggered {
         let entry = sheet
             .entry(entry_id)
@@ -356,9 +338,7 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
                 EffectOperation::Subtract => {
                     let mut removed = 0;
                     for _ in 0..effect.quantity {
-                        if let Some(position) =
-                            bonus.iter().rposition(|d| d.sides == die.sides())
-                        {
+                        if let Some(position) = bonus.iter().rposition(|d| d.sides == die.sides()) {
                             bonus.remove(position);
                             removed += 1;
                         }
@@ -396,7 +376,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
         });
     }
 
-    // --- Base dice ----------------------------------------------------------
     let attribute_die = sheet.attributes.get(attribute).apply_steps(attribute_steps);
     let mut dice = Vec::with_capacity(MAX_POOL_SIZE);
     dice.push(ResolvedDie {
@@ -413,7 +392,6 @@ pub fn resolve_test(sheet: &CharacterSheet, request: &TestRequest) -> Result<Res
         });
     }
 
-    // --- Cap the pool at four dice -----------------------------------------
     bonus.sort_by(|a, b| b.sides.cmp(&a.sides));
     let room = MAX_POOL_SIZE.saturating_sub(dice.len());
     let excluded: Vec<ResolvedDie> = bonus.split_off(room.min(bonus.len()));
@@ -482,7 +460,9 @@ mod tests {
         let stepped: Effect =
             serde_yaml::from_str("operation: advance\nquantity: 1\nunit: step\n").unwrap();
         assert_eq!(stepped.unit, EffectUnit::Step);
-        assert!(serde_yaml::to_string(&stepped).unwrap().contains("unit: step"));
+        assert!(serde_yaml::to_string(&stepped)
+            .unwrap()
+            .contains("unit: step"));
     }
 
     #[test]
@@ -563,7 +543,9 @@ mod tests {
     #[test]
     fn active_step_effects_shift_the_attribute_die() {
         let mut sheet = sheet();
-        sheet.active_effects.push(rules::builtin("machucado", None).unwrap());
+        sheet
+            .active_effects
+            .push(rules::builtin("machucado", None).unwrap());
         let pool = resolve_test(&sheet, &request("furtividade")).unwrap();
         assert_eq!(pool.dice[0].sides, 6);
         assert_eq!(pool.dice[1].sides, 6);
@@ -573,9 +555,14 @@ mod tests {
     #[test]
     fn debuffs_only_touch_the_attribute_they_target() {
         let mut sheet = sheet();
-        sheet.active_effects.push(rules::builtin("desatencao", None).unwrap());
+        sheet
+            .active_effects
+            .push(rules::builtin("desatencao", None).unwrap());
         let pool = resolve_test(&sheet, &request("furtividade")).unwrap();
-        assert_eq!(pool.dice[0].sides, 8, "Físico must be untouched by Desatenção");
+        assert_eq!(
+            pool.dice[0].sides, 8,
+            "Físico must be untouched by Desatenção"
+        );
     }
 
     #[test]
@@ -707,7 +694,12 @@ mod tests {
             active: true,
             effects: vec![
                 effect(EffectOperation::Add, 1, EffectUnit::Die(StepDice::D4), None),
-                effect(EffectOperation::Add, 1, EffectUnit::Die(StepDice::D12), None),
+                effect(
+                    EffectOperation::Add,
+                    1,
+                    EffectUnit::Die(StepDice::D12),
+                    None,
+                ),
                 effect(EffectOperation::Add, 1, EffectUnit::Die(StepDice::D8), None),
             ],
         });
@@ -745,25 +737,25 @@ mod tests {
         assert!(effect(EffectOperation::Add, 0, EffectUnit::Step, None)
             .validate()
             .is_err());
+        assert!(effect(
+            EffectOperation::Advance,
+            1,
+            EffectUnit::Die(StepDice::D6),
+            None
+        )
+        .validate()
+        .is_err());
         assert!(
-            effect(EffectOperation::Advance, 1, EffectUnit::Die(StepDice::D6), None)
+            effect(EffectOperation::Add, 2, EffectUnit::Die(StepDice::D6), None)
                 .validate()
-                .is_err()
+                .is_ok()
         );
-        assert!(effect(EffectOperation::Add, 2, EffectUnit::Die(StepDice::D6), None)
-            .validate()
-            .is_ok());
     }
 
     #[test]
     fn descriptions_are_written_in_portuguese() {
-        let described = effect(
-            EffectOperation::Add,
-            2,
-            EffectUnit::Die(StepDice::D6),
-            None,
-        )
-        .describe();
+        let described =
+            effect(EffectOperation::Add, 2, EffectUnit::Die(StepDice::D6), None).describe();
         assert_eq!(described, "Adiciona 2 d6");
         let described = effect(EffectOperation::Advance, 1, EffectUnit::Step, None).describe();
         assert_eq!(described, "Avança 1 passo");

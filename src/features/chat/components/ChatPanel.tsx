@@ -85,7 +85,6 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
       })
     : 'Agora';
 
-  // Isolate only the specific values that triggered the Critical Success
   const critValues = new Set<number>();
   if (result.is_critical_success) {
     const counts: Record<number, number> = {};

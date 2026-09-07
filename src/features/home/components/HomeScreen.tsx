@@ -17,7 +17,7 @@ export function HomeScreen() {
     hostedGames,
     createGame,
     deleteGame,
-    loadLocalGame, // Replaced
+    loadLocalGame,
     joinGame,
     sessionError,
   } = useSessionStore();
@@ -185,7 +185,6 @@ export function HomeScreen() {
           )}
         </div>
 
-        {/* JOIN PANEL */}
         <div className='group relative flex h-[450px] flex-col overflow-hidden border border-zinc-800 bg-[#0a0a0a] p-8'>
           <div className='absolute left-0 top-0 h-1 w-full bg-blue-900/50'></div>
           <div className='mb-6 flex shrink-0 items-center gap-3'>

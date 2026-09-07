@@ -1,17 +1,8 @@
-//! Runtime session data (chat and dice history) kept in SQLite.
-//!
-//! Markdown remains the source of truth for character state; this table only
-//! holds the fast-moving event log that a reconnecting player needs in order to
-//! catch up on what they missed.
-
 use std::path::Path;
 
 use rusqlite::Connection;
 use serde_json::Value;
 
-/// The pre-1.0 build wrote to an unscoped `chat_history` table. Rather than
-/// migrate a schema nobody depends on yet, this uses a new table and leaves the
-/// old one untouched.
 pub fn init(db_path: &Path) -> rusqlite::Result<()> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch(
@@ -27,10 +18,9 @@ pub fn init(db_path: &Path) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Store one chat or roll payload. Duplicate ids are ignored so a client that
-/// retries after a dropped connection cannot create a double entry.
 pub fn record(db_path: &Path, game_id: &str, id: &str, payload: &str) -> Result<(), String> {
-    let conn = Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
+    let conn =
+        Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
     conn.execute(
         "INSERT OR IGNORE INTO session_events (id, game_id, payload) VALUES (?1, ?2, ?3)",
         rusqlite::params![id, game_id, payload],
@@ -39,10 +29,9 @@ pub fn record(db_path: &Path, game_id: &str, id: &str, payload: &str) -> Result<
     Ok(())
 }
 
-/// The most recent `limit` entries for a table, oldest first so the client can
-/// append them in order.
 pub fn recent(db_path: &Path, game_id: &str, limit: usize) -> Result<Vec<Value>, String> {
-    let conn = Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
+    let conn =
+        Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
     let mut statement = conn
         .prepare(
             "SELECT payload FROM session_events
@@ -70,9 +59,9 @@ pub fn recent(db_path: &Path, game_id: &str, limit: usize) -> Result<Vec<Value>,
     Ok(payloads)
 }
 
-/// Drop a table's log, used when its game instance is deleted.
 pub fn clear(db_path: &Path, game_id: &str) -> Result<(), String> {
-    let conn = Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
+    let conn =
+        Connection::open(db_path).map_err(|e| format!("Failed to open session db: {}", e))?;
     conn.execute(
         "DELETE FROM session_events WHERE game_id = ?1",
         rusqlite::params![game_id],

@@ -1,10 +1,3 @@
-//! The LAN server's lifecycle.
-//!
-//! The previous build bound a listener at application start on every machine,
-//! including clients that were only ever going to join someone else's table.
-//! The server now starts when a GM opens a table and stops when they leave, so
-//! a player who is only joining never opens a port at all.
-
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,15 +14,12 @@ use crate::network::protocol::{ServerMessage, Target, LAN_PORT};
 use crate::network::session;
 use crate::state::{self, AppState, HostedSession};
 
-/// What the UI needs in order to tell players where to connect.
 #[derive(Debug, Clone, Serialize)]
 pub struct HostInfo {
     pub address: String,
     pub port: u16,
 }
 
-/// Open a table. Idempotent: hosting the same game twice is a no-op that
-/// returns the existing address rather than fighting over the port.
 pub async fn start(
     state: Arc<AppState>,
     game_id: String,
@@ -48,7 +38,6 @@ pub async fn start(
         }
     }
 
-    // A different table was open: close it before rebinding.
     stop(state.clone(), "O mestre encerrou a sessão anterior.").await;
 
     if !root.is_dir() {
@@ -70,8 +59,6 @@ pub async fn start(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    // Before a single player can connect, so the first `session_state` we hand
-    // out is this game's board and never the previous game's.
     state.open_board(&game_id, &root).await;
 
     {
@@ -109,7 +96,6 @@ pub async fn start(
     })
 }
 
-/// Close the table, tell everyone why, and release the port.
 pub async fn stop(state: Arc<AppState>, reason: &str) {
     let shutdown = {
         let mut session = state.session.write().await;
@@ -119,8 +105,6 @@ pub async fn stop(state: Arc<AppState>, reason: &str) {
         }
     };
 
-    // First, while every piece is still on it: the sockets are about to close
-    // and the board must not be written out half-empty.
     state.close_board().await;
 
     state::publish(
@@ -133,8 +117,6 @@ pub async fn stop(state: Arc<AppState>, reason: &str) {
     state.roster.write().await.clear();
 
     if let Some(shutdown) = shutdown {
-        // Receiver dropped means the task already finished; either way we are
-        // no longer hosting.
         let _ = shutdown.send(());
     }
 }

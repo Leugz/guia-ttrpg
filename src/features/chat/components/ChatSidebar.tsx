@@ -134,7 +134,6 @@ export function ChatSidebar() {
         </button>
       )}
 
-      {/* Chat Input Area */}
       <form
         onSubmit={handleSendMessage}
         className='border-t border-neutral-700 bg-black p-3'

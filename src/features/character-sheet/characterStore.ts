@@ -31,7 +31,6 @@ export const getProfileColor = (profile?: string) => {
 interface CharacterStore {
   character: CharacterSheet | null;
   notes: string;
-  /** File name of the active sheet, e.g. `alan.md`. */
   activeSheetId: string | null;
 
   impeto: number;
@@ -48,7 +47,6 @@ interface CharacterStore {
 
   loadCharacter: (doc: ParsedDocument, sheetId: string) => void;
   clearCharacter: () => void;
-  /** Accept a sheet pushed by the host without touching per-scene UI state. */
   syncCharacter: (sheetId: string, sheet: CharacterSheet) => void;
 
   applyResourceChange: (resource: 'hp' | 'dp', delta: number) => Promise<void>;
@@ -223,7 +221,6 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
   },
 }));
 
-// The host announces every write, so a sheet open in two windows stays in step.
 lan.on('sheet', ({ sheetId, sheet }) => {
   useCharacterStore.getState().syncCharacter(sheetId, sheet);
 });

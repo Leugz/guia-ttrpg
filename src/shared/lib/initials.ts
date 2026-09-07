@@ -1,9 +1,3 @@
-/**
- * Two-letter monogram for a name.
- *
- * Was implemented twice — once in `VttApp` as `getInitials`, once in
- * `GameBoard` as `initialsOf` — with subtly different empty-string handling.
- */
 export const getInitials = (name: string): string => {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '?';

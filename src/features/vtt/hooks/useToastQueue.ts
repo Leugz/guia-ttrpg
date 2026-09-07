@@ -7,11 +7,6 @@ export type ToastInput = Omit<ToastItem, 'toastId'>;
 const MAX_VISIBLE_TOASTS = 3;
 const TOAST_LIFETIME_MS = 4000;
 
-/**
- * Owns the bottom-right toast feed: manual pushes (system errors, "IP
- * copied") plus an automatic bridge that surfaces any chat message that
- * arrived while the chat panel was closed.
- */
 export function useToastQueue(messages: ChatMessage[], isChatOpen: boolean) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 

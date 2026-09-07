@@ -101,7 +101,6 @@ const TokenNode = React.memo(function TokenNode({
   const groupRef = useRef<Konva.Group | null>(null);
   const imageRef = useRef<Konva.Image | null>(null);
 
-  // USA A IMAGEM DO TOKEN AGORA
   const tokenBitmap = useTokenImage(token.sheet_id);
   const radius = size / 2;
 
@@ -331,7 +330,7 @@ export function GameBoard({
   const markerLayerRef = useRef<Konva.Layer | null>(null);
 
   const activeMap = useLanStore(selectActiveMap);
-  const tokens = useLanStore((state) => state.tokens); // Todas as minis sempre visíveis!
+  const tokens = useLanStore((state) => state.tokens);
 
   const pings = useLanStore((state) => state.pings);
   const rulers = useLanStore((state) => state.rulers);
@@ -350,16 +349,8 @@ export function GameBoard({
   } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
-  // Renderização Otimista da Régua (Zero Lag)
   const [localRuler, setLocalRuler] = useState<RulerShape | null>(null);
 
-  // A ruler drag fires a pointer event per hardware sample — on a high-polling
-  // mouse that is several hundred a second, and each one used to do two
-  // expensive things at once: a `setState` that reconciled the entire Stage
-  // (every token, marker and ping) and a socket write. Token drags in this
-  // same file already solved this by buffering into a `requestAnimationFrame`;
-  // the ruler now does the same, so both the redraw and the network traffic
-  // are capped at one per frame.
   const rulerFrame = useRef<number | null>(null);
   const pendingRuler = useRef<RulerShape | null>(null);
 
@@ -600,7 +591,7 @@ export function GameBoard({
     displayed && displayed.map.grid_size > 0
       ? displayed.map.grid_size
       : DEFAULT_TOKEN_SIZE;
-  // TODAS as miniaturas renderizam juntas, permitindo que sobrevivam a transições de mapas!
+
   const markedTokens = useMemo(
     () => tokens.filter((token) => Boolean(token.save_indicator)),
     [tokens]
@@ -764,9 +755,8 @@ export function GameBoard({
               <PingNode key={p.id} x={p.x} y={p.y} color={p.color} />
             ))}
 
-            {/* Rulers da Rede */}
             {Object.entries(rulers).map(([ownerId, r]) => {
-              if (ownerId === clientId) return null; // Ignora o próprio, pois usa o localRuler
+              if (ownerId === clientId) return null;
               return (
                 <Group key={ownerId}>
                   <Line
@@ -789,7 +779,6 @@ export function GameBoard({
               );
             })}
 
-            {/* Ruler Local (Zero Lag) */}
             {localRuler && (
               <Group>
                 <Line

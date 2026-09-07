@@ -1,10 +1,3 @@
-//! Tauri IPC adapter.
-//!
-//! Every handler here is a thin translation from IPC arguments to a call into
-//! `api` (rules and persistence) or `network` (session lifecycle). Keeping the
-//! logic out of this file is what lets the LAN server run the exact same code
-//! paths for a joined player as the GM's own window runs locally.
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,21 +20,13 @@ fn shared_state() -> AppResult<Arc<AppState>> {
     state::hub().ok_or_else(|| AppError::state("Application state is not initialised."))
 }
 
-// ---------------------------------------------------------------------------
-// Documents
-// ---------------------------------------------------------------------------
-
 #[tauri::command]
 pub fn load_character_sheet(path: String) -> AppResult<ParsedDocument> {
     api::load_character_sheet(&path)
 }
 
 #[tauri::command]
-pub fn save_character_sheet(
-    path: String,
-    data: CharacterSheet,
-    body: String,
-) -> AppResult<()> {
+pub fn save_character_sheet(path: String, data: CharacterSheet, body: String) -> AppResult<()> {
     api::save_character_sheet(&path, data, &body)
 }
 
@@ -54,10 +39,6 @@ pub fn create_character_sheet(
 ) -> AppResult<ParsedDocument> {
     api::create_character_sheet(&path, &name, &profile, &occupation)
 }
-
-// ---------------------------------------------------------------------------
-// Dice
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn execute_roll(pool: Vec<StepDice>) -> AppResult<RollResult> {
@@ -79,16 +60,8 @@ pub fn roll_test(path: String, request: TestRequest) -> AppResult<TestOutcome> {
     api::roll_test(&path, &request)
 }
 
-// ---------------------------------------------------------------------------
-// Resources and saving throws
-// ---------------------------------------------------------------------------
-
 #[tauri::command]
-pub fn modify_resource(
-    path: String,
-    resource: String,
-    delta: i16,
-) -> AppResult<CharacterSheet> {
+pub fn modify_resource(path: String, resource: String, delta: i16) -> AppResult<CharacterSheet> {
     api::modify_resource(&path, &resource, delta)
 }
 
@@ -106,10 +79,6 @@ pub fn roll_death_save(path: String, resource: String) -> AppResult<DeathSaveOut
     api::roll_death_save(&path, &resource)
 }
 
-// ---------------------------------------------------------------------------
-// Sheet editing
-// ---------------------------------------------------------------------------
-
 #[tauri::command]
 pub fn set_attribute(
     path: String,
@@ -120,11 +89,7 @@ pub fn set_attribute(
 }
 
 #[tauri::command]
-pub fn step_attribute(
-    path: String,
-    attribute: String,
-    steps: i32,
-) -> AppResult<CharacterSheet> {
+pub fn step_attribute(path: String, attribute: String, steps: i32) -> AppResult<CharacterSheet> {
     api::step_attribute(&path, &attribute, steps)
 }
 
@@ -143,17 +108,9 @@ pub fn step_skill(path: String, skill_id: String, steps: i32) -> AppResult<Chara
 }
 
 #[tauri::command]
-pub fn toggle_entry(
-    path: String,
-    entry_id: String,
-    active: bool,
-) -> AppResult<CharacterSheet> {
+pub fn toggle_entry(path: String, entry_id: String, active: bool) -> AppResult<CharacterSheet> {
     api::toggle_entry(&path, &entry_id, active)
 }
-
-// ---------------------------------------------------------------------------
-// Effects
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn list_builtin_effects() -> Vec<BuiltinDefinition> {
@@ -184,10 +141,6 @@ pub fn describe_entry(path: String, entry_id: String) -> AppResult<EntrySummary>
     api::describe_entry(&path, &entry_id)
 }
 
-// ---------------------------------------------------------------------------
-// Multi-sheet access
-// ---------------------------------------------------------------------------
-
 #[tauri::command]
 pub fn grant_sheet_access(path: String, reference: String) -> AppResult<CharacterSheet> {
     api::grant_sheet_access(&path, &reference)
@@ -198,15 +151,6 @@ pub fn revoke_sheet_access(path: String, reference: String) -> AppResult<Charact
     api::revoke_sheet_access(&path, &reference)
 }
 
-// ---------------------------------------------------------------------------
-// Game lifecycle
-// ---------------------------------------------------------------------------
-
-/// Create (or reuse) an independent, mutable copy of an Act.
-///
-/// Replaces the previous implementation, which resolved templates from a path
-/// hardcoded to one developer's home directory and therefore failed on every
-/// other machine and in every packaged build.
 #[tauri::command]
 pub fn create_game_instance(
     app: tauri::AppHandle,
@@ -232,36 +176,24 @@ pub fn delete_game_instance(
     Ok(())
 }
 
-/// List the characters a table offers. The selection screen used to hardcode
-/// the Act 1 party, which meant a joined client had no way to discover them.
 #[tauri::command]
 pub fn list_game_sheets(game_path: String) -> AppResult<Vec<SheetSummary>> {
     Ok(campaign::list_sheets(&PathBuf::from(game_path))?)
 }
 
-/// Read a game's saved board.
-///
-/// A GM working alone with the LAN closed has no server to hold the board for
-/// them, so their window reads and writes the very same file the host would.
-/// Opening the LAN afterwards therefore carries the pieces straight over
-/// instead of starting from an empty map.
 #[tauri::command]
 pub fn load_board(game_path: String) -> AppResult<Vec<crate::models::MapToken>> {
     Ok(storage::read_board(std::path::Path::new(&game_path)))
 }
 
 #[tauri::command]
-pub fn save_board(
-    game_path: String,
-    tokens: Vec<crate::models::MapToken>,
-) -> AppResult<()> {
+pub fn save_board(game_path: String, tokens: Vec<crate::models::MapToken>) -> AppResult<()> {
     Ok(storage::write_board(
         std::path::Path::new(&game_path),
         &tokens,
     )?)
 }
 
-/// Start hosting. Returns the address to share with players.
 #[tauri::command]
 pub async fn start_hosting(
     game_id: String,
@@ -279,7 +211,6 @@ pub async fn stop_hosting() -> AppResult<()> {
     Ok(())
 }
 
-/// The address players should dial, or `null` when not hosting.
 #[tauri::command]
 pub async fn host_address() -> AppResult<Option<String>> {
     let state = shared_state()?;
@@ -335,13 +266,6 @@ pub async fn open_handout_for_player(
         &target_client_id,
     )
 }
-
-// ---------------------------------------------------------------------------
-// Maps
-//
-// The mirror of the map RPCs, for the window running on the host machine.
-// Same `api` functions, reached over Tauri IPC instead of the socket.
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn list_game_maps(game_path: String) -> AppResult<Vec<crate::models::MapDefinition>> {

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import * as gameClient from '../../session/net/gameClient';
 import { useLanStore } from '../../session/net/lanStore';
 
-/** On the host window, loads the campaign's sheets, handouts and maps once. */
 export function useHostCatalogSync(isHosting: boolean) {
   const setSheets = useLanStore((state) => state.setSheets);
   const setHandouts = useLanStore((state) => state.setHandouts);

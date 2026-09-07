@@ -1,10 +1,3 @@
-//! Shared runtime state.
-//!
-//! The rules engine (`api`) has to be able to tell connected players that a
-//! sheet changed, but it is deliberately free of Tauri and Axum types so it can
-//! be unit tested. The `HUB` below is the seam: `api` publishes through it, and
-//! when nothing is hosting the publish is a no-op.
-
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -17,28 +10,16 @@ use crate::models::MapToken;
 use crate::network::protocol::{Envelope, Player, Target};
 use crate::storage;
 
-/// The table currently being hosted by this instance.
 pub struct HostedSession {
     pub game_id: String,
     pub root: PathBuf,
-    /// The GM's client id. Used for permission checks and secret-roll routing.
     pub host_client_id: String,
     pub address: String,
-    /// Dropping/sending on this stops the Axum server.
     pub shutdown: Option<oneshot::Sender<()>>,
 }
 
-/// The pieces on the table, and the table they belong to.
-///
-/// The `game_id`/`root` pair is the whole point of this type. The board used to
-/// be a bare map hanging off `AppState`, which meant it outlived the table that
-/// filled it: closing one game and opening another handed the new table the old
-/// table's pieces, and quitting the application threw them away entirely. A
-/// board is now opened from, and saved to, one file inside one game instance.
 #[derive(Default)]
 pub struct Board {
-    /// `None` when no table is open, which is what makes every mutation below
-    /// a no-op instead of a leak into whichever game is opened next.
     pub game_id: Option<String>,
     pub root: Option<PathBuf>,
     pub tokens: HashMap<String, MapToken>,
@@ -49,8 +30,6 @@ impl Board {
         self.game_id.is_some()
     }
 
-    /// Board contents in a stable order so two clients never disagree about
-    /// which token is drawn on top.
     pub fn snapshot(&self) -> Vec<MapToken> {
         let mut list: Vec<MapToken> = self.tokens.values().cloned().collect();
         list.sort_by(|a, b| a.id.cmp(&b.id));
@@ -70,14 +49,6 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub roster: RwLock<HashMap<String, Player>>,
     pub session: RwLock<Option<HostedSession>>,
-    /// Pieces currently on the board, belonging to exactly one game instance.
-    ///
-    /// Kept in memory while the table is open — a token moves many times a
-    /// second while it is dragged and no file should be rewritten at that rate
-    /// — and flushed to the game's own `board.json` whenever the board changes
-    /// shape or a drag ends. The host stays the single source of truth, so a
-    /// reconnecting player is handed the current board rather than trusting
-    /// whatever their own tab happened to remember.
     pub board: RwLock<Board>,
 }
 
@@ -93,12 +64,14 @@ impl AppState {
         }
     }
 
-    /// Roster ordered deterministically so the avatar row does not reshuffle on
-    /// every presence update.
     pub async fn players(&self) -> Vec<Player> {
         let roster = self.roster.read().await;
         let mut players: Vec<Player> = roster.values().cloned().collect();
-        players.sort_by(|a, b| a.username.cmp(&b.username).then(a.client_id.cmp(&b.client_id)));
+        players.sort_by(|a, b| {
+            a.username
+                .cmp(&b.username)
+                .then(a.client_id.cmp(&b.client_id))
+        });
         players
     }
 
@@ -122,10 +95,6 @@ impl AppState {
         self.board.read().await.snapshot()
     }
 
-    /// Load the board belonging to `game_id`, replacing whatever was in memory.
-    ///
-    /// A missing file is an empty board, not an error: a table nobody has
-    /// played yet simply starts bare.
     pub async fn open_board(&self, game_id: &str, root: &Path) {
         let tokens = storage::read_board(root);
         let restored = tokens.len();
@@ -139,8 +108,6 @@ impl AppState {
         tracing::info!(game_id, restored, "board loaded");
     }
 
-    /// Save the board and forget it, so the next table starts from its own file
-    /// rather than from these leftovers.
     pub async fn close_board(&self) {
         let mut board = self.board.write().await;
         if !board.is_open() {
@@ -152,8 +119,6 @@ impl AppState {
         *board = Board::default();
     }
 
-    /// Write the board out. Cheap enough to call for every structural change
-    /// and at the end of a drag; deliberately not called for every frame of one.
     pub async fn persist_board(&self) {
         let board = self.board.read().await;
         if let Err(error) = board.save() {
@@ -161,9 +126,6 @@ impl AppState {
         }
     }
 
-    /// True when this client placed the token. Callers combine this with the
-    /// GM check, since the GM may rearrange anything on the board while a
-    /// player may only touch their own piece.
     pub async fn owns_token(&self, client_id: &str, token_id: &str) -> bool {
         let board = self.board.read().await;
         board
@@ -172,9 +134,6 @@ impl AppState {
             .is_some_and(|token| token.owner_client_id == client_id)
     }
 
-    /// Whoever is running the table: the machine hosting it, or whoever has
-    /// claimed the `__GM__` role on it. Both count, which matters because the
-    /// GM is not required to be the host.
     pub async fn is_gm(&self, client_id: &str) -> bool {
         if self
             .host_client_id()
@@ -190,8 +149,6 @@ impl AppState {
     }
 
     pub fn send(&self, target: Target, payload: String) {
-        // An error here only means nobody is listening yet, which is normal
-        // before the first player connects.
         let _ = self.tx.send(Envelope { target, payload });
     }
 }
@@ -208,8 +165,6 @@ pub fn hub() -> Option<Arc<AppState>> {
     HUB.get().cloned()
 }
 
-/// Serialise and route a message. Silently does nothing when no session is up,
-/// which is what keeps `api` usable from plain unit tests.
 pub fn publish<T: Serialize>(target: Target, message: &T) {
     let Some(state) = hub() else {
         return;
@@ -220,13 +175,6 @@ pub fn publish<T: Serialize>(target: Target, message: &T) {
     }
 }
 
-/// Best-effort discovery of the address other machines should dial.
-///
-/// Opening a UDP socket towards a public address makes the OS pick the
-/// interface backing the default route without sending a single packet. It is
-/// the most reliable way to get the right address on a machine that also has
-/// Hamachi/Radmin/Docker adapters, and it falls back to loopback when the host
-/// is fully offline.
 pub fn local_ip() -> Option<IpAddr> {
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("9.9.9.9:53").ok()?;
@@ -325,8 +273,6 @@ mod tests {
             .insert("t1".into(), token("t1"));
         state.close_board().await;
 
-        // Opening the second table must not inherit the first table's pieces,
-        // and closing it must not overwrite the first table's file.
         state.open_board("mesa_b", &second).await;
         assert!(state.board_snapshot().await.is_empty());
         state.close_board().await;
@@ -337,7 +283,6 @@ mod tests {
 
     #[test]
     fn publishing_without_a_session_is_harmless() {
-        // No hub installed in this test binary path: must not panic.
         publish(Target::All, &serde_json::json!({ "type": "noop" }));
     }
 }

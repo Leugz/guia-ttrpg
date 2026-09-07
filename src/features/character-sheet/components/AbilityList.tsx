@@ -12,7 +12,6 @@ export function AbilityList({ abilities, onUseAbility }: AbilityListProps) {
 
   if (!abilities || abilities.length === 0) return null;
 
-  // Helper to check if an entry has toggleable step effects
   const hasStepEffect = (entry: Entry) =>
     entry.effects.some(
       (effect) => effect.unit === 'step' || effect.unit === 'Step'
@@ -59,7 +58,6 @@ export function AbilityList({ abilities, onUseAbility }: AbilityListProps) {
               {ability.description}
             </span>
 
-            {/* Display the active tag visually if it's turned on */}
             {ability.active && (
               <div className='mt-2 inline-block rounded bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-400'>
                 Efeito Ativo

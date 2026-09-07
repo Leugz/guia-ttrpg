@@ -1,24 +1,10 @@
-//! Locating bundled Acts and provisioning mutable game instances from them.
-//!
-//! Every path in here is derived at runtime from Tauri's resource/data
-//! directories. Nothing is hardcoded to a developer machine, which is what lets
-//! a packaged `.msi`/`.deb` create a table on someone else's computer.
-
 use std::path::{Path, PathBuf};
-
 use tauri::{AppHandle, Manager};
 
 use crate::network::protocol::SheetSummary;
 use crate::storage;
 
-/// Directory that holds the read-only bundled Acts.
-///
-/// In a packaged build these ship as Tauri resources. In `tauri dev` the
-/// resource directory is the target folder, so we fall back to the repository
-/// checkout to keep the dev loop working without a rebuild.
 pub fn templates_root(app: &AppHandle) -> Result<PathBuf, String> {
-    // PRIORIDADE 1: Em modo de desenvolvimento, ler direto da pasta raiz do seu código.
-    // Isso impede que o Tauri use um cache defasado quando você adiciona arquivos novos.
     #[cfg(debug_assertions)]
     {
         let checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -32,7 +18,6 @@ pub fn templates_root(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    // PRIORIDADE 2: Ler dos recursos compilados (usado apenas no app de produção final).
     if let Ok(resource_dir) = app.path().resource_dir() {
         let bundled = resource_dir.join("campaigns");
         if bundled.is_dir() {
@@ -43,8 +28,6 @@ pub fn templates_root(app: &AppHandle) -> Result<PathBuf, String> {
     Err("Could not locate the bundled campaigns directory.".into())
 }
 
-/// Where mutable game instances live. Kept under the app's local data dir so it
-/// survives updates and never needs write access to the install location.
 pub fn instances_root(app: &AppHandle) -> Result<PathBuf, String> {
     let base = app
         .path()
@@ -56,7 +39,6 @@ pub fn instances_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base)
 }
 
-/// Reject anything that could escape the directories we manage.
 fn safe_component(value: &str, label: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -80,8 +62,6 @@ pub fn instance_path(app: &AppHandle, game_id: &str, act_id: &str) -> Result<Pat
     Ok(instances_root(app)?.join(format!("{}_{}", game_id, act_id)))
 }
 
-/// Create an independent, mutable copy of an Act. Existing instances are left
-/// alone so reopening a table never resets anyone's sheet.
 pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<PathBuf, String> {
     let destination = instance_path(app, game_id, act_id)?;
     if destination.is_dir() && has_sheets(&destination) {
@@ -113,7 +93,7 @@ pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<P
 pub fn delete_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<(), String> {
     let target = instance_path(app, game_id, act_id)?;
     let root = instances_root(app)?;
-    // Belt and braces: never remove anything outside the instances directory.
+
     if !target.starts_with(&root) {
         return Err("Refusing to delete a directory outside the games folder.".into());
     }
@@ -137,10 +117,6 @@ fn has_sheets(directory: &Path) -> bool {
     })
 }
 
-/// Resolve a sheet id (a bare file name such as `alan.md`) inside a game root.
-///
-/// This is the only way the network layer turns client input into a path, so a
-/// malicious client cannot ask for `../../../etc/passwd`.
 pub fn resolve_sheet(root: &Path, sheet_id: &str) -> Result<PathBuf, String> {
     let trimmed = sheet_id.trim();
     if trimmed.contains('/') || trimmed.contains('\\') {
@@ -152,8 +128,6 @@ pub fn resolve_sheet(root: &Path, sheet_id: &str) -> Result<PathBuf, String> {
     storage::resolve_within(root, trimmed)
 }
 
-/// Summarise every character file in a game instance, sorted by file name so
-/// the selection list is stable between launches and identical for everyone.
 pub fn list_sheets(root: &Path) -> Result<Vec<SheetSummary>, String> {
     let entries =
         std::fs::read_dir(root).map_err(|e| format!("Failed to read {}: {}", root.display(), e))?;
@@ -187,7 +161,7 @@ pub fn list_sheets(root: &Path) -> Result<Vec<SheetSummary>, String> {
                 occupation: document.data.occupation,
                 level: document.data.level,
             }),
-            // One malformed file must not hide the rest of the party.
+
             Err(reason) => tracing::warn!(sheet = id, %reason, "skipping unreadable sheet"),
         }
     }
@@ -277,7 +251,6 @@ pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
     let mut handouts = Vec::new();
 
     if !dir.is_dir() {
-        // DETECTOR DE ERRO 1: A PASTA NÃO FOI COPIADA OU NÃO EXISTE
         handouts.push(crate::models::Handout {
             id: "error_folder".to_string(),
             title: "⚠️ ERRO: Pasta Não Encontrada".to_string(),
@@ -299,7 +272,6 @@ pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
                     match crate::storage::parse_handout(id, &raw) {
                         Ok(handout) => handouts.push(handout),
                         Err(e) => {
-                            // DETECTOR DE ERRO 2: O ARQUIVO ESTÁ ESCRITO ERRADO
                             handouts.push(crate::models::Handout {
                                 id: format!("error_{}", id),
                                 title: format!("⚠️ ERRO: {}", id),
@@ -320,7 +292,6 @@ pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
     }
 
     if handouts.is_empty() {
-        // DETECTOR DE ERRO 3: A PASTA EXISTE, MAS ESTÁ VAZIA
         handouts.push(crate::models::Handout {
             id: "error_empty".to_string(),
             title: "⚠️ ERRO: Pasta Vazia".to_string(),
@@ -340,10 +311,6 @@ pub fn list_handouts(root: &Path) -> Result<Vec<Handout>, String> {
 
 use crate::models::MapDefinition;
 
-/// Resolve a map id (a bare file stem such as `mansao_terreo`) to its file.
-///
-/// Same containment rule as sheets and handouts: a client hands over an id,
-/// never a path, so it cannot reach outside the `maps/` directory.
 pub fn resolve_map(root: &Path, map_id: &str) -> Result<PathBuf, String> {
     let trimmed = map_id.trim();
     if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') {
@@ -354,11 +321,6 @@ pub fn resolve_map(root: &Path, map_id: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Every map in a game instance, sorted by file name so the selector is in the
-/// same order for everyone at the table.
-///
-/// A missing `maps/` directory is not an error: a campaign is allowed to have
-/// no maps at all, and the board simply shows its empty state.
 pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
     let dir = root.join("maps");
     if !dir.is_dir() {
@@ -389,7 +351,6 @@ pub fn list_maps(root: &Path) -> Result<Vec<MapDefinition>, String> {
         };
         match crate::storage::parse_map(id, &raw) {
             Ok(map) => maps.push(map),
-            // One malformed map must not hide the rest of the campaign.
             Err(reason) => tracing::warn!(map = id, %reason, "skipping unreadable map"),
         }
     }

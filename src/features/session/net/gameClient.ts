@@ -1,16 +1,3 @@
-/**
- * The one place that knows whether we own the campaign files or have to ask
- * the host for them.
- *
- * Every store and component addresses characters by *sheet id* (the file name,
- * e.g. `alan.md`). When hosting, that id is joined onto the local game
- * directory and handled over Tauri IPC. When joined, the same call goes to the
- * host over the LAN socket and runs against the identical Rust code there.
- *
- * This module deliberately imports no stores, so the dependency graph stays
- * acyclic: `sessionStore` pushes context in, everyone else just calls.
- */
-
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 import type {
@@ -34,7 +21,6 @@ export type GameMode = 'offline' | 'host' | 'client';
 
 interface GameContext {
   mode: GameMode;
-  /** Absolute path to the game instance. Only meaningful when hosting. */
   gameRoot: string | null;
 }
 
@@ -48,7 +34,6 @@ export const getGameContext = (): GameContext => context;
 
 export const isHostingGame = () => context.mode === 'host';
 
-/** Sheet ids are bare file names; the backend refuses anything else. */
 const localPath = (sheetId: string): string => {
   if (!context.gameRoot) {
     throw new Error('Nenhuma mesa está aberta nesta máquina.');
@@ -56,10 +41,6 @@ const localPath = (sheetId: string): string => {
   return `${context.gameRoot}/${sheetId}`;
 };
 
-/**
- * Run an operation against the local files when hosting, or against the host
- * when joined. Both branches return the same shape.
- */
 const dispatch = async <T>(
   local: () => Promise<T>,
   remote: () => Promise<T>
@@ -68,10 +49,6 @@ const dispatch = async <T>(
   if (context.mode === 'client') return remote();
   throw new Error('Você não está em uma sessão.');
 };
-
-// ---------------------------------------------------------------------------
-// Reads
-// ---------------------------------------------------------------------------
 
 export const listSheets = (): Promise<SheetSummary[]> =>
   dispatch(
@@ -103,13 +80,6 @@ export const previewTest = (
       }),
     () => lan.request(RpcMethod.previewTest, { sheetId, request })
   );
-
-// ---------------------------------------------------------------------------
-// Writes
-//
-// Each of these persists on the host and fans a `sheet_update` out to every
-// connected client, so a GM watching a player's sheet sees the change land.
-// ---------------------------------------------------------------------------
 
 export const applyResourceChange = (
   sheetId: string,
@@ -228,10 +198,6 @@ export const rollTest = (
     () => lan.request(RpcMethod.rollTest, { sheetId, request })
   );
 
-/**
- * Free-form dice need no sheet and no campaign directory, so they stay local on
- * every machine. The result reaches the table as a chat message like any other.
- */
 export const rollDice = (
   sides: number[],
   secret: boolean
@@ -272,7 +238,6 @@ export const listHandouts = (): Promise<Handout[]> =>
       invoke<Handout[]>('list_game_handouts', {
         gamePath: getGameContext().gameRoot,
       }),
-    // Connected clients already receive handouts automatically via SessionState on join
     () => Promise.resolve([])
   );
 
@@ -301,15 +266,6 @@ export const openHandoutForPlayer = (
       lan.request(RpcMethod.openHandoutForPlayer, { handoutId, targetClientId })
   );
 
-/**
- * A displayable URL for an image handout.
- *
- * The host has the campaign folder on disk, so it can address the file
- * directly through Tauri's asset protocol. A joined client has no local copy
- * of that folder at all, so for it we pull the actual bytes over the RPC
- * channel and hand back a `data:` URL instead — the same "two front doors,
- * identical result" shape every other operation in this module follows.
- */
 export const getHandoutAssetUrl = (
   handout: Pick<Handout, 'id' | 'content'>
 ): Promise<string> =>
@@ -321,10 +277,6 @@ export const getHandoutAssetUrl = (
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
 
-// ---------------------------------------------------------------------------
-// Maps
-// ---------------------------------------------------------------------------
-
 export const listMaps = (): Promise<MapDefinition[]> =>
   dispatch(
     () =>
@@ -334,7 +286,6 @@ export const listMaps = (): Promise<MapDefinition[]> =>
     () => lan.request(RpcMethod.listMaps)
   );
 
-/** GM only. The host refuses this from anyone else. */
 export const setActiveMap = (mapId: string): Promise<MapDefinition[]> =>
   dispatch(
     () =>
@@ -345,10 +296,6 @@ export const setActiveMap = (mapId: string): Promise<MapDefinition[]> =>
     () => lan.request(RpcMethod.setActiveMap, { mapId })
   );
 
-/**
- * A displayable URL for a map image, following the same split as handouts: the
- * host addresses the file on disk, a joined client pulls the bytes over RPC.
- */
 export const getMapImageUrl = (map: MapDefinition): Promise<string> =>
   dispatch(
     () => Promise.resolve(convertFileSrc(localPath(map.image))),
@@ -358,16 +305,9 @@ export const getMapImageUrl = (map: MapDefinition): Promise<string> =>
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
 
-/**
- * A displayable URL for a character's portrait, which is what their token is
- * drawn with. Rejects when the sheet declares no `portrait:`; callers fall
- * back to initials on a coloured chip.
- */
-// Substitua o 'export const getPortraitUrl = (sheetId: string)' (aprox. linha 254) por isso:
 export const getPortraitUrl = (sheetId: string): Promise<string> =>
   dispatch(
     async () => {
-      // Suporte para o Mestre ter foto!
       if (sheetId === '__GM__') {
         return convertFileSrc(`${context.gameRoot}/assets/portraits/gm.png`);
       }
@@ -387,7 +327,6 @@ export const getPortraitUrl = (sheetId: string): Promise<string> =>
 export const getTokenImageUrl = (sheetId: string): Promise<string> =>
   dispatch(
     async () => {
-      // Token próprio para o mestre!
       if (sheetId === '__GM__') {
         return convertFileSrc(
           `${context.gameRoot}/assets/portraits/gm_token.png`
@@ -407,28 +346,11 @@ export const getTokenImageUrl = (sheetId: string): Promise<string> =>
         .then((asset) => `data:${asset.mimeType};base64,${asset.dataBase64}`)
   );
 
-// ---------------------------------------------------------------------------
-// Board persistence
-//
-// A board belongs to one game instance and is stored inside it, next to the
-// sheets, so two tables can never read or overwrite each other's pieces and a
-// table survives closing the application.
-//
-// Only the machine that owns the campaign files does this. A joined player has
-// no copy of the folder and nothing to save; the host hands them the board.
-// While the LAN is open the host saves in Rust, where it has everyone's
-// positions rather than just this window's.
-// ---------------------------------------------------------------------------
-
 export const loadBoard = (): Promise<MapToken[]> => {
   if (context.mode !== 'host' || !context.gameRoot) return Promise.resolve([]);
   return invoke<MapToken[]>('load_board', { gamePath: context.gameRoot });
 };
 
-/**
- * `gameRoot` is explicit so a caller tearing a table down can still name the
- * game it is saving, after the ambient context has been cleared.
- */
 export const saveBoard = (
   tokens: MapToken[],
   gameRoot: string | null = context.gameRoot
@@ -455,7 +377,6 @@ export const setLocalBoardSink = (sink: LocalBoardSink) => {
   localBoard = sink;
 };
 
-/** True when board traffic has somewhere to go over the wire. */
 const boardIsNetworked = () => lan.isOpen();
 
 export const placeToken = (clientId: string, token: MapToken) => {

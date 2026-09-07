@@ -26,12 +26,12 @@ export function ResourceMathInput({
     if (!inputValue.trim()) return;
 
     let delta = 0;
-    const strVal = inputValue.trim().replace('+', ''); // Strip + if they typed it manually
+    const strVal = inputValue.trim().replace('+', '');
 
     if (strVal.startsWith('-')) {
-      delta = parseInt(strVal) || 0; // parseInt("-5") becomes -5
+      delta = parseInt(strVal) || 0;
     } else {
-      delta = parseInt(strVal) || 0; // parseInt("5") becomes 5
+      delta = parseInt(strVal) || 0;
     }
 
     const newValue = current + delta;

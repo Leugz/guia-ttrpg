@@ -24,7 +24,7 @@ export function ResourceBar({
         {label}
       </span>
       <span className='font-mono text-lg font-bold text-white'>
-        {current} {/* renamed */}
+        {current}
         <span className='text-sm font-normal text-neutral-500'>/ {max}</span>
       </span>
     </div>

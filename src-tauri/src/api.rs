@@ -1,14 +1,5 @@
-//! Application services: every operation the game supports, expressed once.
-//!
-//! These functions know nothing about Tauri or Axum. `commands.rs` exposes them
-//! over IPC for the local window and `network::session` exposes the same
-//! functions over the LAN socket, so a joined player and the GM run identical
-//! rules against identical code. Whenever a sheet is written, connected clients
-//! are notified so every open copy of that sheet refreshes.
-
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::campaign;
 use crate::dice::{roll_freeform, roll_pool_entries, RollResult, StepDice};
@@ -22,12 +13,6 @@ use crate::rules::{self, BuiltinDefinition, SkillDefinition};
 use crate::state;
 use crate::storage;
 
-// ---------------------------------------------------------------------------
-// Change notification
-// ---------------------------------------------------------------------------
-
-/// Tell every connected client that a sheet changed. The sheet id is the file
-/// name, which is exactly what clients address sheets by.
 fn notify_sheet(path: &str, sheet: &CharacterSheet) {
     let Some(sheet_id) = Path::new(path).file_name().and_then(|name| name.to_str()) else {
         return;
@@ -41,7 +26,6 @@ fn notify_sheet(path: &str, sheet: &CharacterSheet) {
     );
 }
 
-/// Read, mutate, validate, write, announce.
 fn mutate<F>(path: &str, mutation: F) -> AppResult<CharacterSheet>
 where
     F: FnOnce(&mut CharacterSheet) -> AppResult<()>,
@@ -53,10 +37,6 @@ where
     notify_sheet(path, &document.data);
     Ok(document.data)
 }
-
-// ---------------------------------------------------------------------------
-// Documents
-// ---------------------------------------------------------------------------
 
 pub fn load_character_sheet(path: &str) -> AppResult<ParsedDocument> {
     let document = storage::read_document(path)?;
@@ -92,10 +72,6 @@ pub fn create_character_sheet(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Dice
-// ---------------------------------------------------------------------------
-
 pub fn execute_roll(pool: &[StepDice]) -> AppResult<RollResult> {
     StepDice::roll_pool(pool).map_err(AppError::InvalidInput)
 }
@@ -122,10 +98,6 @@ pub fn roll_test(path: &str, request: &TestRequest) -> AppResult<TestOutcome> {
     Ok(TestOutcome { pool, result })
 }
 
-// ---------------------------------------------------------------------------
-// Resources and saving throws
-// ---------------------------------------------------------------------------
-
 pub fn modify_resource(path: &str, resource: &str, delta: i16) -> AppResult<CharacterSheet> {
     let kind = ResourceKind::from_key(resource)
         .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
@@ -143,11 +115,7 @@ pub struct ResourceOutcome {
     pub save_dc: Option<i16>,
 }
 
-pub fn apply_resource_change(
-    path: &str,
-    resource: &str,
-    delta: i16,
-) -> AppResult<ResourceOutcome> {
+pub fn apply_resource_change(path: &str, resource: &str, delta: i16) -> AppResult<ResourceOutcome> {
     let kind = ResourceKind::from_key(resource)
         .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
 
@@ -181,7 +149,10 @@ pub fn roll_death_save(path: &str, resource: &str) -> AppResult<DeathSaveOutcome
         .ok_or_else(|| AppError::invalid_input(format!("Invalid resource type: {}", resource)))?;
 
     let mut document = storage::read_document(path)?;
-    let (skill, dc) = document.data.death_save_test(kind).map_err(AppError::Conflict)?;
+    let (skill, dc) = document
+        .data
+        .death_save_test(kind)
+        .map_err(AppError::Conflict)?;
 
     let skill_id = skill.id.clone();
     let skill_name = skill.name.clone();
@@ -196,8 +167,6 @@ pub fn roll_death_save(path: &str, resource: &str) -> AppResult<DeathSaveOutcome
 
     let label = format!("Salvamento de {} (CD {})", skill_name, dc);
     let result = roll_pool_entries(&pool.to_pool_entries(), label, false)?;
-    // Widen rather than narrow: `total_sum` is a `u32` and a narrowing cast
-    // would silently wrap on an absurd pool.
     let success = result.total_sum as i32 >= i32::from(dc);
 
     let state = document.data.register_death_save(kind, success);
@@ -215,15 +184,7 @@ pub fn roll_death_save(path: &str, resource: &str) -> AppResult<DeathSaveOutcome
     })
 }
 
-// ---------------------------------------------------------------------------
-// Sheet editing
-// ---------------------------------------------------------------------------
-
-pub fn set_attribute(
-    path: &str,
-    attribute: &str,
-    value: StepDice,
-) -> AppResult<CharacterSheet> {
+pub fn set_attribute(path: &str, attribute: &str, value: StepDice) -> AppResult<CharacterSheet> {
     let attribute = Attribute::from_key(attribute)
         .ok_or_else(|| AppError::invalid_input(format!("Invalid attribute: {}", attribute)))?;
     mutate(path, |sheet| {
@@ -242,11 +203,7 @@ pub fn step_attribute(path: &str, attribute: &str, steps: i32) -> AppResult<Char
     })
 }
 
-pub fn set_skill_value(
-    path: &str,
-    skill_id: &str,
-    value: StepDice,
-) -> AppResult<CharacterSheet> {
+pub fn set_skill_value(path: &str, skill_id: &str, value: StepDice) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
         sheet
             .set_skill_value(skill_id, value)
@@ -279,10 +236,6 @@ pub fn toggle_entry(path: &str, entry_id: &str, active: bool) -> AppResult<Chara
         Ok(())
     })
 }
-
-// ---------------------------------------------------------------------------
-// Effects
-// ---------------------------------------------------------------------------
 
 pub fn list_builtin_effects() -> Vec<BuiltinDefinition> {
     rules::BUILTIN_EFFECTS.to_vec()
@@ -355,10 +308,6 @@ pub fn describe_entry(path: &str, entry_id: &str) -> AppResult<EntrySummary> {
         effects: entry.effects.iter().map(|e| e.describe()).collect(),
     })
 }
-
-// ---------------------------------------------------------------------------
-// Multi-sheet access
-// ---------------------------------------------------------------------------
 
 pub fn grant_sheet_access(path: &str, reference: &str) -> AppResult<CharacterSheet> {
     mutate(path, |sheet| {
@@ -658,9 +607,6 @@ mod tests {
 
 use crate::models::Handout;
 
-/// Read a handout's Markdown file, naming it in any failure. The four call
-/// sites below all used `map_err(|e| e.to_string())`, which produced a bare
-/// "No such file or directory" with nothing to identify it by.
 fn read_handout_file(path: &Path, handout_id: &str) -> AppResult<String> {
     std::fs::read_to_string(path)
         .map_err(|error| AppError::io(format!("Failed to read handout '{}'", handout_id), error))
@@ -720,7 +666,7 @@ pub fn open_handout_for_all(root: &Path, handout_id: &str) -> AppResult<Handout>
     let raw = read_handout_file(&path, handout_id)?;
     let mut handout = storage::parse_handout(handout_id, &raw)?;
 
-    handout.is_public = true; // force — not a toggle
+    handout.is_public = true;
 
     let out = storage::render_handout(&handout)?;
     storage::write_atomic(&path, &out)?;
@@ -753,7 +699,7 @@ pub fn open_handout_for_player(
 
     let target = target_client_id.to_string();
     if !handout.shared_with.contains(&target) {
-        handout.shared_with.push(target.clone()); // ensure — not a toggle
+        handout.shared_with.push(target.clone());
     }
 
     let out = storage::render_handout(&handout)?;
@@ -765,8 +711,6 @@ pub fn open_handout_for_player(
             handout: handout.clone(),
         },
     );
-    // Only the target actually needs the "open now" instruction — this is
-    // exactly what Target::Only already exists for.
     state::publish(
         Target::Only(vec![target]),
         &ServerMessage::HandoutForceOpen {
@@ -778,9 +722,6 @@ pub fn open_handout_for_player(
     Ok(handout)
 }
 
-/// The raw bytes of an image handout, base64-encoded. Joined clients have no
-/// access to the host's filesystem, so this is what lets a player actually
-/// see an image handout instead of just its metadata.
 #[derive(Debug, Clone, Serialize)]
 pub struct HandoutAsset {
     #[serde(rename = "mimeType")]
@@ -800,7 +741,10 @@ pub fn get_handout_asset(root: &Path, handout_id: &str) -> AppResult<HandoutAsse
 
     let asset_path = storage::resolve_asset_within(root, &handout.content)?;
     let bytes = std::fs::read(&asset_path).map_err(|error| {
-        AppError::io(format!("Failed to read image at {}", asset_path.display()), error)
+        AppError::io(
+            format!("Failed to read image at {}", asset_path.display()),
+            error,
+        )
     })?;
 
     Ok(HandoutAsset {
@@ -809,16 +753,8 @@ pub fn get_handout_asset(root: &Path, handout_id: &str) -> AppResult<HandoutAsse
     })
 }
 
-// ---------------------------------------------------------------------------
-// Maps
-// ---------------------------------------------------------------------------
-
 use crate::models::MapDefinition;
 
-/// A binary asset handed to a client that has no filesystem of its own.
-///
-/// Identical in shape to `HandoutAsset`; kept as its own type so maps and
-/// portraits can evolve independently of handouts.
 #[derive(Debug, Clone, Serialize)]
 pub struct AssetPayload {
     #[serde(rename = "mimeType")]
@@ -830,7 +766,10 @@ pub struct AssetPayload {
 fn read_asset(root: &Path, reference: &str) -> AppResult<AssetPayload> {
     let asset_path = storage::resolve_asset_within(root, reference)?;
     let bytes = std::fs::read(&asset_path).map_err(|error| {
-        AppError::io(format!("Failed to read image at {}", asset_path.display()), error)
+        AppError::io(
+            format!("Failed to read image at {}", asset_path.display()),
+            error,
+        )
     })?;
     Ok(AssetPayload {
         mime_type: storage::mime_for_asset(&asset_path).to_string(),
@@ -842,11 +781,6 @@ pub fn list_maps(root: &Path) -> AppResult<Vec<MapDefinition>> {
     Ok(campaign::list_maps(root)?)
 }
 
-/// Reveal one map to the whole table.
-///
-/// Activation is exclusive: every other map is deactivated in the same pass,
-/// so "which map are we looking at" has exactly one answer and reconnecting
-/// clients read it off disk rather than being told by another client.
 pub fn set_active_map(root: &Path, map_id: &str) -> AppResult<Vec<MapDefinition>> {
     let maps = campaign::list_maps(root)?;
     if !maps.iter().any(|map| map.id == map_id) {
@@ -859,13 +793,11 @@ pub fn set_active_map(root: &Path, map_id: &str) -> AppResult<Vec<MapDefinition>
     let mut updated = Vec::with_capacity(maps.len());
     for mut map in maps {
         let should_be_active = map.id == map_id;
-        // Only rewrite the files whose state actually changes.
         if map.is_active != should_be_active {
             map.is_active = should_be_active;
             let path = campaign::resolve_map(root, &map.id)?;
-            let raw = std::fs::read_to_string(&path).map_err(|error| {
-                AppError::io(format!("Failed to read map '{}'", map.id), error)
-            })?;
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|error| AppError::io(format!("Failed to read map '{}'", map.id), error))?;
             let rendered = storage::render_map(&map, &storage::document_body(&raw))?;
             storage::write_atomic(&path, &rendered)?;
         }
@@ -882,7 +814,6 @@ pub fn set_active_map(root: &Path, map_id: &str) -> AppResult<Vec<MapDefinition>
     Ok(updated)
 }
 
-/// The bytes of a map image, for a client that cannot reach the host's disk.
 pub fn get_map_asset(root: &Path, map_id: &str) -> AppResult<AssetPayload> {
     let path = campaign::resolve_map(root, map_id)?;
     let raw = std::fs::read_to_string(&path)
@@ -891,9 +822,6 @@ pub fn get_map_asset(root: &Path, map_id: &str) -> AppResult<AssetPayload> {
     read_asset(root, &map.image)
 }
 
-/// The bytes of a character's portrait, which is what their token is drawn
-/// with. Returns an error when the sheet declares no portrait, and the caller
-/// falls back to initials on a coloured chip.
 pub fn get_sheet_portrait(root: &Path, sheet_id: &str) -> AppResult<AssetPayload> {
     let path = campaign::resolve_sheet(root, sheet_id)?;
     let path = path
@@ -916,7 +844,6 @@ pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> AppResult<AssetPayl
         .ok_or_else(|| AppError::invalid_input("Sheet path is not valid UTF-8."))?;
     let document = load_character_sheet(path)?;
 
-    // Se tiver 'token_image', usa ele. Se não, usa o 'portrait' como fallback!
     let asset_path = if let Some(t) = document.data.token_image.as_deref() {
         t
     } else if let Some(p) = document.data.portrait.as_deref() {

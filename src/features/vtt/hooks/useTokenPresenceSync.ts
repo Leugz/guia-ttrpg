@@ -2,11 +2,6 @@ import { useEffect } from 'react';
 import * as gameClient from '../../session/net/gameClient';
 import type { CharacterSheet } from '../../../shared/types';
 
-/**
- * Pushes the local token's visual state (grayscale on a failed death save,
- * the "owes a save" indicator) to the board whenever resources or death
- * saves change.
- */
 export function useTokenPresenceSync(
   myTokenId: string | null,
   clientId: string,

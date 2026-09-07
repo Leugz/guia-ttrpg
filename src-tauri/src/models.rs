@@ -15,8 +15,6 @@ pub enum Attribute {
 }
 
 impl Attribute {
-    pub const ALL: [Attribute; 3] = [Attribute::Physical, Attribute::Mind, Attribute::Emotion];
-
     pub fn key(self) -> &'static str {
         match self {
             Attribute::Physical => "physical",
@@ -125,7 +123,6 @@ pub struct ActiveEffect {
 }
 
 pub struct StandingEffect<'a> {
-    pub id: &'a str,
     pub name: &'a str,
     pub effects: &'a [Effect],
 }
@@ -156,11 +153,6 @@ impl ResourceKind {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResourceStat {
-    /// `i16` rather than `i32`: the rules cap a sheet at two digits of PV/PD,
-    /// so 15 bits of headroom is already three orders of magnitude of slack.
-    /// Halving these two fields shrinks `Resources` from 16 to 8 bytes, which
-    /// keeps `CharacterSheet`'s fixed-size prefix inside fewer cache lines on
-    /// the hot read-mutate-write path.
     pub current: i16,
     pub max: i16,
 }
@@ -239,8 +231,6 @@ pub struct CharacterSheet {
     pub profile: String,
     #[serde(default)]
     pub occupation: String,
-    /// Validated to 1..=99, so `u8` is the smallest type that can hold every
-    /// legal value.
     #[serde(default = "default_level")]
     pub level: u8,
     pub color: Option<String>,
@@ -313,8 +303,6 @@ impl CharacterSheet {
     }
 
     pub fn skill_mut(&mut self, id: &str) -> Option<&mut Skill> {
-        // `id` is an independent borrow, so the owned copy this used to make
-        // bought nothing and cost an allocation on every skill edit.
         let id = id.trim();
         self.skills
             .iter_mut()
@@ -360,17 +348,16 @@ impl CharacterSheet {
             .chain(self.inventory.iter())
             .filter(|entry| entry.active)
             .map(|entry| StandingEffect {
-                id: &entry.id,
                 name: &entry.name,
                 effects: &entry.effects,
             });
         let applied = self.active_effects.iter().map(|effect| StandingEffect {
-            id: &effect.id,
             name: &effect.name,
             effects: &effect.effects,
         });
-        let mut collected =
-            Vec::with_capacity(self.abilities.len() + self.inventory.len() + self.active_effects.len());
+        let mut collected = Vec::with_capacity(
+            self.abilities.len() + self.inventory.len() + self.active_effects.len(),
+        );
         collected.extend(entries.chain(applied));
         collected
     }
@@ -382,9 +369,6 @@ impl CharacterSheet {
     pub fn apply_resource_delta(&mut self, kind: ResourceKind, delta: i16) -> ResourceChange {
         let stat = self.resources.get_mut(kind);
         let previous = stat.current;
-        // Saturating rather than wrapping: a narrower type means a large heal
-        // or hit is now within reach of the bound, and clamping to `max`
-        // straight after makes the saturation invisible to the caller.
         stat.current = stat.current.saturating_add(delta).clamp(0, stat.max);
         let current = stat.current;
 
@@ -529,8 +513,6 @@ impl CharacterSheet {
             }
         }
 
-        // `Vec::contains` made both of these loops quadratic and allocated a
-        // lowercase String per comparison round; a set is linear.
         let mut seen_skills: HashSet<String> = HashSet::with_capacity(self.skills.len());
         for skill in &self.skills {
             if skill.id.trim().is_empty() {
@@ -952,69 +934,36 @@ pub fn default_content_type() -> String {
     "text".to_string()
 }
 
-// ---------------------------------------------------------------------------
-// Maps and tokens
-// ---------------------------------------------------------------------------
-
-/// A battle map the GM can reveal to the table.
-///
-/// Stored exactly like a handout: one Markdown file per map under `maps/`,
-/// with the YAML frontmatter holding the metadata and the body holding the
-/// campaign-relative path to the image. That keeps maps editable in Obsidian
-/// and keeps the on-disk format uniform.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MapDefinition {
-    /// File stem, e.g. `mansao_terreo`.
     pub id: String,
     pub title: String,
-    /// Campaign-relative path to a PNG or JPEG, e.g. `assets/maps/terreo.png`.
     pub image: String,
-    /// Side of one grid square in image pixels. `0` disables the grid overlay.
     #[serde(default)]
     pub grid_size: u32,
-    /// Exactly one map is active at a time; that is the one players see.
     #[serde(default)]
     pub is_active: bool,
 }
 
-/// Where a save indicator is drawn on a token, mirroring the two death-save
-/// tracks a sheet already carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SaveIndicator {
-    /// Physical track: the character is at 0 PV and owes a save.
     Hp,
-    /// Mental track: the character is at 0 PD and owes a save.
     Dp,
-    /// Both tracks at once.
     Both,
 }
 
-/// A piece on the board.
-///
-/// Tokens are deliberately *not* persisted to Markdown. They move dozens of
-/// times a second while someone drags one, and rewriting a file at that rate
-/// would be both slow and useless — a token's position has no meaning between
-/// sessions. They live in the host's memory for as long as the table is open.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MapToken {
     pub id: String,
-    /// The map this token sits on. Tokens on other maps are not drawn.
     pub map_id: String,
-    /// Who placed it. A player may only move their own; the GM may move any.
     pub owner_client_id: String,
-    /// Sheet the token portrays, used by every client to resolve the portrait.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet_id: Option<String>,
-    /// Fallback label when there is no portrait to draw.
     pub label: String,
     pub color: String,
-    /// Position in *map image* coordinates, so it survives pan and zoom and
-    /// lands in the same spot on every screen regardless of window size.
     pub x: f64,
     pub y: f64,
-    /// Drawn desaturated. The owner sets this when they drop to 0 PV/PD; the
-    /// GM can also toggle it by hand for anything else that is out of play.
     #[serde(default)]
     pub grayscale: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

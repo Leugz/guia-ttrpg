@@ -1,9 +1,3 @@
-/**
- * The GM's map list, opening beside the toolbar button rather than over the
- * board — picking a map is a glance-and-click, not a modal decision, and the
- * board stays visible behind it.
- */
-
 import { Check, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -14,7 +8,6 @@ import { useLanStore } from '../../session/net/lanStore';
 export function MapSelector({ onClose }: { onClose: () => void }) {
   const maps = useLanStore((state) => state.maps);
   const setMaps = useLanStore((state) => state.setMaps);
-  /** The map being revealed, held until the host confirms the write. */
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +16,6 @@ export function MapSelector({ onClose }: { onClose: () => void }) {
     setPending(map.id);
     setError(null);
     try {
-      // The host answers with the whole list, so the active flag can never
-      // end up set on two maps at once in this window.
       setMaps(await gameClient.setActiveMap(map.id));
       onClose();
     } catch (cause) {
@@ -35,7 +26,6 @@ export function MapSelector({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Escape closes it, matching every other transient panel in the app.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();

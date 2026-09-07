@@ -1,11 +1,3 @@
-//! One task per connected player.
-//!
-//! The host is authoritative: clients never touch the campaign directory. They
-//! send `rpc` requests naming a sheet by file name, the host resolves that name
-//! inside the game instance, runs the same `api` function the GM's own window
-//! would run, and answers on the socket. Sheet writes additionally fan out a
-//! `sheet_update` so every open copy stays in step.
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,8 +19,6 @@ use crate::storage;
 
 pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
-    // Unknown until the client sends `join`; targeted traffic is withheld until
-    // then, which also stops an unidentified socket from seeing secret rolls.
     let mut client_id: Option<String> = None;
 
     loop {
@@ -43,8 +33,6 @@ pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
-                    // Ping/Pong are answered by Axum; binary frames are not part
-                    // of the protocol and are ignored rather than fatal.
                     Some(Ok(_)) => {}
                     Some(Err(error)) => {
                         tracing::debug!(%error, "websocket receive failed");
@@ -62,8 +50,6 @@ pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             break;
                         }
                     }
-                    // A slow client missing a few broadcasts is survivable: the
-                    // next roster/sheet update carries the full state anyway.
                     Err(RecvError::Lagged(skipped)) => {
                         tracing::warn!(skipped, "client fell behind the broadcast channel");
                     }
@@ -76,15 +62,6 @@ pub async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     disconnect(&state, client_id).await;
 }
 
-/// Mark the player offline but keep their claim so an automatic reconnect
-/// restores the session instead of creating a duplicate.
-///
-/// Their tokens stay where they are, for the same reason their claim does. A
-/// dropped connection is usually temporary, and wiping the piece belonging to
-/// whoever's Wi-Fi blinked used to empty the board a player at a time — most
-/// destructively at the very end of a session, when everyone disconnects at
-/// once and the board that got saved was the empty one. The GM can still move
-/// or remove anything on the table.
 async fn disconnect(state: &Arc<AppState>, client_id: Option<String>) {
     let Some(client_id) = client_id else {
         return;
@@ -99,7 +76,6 @@ async fn disconnect(state: &Arc<AppState>, client_id: Option<String>) {
     broadcast_roster(state).await;
 }
 
-/// Returns an optional direct reply for this socket only.
 async fn handle_text(
     state: &Arc<AppState>,
     client_id: &mut Option<String>,
@@ -108,7 +84,6 @@ async fn handle_text(
     let message = match serde_json::from_str::<ClientMessage>(text) {
         Ok(message) => message,
         Err(error) => {
-            // Malformed input is rejected and logged, never trusted.
             tracing::warn!(%error, "rejected malformed websocket message");
             return None;
         }
@@ -146,14 +121,14 @@ async fn handle_text(
             None
         }
         ClientMessage::TokenPlace {
-            client_id: _,
+            _client_id: _,
             token,
         } => {
             place_token(state, client_id.as_deref(), token).await;
             None
         }
         ClientMessage::TokenMove {
-            client_id: _,
+            _client_id: _,
             token_id,
             x,
             y,
@@ -163,7 +138,7 @@ async fn handle_text(
             None
         }
         ClientMessage::TokenState {
-            client_id: _,
+            _client_id: _,
             token_id,
             grayscale,
             save_indicator,
@@ -179,14 +154,14 @@ async fn handle_text(
             None
         }
         ClientMessage::TokenRemove {
-            client_id: _,
+            _client_id: _,
             token_id,
         } => {
             remove_token(state, client_id.as_deref(), &token_id).await;
             None
         }
         ClientMessage::Tool {
-            client_id: _,
+            _client_id: _,
             payload,
         } => {
             let sender = client_id.as_deref().unwrap_or("unknown").to_string();
@@ -200,7 +175,7 @@ async fn handle_text(
             None
         }
         ClientMessage::Jukebox {
-            client_id: _,
+            _client_id: _,
             payload,
         } => {
             let sender = client_id.as_deref().unwrap_or("");
@@ -225,16 +200,6 @@ async fn handle_text(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Board
-//
-// Token traffic never touches the disk and never waits for a reply. Movement in
-// particular is the hottest thing on this socket — one message per animation
-// frame while a piece is being dragged — so it does the least work possible:
-// authorise, update one map entry, rebroadcast the three numbers that changed.
-// ---------------------------------------------------------------------------
-
-/// Push the whole board out. Used after structural changes, which are rare.
 async fn broadcast_board(state: &Arc<AppState>) {
     let tokens = state.board_snapshot().await;
     let message = ServerMessage::TokensSync { tokens };
@@ -250,8 +215,6 @@ async fn place_token(state: &Arc<AppState>, sender: Option<&str>, token: MapToke
     };
 
     let mut token = token;
-    // The owner is the connection that sent this, never what the payload
-    // claims, so nobody can place a piece in somebody else's name.
     token.owner_client_id = sender.to_string();
     if token.id.trim().is_empty() || token.map_id.trim().is_empty() {
         tracing::warn!(sender, "rejected a token with no id or map");
@@ -260,13 +223,10 @@ async fn place_token(state: &Arc<AppState>, sender: Option<&str>, token: MapToke
 
     {
         let mut board = state.board.write().await;
-        // No table open means nothing to place onto. Refusing here is what
-        // stops a late message during shutdown from seeding the next game.
         if !board.is_open() {
             return;
         }
-        // One token per owner per map: dragging your portrait out again moves
-        // your piece rather than cluttering the board with copies of you.
+
         board.tokens.retain(|_, existing| {
             !(existing.owner_client_id == token.owner_client_id
                 && existing.map_id == token.map_id
@@ -312,7 +272,6 @@ async fn move_token(
         state.send(Target::All, payload);
     }
 
-    // Once the pointer lifts, not once per frame while it is down.
     if !dragging {
         state.persist_board().await;
     }
@@ -377,8 +336,6 @@ async fn join(state: &Arc<AppState>, client_id: &str, username: &str, color: &st
                 connected: true,
                 is_gm,
             });
-        // Re-sending `join` refreshes identity without dropping the claim, which
-        // is what makes reconnects restore rather than duplicate a session.
         entry.username = username.to_string();
         entry.color = color.to_string();
         entry.connected = true;
@@ -427,7 +384,6 @@ async fn relay_chat(
         }
     };
 
-    // Find whoever claimed the __GM__ role, rather than assuming it's the host machine
     let gm_client_id = {
         let roster = state.roster.read().await;
         roster
@@ -486,7 +442,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         Vec::new()
     });
     let history = history::recent(&state.db_path, &game_id, HISTORY_LIMIT).unwrap_or_default();
-    let handouts = campaign::list_handouts(&root).unwrap_or_default(); // <-- ADD THIS
+    let handouts = campaign::list_handouts(&root).unwrap_or_default();
     let maps = campaign::list_maps(&root).unwrap_or_else(|error| {
         tracing::error!(%error, "failed to list maps for a joining client");
         Vec::new()
@@ -499,7 +455,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         history,
         players,
         game_id,
-        handouts, // <-- ADD THIS
+        handouts,
         maps,
         tokens,
     };
@@ -508,10 +464,6 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         Err(error) => tracing::error!(%error, "failed to serialise the session state"),
     }
 }
-
-// ---------------------------------------------------------------------------
-// RPC
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 struct SheetParams {
@@ -593,7 +545,6 @@ struct AccessParams {
     reference: String,
 }
 
-/// Methods that write to disk and therefore need an ownership check.
 fn is_mutating(method: &str) -> bool {
     matches!(
         method,
@@ -609,7 +560,6 @@ fn is_mutating(method: &str) -> bool {
     )
 }
 
-/// The sheet a request targets, if any.
 fn requested_sheet(params: &Value) -> Option<String> {
     params
         .get("sheetId")
@@ -617,9 +567,6 @@ fn requested_sheet(params: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// A player may edit the sheet they claimed; the GM may edit anything; and a
-/// claimed sheet's `accessible_sheets` list extends that permission, which is
-/// how the GM hands out extra sheets.
 async fn may_mutate(
     state: &Arc<AppState>,
     client_id: &str,
@@ -663,11 +610,6 @@ async fn may_mutate(
     }
 }
 
-/// A player may fetch an image handout's bytes if they're the GM, the
-/// handout is public, or it has been explicitly shared with them — the same
-/// visibility rule the handout metadata itself is already filtered by on the
-/// frontend. This is enforced here too so a client can't bypass that filter
-/// by guessing a handout id.
 async fn may_view_handout(
     state: &Arc<AppState>,
     client_id: &str,
@@ -732,8 +674,6 @@ async fn rpc(
         }
     }
 
-    // Revealing a map is the GM's call alone: it changes what the whole table
-    // is looking at, and it is the one map operation that writes to disk.
     if method == method::SET_ACTIVE_MAP && !state.is_gm(client_id).await {
         tracing::warn!(client_id, "rejected a map change from a non-GM");
         return ServerMessage::err(request_id, "Only the GM can change the map.");
@@ -752,8 +692,6 @@ async fn rpc(
         }
     }
 
-    // File IO must not run on the async executor; each request gets its own
-    // blocking task so one slow disk cannot stall the whole table.
     let method = method.to_string();
     let dispatched = tokio::task::spawn_blocking(move || dispatch(&root, &method, params)).await;
 
@@ -782,7 +720,6 @@ fn sheet_path(root: &PathBuf, sheet_id: &str) -> Result<String, String> {
         .ok_or_else(|| "Sheet path is not valid UTF-8.".to_string())
 }
 
-/// Blocking dispatch: one arm per supported method, each delegating to `api`.
 fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String> {
     match method {
         method::LIST_SHEETS => to_value(campaign::list_sheets(root)?),

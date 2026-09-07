@@ -63,13 +63,6 @@ const resetTableState = () => {
   useLanStore.getState().clearBoard();
 };
 
-/**
- * Write the current board into the game instance it belongs to.
- *
- * Only needed while the LAN is closed: once a table is open the Rust host owns
- * the file, and it saves the authoritative board rather than one window's view
- * of it.
- */
 const persistBoard = async (gameRoot: string | null) => {
   const board = snapshotBoard();
   if (!gameRoot || !board) return;
@@ -172,9 +165,6 @@ export const useSessionStore = create<SessionState>()(
       openLan: async () => {
         const { activeGameId, activeGamePath, clientId, isLanOpen } = get();
         if (!activeGameId || !activeGamePath) return;
-
-        // The host reads this game's board as it binds the port, so anything
-        // placed while the table was offline has to reach the file first.
         if (!isLanOpen) await persistBoard(activeGamePath);
 
         try {
@@ -219,9 +209,6 @@ export const useSessionStore = create<SessionState>()(
       leaveGame: async () => {
         const { isHosting, isLanOpen, clientId, activeGamePath } = get();
 
-        // Before anything clears the board. A hosted table is saved by the
-        // Rust side in `stop_hosting` below; an offline one has only this
-        // window to do it.
         if (isHosting && !isLanOpen) await persistBoard(activeGamePath);
 
         if (!isHosting) lan.releaseSheet(clientId);

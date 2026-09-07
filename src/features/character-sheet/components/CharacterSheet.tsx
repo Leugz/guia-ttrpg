@@ -25,12 +25,6 @@ const BUILTIN_CONDITIONS = [
     desc: 'Emoção -1 Passo',
     activeClass: 'text-green-400 border-green-900/50 bg-green-950/30',
   },
-  // {
-  //   id: 'ajudado',
-  //   label: 'Ajudado',
-  //   desc: 'Vantagem: +1/+2 Passos',
-  //   activeClass: 'text-yellow-400 border-yellow-900/50 bg-yellow-950/30',
-  // },
 ];
 
 const SectionTitle = ({
@@ -97,7 +91,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
     pendingImpetoD4,
     setPendingImpetoD4,
     ajudado,
-    setAjudado, // NEW
+    setAjudado,
   } = useCharacterStore();
 
   const { addMessage } = useChatStore();

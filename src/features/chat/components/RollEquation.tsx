@@ -15,7 +15,6 @@ export function RollEquation({ result }: { result: RollResult }) {
     <div
       className={`mt-2 rounded border bg-black p-3 ${borderColor} font-mono`}
     >
-      {/* Visual Crit Indicators (Section 4.12) */}
       {(isCritSuccess || isCritFail) && (
         <div className='mb-2 flex justify-center'>
           {isCritSuccess ? (
@@ -26,7 +25,6 @@ export function RollEquation({ result }: { result: RollResult }) {
         </div>
       )}
 
-      {/* Die Mapping (Section 4.11) */}
       <div className='mb-3 flex flex-wrap justify-center gap-2'>
         {result.dice.map((die, idx) => (
           <div
@@ -39,7 +37,6 @@ export function RollEquation({ result }: { result: RollResult }) {
             </span>
             <span className='flex items-center gap-1 text-lg font-bold'>
               {die.value}
-              {/* RA / RB Indicators */}
               {die.is_highest && (
                 <FaArrowUp className='text-xs text-blue-400' />
               )}

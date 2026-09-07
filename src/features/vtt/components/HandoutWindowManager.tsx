@@ -26,14 +26,6 @@ interface HandoutRowProps {
   onOpenForPlayer: (id: string, targetClientId: string) => void;
 }
 
-/**
- * One row in the handout list.
- *
- * `VttApp` carried this markup twice, copy-pasted for the "Regras" and
- * "Documentos" sections, and the two copies had already drifted — one wrapped
- * its share controls in a stray `<>…</>` the other did not. One component, two
- * call sites.
- */
 const HandoutRow = React.memo(function HandoutRow({
   handout,
   isGM,
@@ -132,18 +124,10 @@ export interface HandoutWindowManagerProps {
   isGM: boolean;
   clientId: string;
   roster: LanPlayer[];
-  /** Whether the browser window listing the handouts is showing. */
   isListOpen: boolean;
   onCloseList: () => void;
 }
 
-/**
- * Owns everything about handouts: which are visible, which windows are open,
- * the decoded image URLs, and the four GM actions that mutate sharing.
- *
- * Pulled out of `VttApp` wholesale. The image-URL cache in particular was a
- * `VttApp` state object, so decoding one image re-rendered the entire table.
- */
 export function HandoutWindowManager({
   isGM,
   clientId,
@@ -193,7 +177,6 @@ export function HandoutWindowManager({
     });
   }, []);
 
-  // Four mutations that all end the same way: replace one handout in the store.
   const patch = useCallback((updated: Handout) => {
     useLanStore.setState((state) => ({
       handouts: state.handouts.map((h) => (h.id === updated.id ? updated : h)),
@@ -227,8 +210,6 @@ export function HandoutWindowManager({
     [patch]
   );
 
-  // The GM pushed a handout at us. Subscribing to the socket event directly
-  // means this is a plain callback rather than a queue drained from an effect.
   useEffect(
     () =>
       lan.on('handoutForceOpen', (message) => {
@@ -238,7 +219,6 @@ export function HandoutWindowManager({
     [clientId, open]
   );
 
-  // Decode the image behind every open non-text handout, once each.
   useEffect(() => {
     let cancelled = false;
     for (const id of openIds) {

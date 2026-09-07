@@ -1,21 +1,12 @@
-//! The wire contract between the hosting instance and every joined client.
-//!
-//! Everything that crosses the WebSocket is defined here so that the Rust side
-//! and `src/features/session/net/protocol.ts` can be kept in step by reading a
-//! single file on each end.
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::models::{CharacterSheet, MapDefinition, MapToken, SaveIndicator};
 
-/// Default LAN port. Chosen high enough to avoid privileged-port prompts.
 pub const LAN_PORT: u16 = 37373;
 
-/// How many chat/roll entries a joining client receives as backlog.
 pub const HISTORY_LIMIT: usize = 200;
 
-/// A participant as tracked by the host.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub client_id: String,
@@ -28,21 +19,14 @@ pub struct Player {
     pub is_gm: bool,
 }
 
-/// A character file the host is willing to hand out, summarised for the
-/// selection screen so clients never need the campaign directory themselves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SheetSummary {
-    /// File name relative to the game instance root, e.g. `alan.md`.
     pub id: String,
     pub name: String,
     pub profile: String,
     pub occupation: String,
     pub level: u8,
 }
-
-// ---------------------------------------------------------------------------
-// Client -> Server
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -76,58 +60,42 @@ pub enum ToolPayload {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
-    /// Announce (or re-announce) identity. Re-sending updates the roster entry.
     Join {
         #[serde(rename = "clientId")]
         client_id: String,
         username: String,
         color: String,
     },
-    /// Take ownership of a character sheet.
     Claim {
         #[serde(rename = "clientId")]
         client_id: String,
         #[serde(rename = "sheetId")]
         sheet_id: String,
     },
-    /// Give up the currently claimed sheet.
     Release {
         #[serde(rename = "clientId")]
         client_id: String,
     },
-    /// A chat line.
     Text(ChatEnvelope),
-    /// A dice result rendered as a chat line.
     Roll(ChatEnvelope),
-    /// Drop a new token onto the board. The host overrides the owner with the
-    /// sending connection's id, so a client cannot place a piece in someone
-    /// else's name.
     TokenPlace {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         token: MapToken,
     },
-    /// Move a token. This is the hot path — it fires many times per second
-    /// while a piece is being dragged — so it is a plain broadcast rather than
-    /// an RPC: no request id, no response, no disk access.
     TokenMove {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         #[serde(rename = "tokenId")]
         token_id: String,
         x: f64,
         y: f64,
-        /// True for the intermediate frames of a drag, false for the final
-        /// resting position. Receivers use it to skip easing while a piece is
-        /// still in motion.
         #[serde(default)]
         dragging: bool,
     },
-    /// Update the presentation flags a token carries: desaturated when its
-    /// character is out of play, and the save marker when one is owed.
     TokenState {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         #[serde(rename = "tokenId")]
         token_id: String,
         #[serde(default)]
@@ -135,19 +103,17 @@ pub enum ClientMessage {
         #[serde(default)]
         save_indicator: Option<SaveIndicator>,
     },
-    /// Take a token off the board.
     TokenRemove {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         #[serde(rename = "tokenId")]
         token_id: String,
     },
     Tool {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         payload: ToolPayload,
     },
-    /// A remote procedure call against the host's rules engine.
     Rpc {
         #[serde(rename = "requestId")]
         request_id: String,
@@ -156,18 +122,13 @@ pub enum ClientMessage {
         params: Value,
     },
 
-    /// Jukebox control (GM only)
     Jukebox {
         #[serde(rename = "clientId")]
-        client_id: String,
+        _client_id: String,
         payload: JukeboxPayload,
     },
 }
 
-/// Chat payloads are produced by the UI and echoed back to everyone verbatim,
-/// so only the two fields the host actually reasons about are modelled here.
-/// Every other key is ignored on the way in and preserved on the way out
-/// because the original text is what gets rebroadcast.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatEnvelope {
     #[serde(default)]
@@ -177,7 +138,6 @@ pub struct ChatEnvelope {
 }
 
 impl ChatEnvelope {
-    /// Secret rolls are only delivered to their author and the GM.
     pub fn is_secret(&self) -> bool {
         self.roll_result
             .as_ref()
@@ -187,57 +147,41 @@ impl ChatEnvelope {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Server -> Client
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    /// Full roster, sent whenever presence or claims change.
     RosterSync {
         players: Vec<Player>,
     },
-    /// Everything a (re)joining client needs to catch up.
     SessionState {
         sheets: Vec<SheetSummary>,
         history: Vec<Value>,
         players: Vec<Player>,
         #[serde(rename = "gameId")]
         game_id: String,
-        handouts: Vec<crate::models::Handout>, // <-- ADDED
+        handouts: Vec<crate::models::Handout>,
         maps: Vec<MapDefinition>,
         tokens: Vec<MapToken>,
     },
-    /// A sheet changed on disk; anyone displaying it should refresh.
     SheetUpdate {
         #[serde(rename = "sheetId")]
         sheet_id: String,
         sheet: CharacterSheet,
     },
-    /// A handout was updated (public, private, or shared state changed)
     HandoutUpdate {
-        // <-- ADDED
         handout: crate::models::Handout,
     },
     HandoutForceOpen {
         #[serde(rename = "handoutId")]
         handout_id: String,
-        /// `None` reaches everyone; `Some(id)` reaches just that client.
         target: Option<String>,
     },
-    /// The map list changed — in practice, the GM revealed a different map.
-    /// Sent whole rather than as a delta because it is a rare event and the
-    /// list is a handful of entries.
     MapsUpdate {
         maps: Vec<MapDefinition>,
     },
-    /// The full board. Sent on join and after any structural change (a token
-    /// placed, removed, or restyled).
     TokensSync {
         tokens: Vec<MapToken>,
     },
-    /// One token moved. Deliberately the smallest message on the wire.
     TokenMoved {
         #[serde(rename = "tokenId")]
         token_id: String,
@@ -253,7 +197,6 @@ pub enum ServerMessage {
     JukeboxSync {
         payload: JukeboxPayload,
     },
-    /// Result of a `Rpc` request.
     RpcResult {
         #[serde(rename = "requestId")]
         request_id: String,
@@ -263,7 +206,6 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
-    /// The host closed the table.
     SessionClosed {
         reason: String,
     },
@@ -289,19 +231,12 @@ impl ServerMessage {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Routing
-// ---------------------------------------------------------------------------
-
-/// Who a broadcast is meant for. Every connection filters on this before
-/// writing to its socket, which is what keeps secret rolls secret.
 #[derive(Debug, Clone)]
 pub enum Target {
     All,
     Only(Vec<String>),
 }
 
-/// A pre-serialised outbound message plus its routing rule.
 #[derive(Debug, Clone)]
 pub struct Envelope {
     pub target: Target,
@@ -320,8 +255,6 @@ impl Envelope {
     }
 }
 
-/// RPC method names. Kept as constants so a typo fails to compile rather than
-/// silently returning "unknown method" at runtime.
 pub mod method {
     pub const LIST_SHEETS: &str = "list_sheets";
     pub const LOAD_SHEET: &str = "load_sheet";
@@ -342,15 +275,10 @@ pub mod method {
     pub const TOGGLE_HANDOUT_SHARE: &str = "toggle_handout_share";
     pub const OPEN_HANDOUT_FOR_ALL: &str = "open_handout_for_all";
     pub const OPEN_HANDOUT_FOR_PLAYER: &str = "open_handout_for_player";
-    /// Fetches the raw bytes of an image handout, base64-encoded. Joined
-    /// clients have no filesystem access of their own, so this is what lets
-    /// them actually see an image handout instead of just its metadata.
     pub const GET_HANDOUT_ASSET: &str = "get_handout_asset";
     pub const LIST_MAPS: &str = "list_maps";
-    /// GM-only: reveals a map to the whole table.
     pub const SET_ACTIVE_MAP: &str = "set_active_map";
     pub const GET_MAP_ASSET: &str = "get_map_asset";
-    /// Fetches a character's portrait so remote clients can draw its token.
     pub const GET_SHEET_PORTRAIT: &str = "get_sheet_portrait";
     pub const GET_SHEET_TOKEN_IMAGE: &str = "get_sheet_token_image";
 }

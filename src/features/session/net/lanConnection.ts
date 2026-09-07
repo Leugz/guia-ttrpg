@@ -1,11 +1,3 @@
-/**
- * The single WebSocket the client keeps open to the host.
- *
- * Stores subscribe to the events they care about rather than importing each
- * other, which keeps the module graph acyclic: this file imports nothing from
- * the feature stores.
- */
-
 import {
   buildWsUrl,
   HandoutForceOpenMessage,
@@ -35,13 +27,11 @@ export interface Identity {
   color: string;
 }
 
-/** Events any store can subscribe to. */
 export interface LanEvents {
   status: ConnectionStatus;
   roster: LanPlayer[];
   session: SessionStateMessage;
   sheet: SheetUpdateMessage;
-  /** A chat or roll payload, forwarded verbatim. */
   chat: Record<string, unknown>;
   closed: string;
   handout: HandoutUpdateMessage;
@@ -73,7 +63,6 @@ class LanConnection {
   private pending = new Map<string, Pending>();
   private listeners = new Map<keyof LanEvents, Set<Listener<never>>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Set while the user is deliberately leaving, to suppress auto-reconnect. */
   private closing = false;
   private status: ConnectionStatus = 'idle';
 
@@ -115,10 +104,6 @@ class LanConnection {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
-  /**
-   * Connect, or update our identity on an already-open socket. Calling this
-   * repeatedly with the same address is safe.
-   */
   connect(address: string, identity: Identity) {
     this.identity = identity;
     this.closing = false;
@@ -161,7 +146,6 @@ class LanConnection {
     socket.onmessage = (event) => this.receive(event.data);
 
     socket.onerror = () => {
-      // `onclose` always follows, so recovery is handled in one place.
       console.warn('LAN socket error');
     };
 
@@ -192,10 +176,6 @@ class LanConnection {
     }
   }
 
-  /**
-   * Announce identity. The host treats a repeat `join` from a known client id
-   * as a session restore, so this is also what makes reconnects seamless.
-   */
   private announce() {
     if (!this.identity) return;
     this.send({
@@ -241,12 +221,6 @@ class LanConnection {
     this.send({ type: 'release', clientId });
   }
 
-  /**
-   * Board traffic. Deliberately fire-and-forget: a drag emits one of these per
-   * animation frame, so there is no request id to match and no promise to
-   * settle. `send` already no-ops when the socket is closed, which is exactly
-   * the right behaviour for an offline host with nobody to tell.
-   */
   sendToken(message: TokenClientMessage) {
     this.send(message);
   }
@@ -255,7 +229,6 @@ class LanConnection {
     this.send(message);
   }
 
-  /** Call a method on the host and wait for its answer. */
   request<M extends keyof RpcResults>(
     method: M,
     params: Record<string, unknown> = {}
@@ -371,7 +344,6 @@ class LanConnection {
   }
 }
 
-/** One connection per application instance. */
 export const lan = new LanConnection();
 
 export { RpcMethod };

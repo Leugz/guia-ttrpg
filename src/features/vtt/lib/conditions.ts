@@ -1,4 +1,3 @@
-/** Flavor text shown on hover for a HUD condition badge. */
 export const getConditionDesc = (id: string): string => {
   switch (id) {
     case 'machucado':

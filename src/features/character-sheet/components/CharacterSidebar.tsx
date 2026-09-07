@@ -151,14 +151,12 @@ export function CharacterSidebar() {
                     onClick={() => setActiveAttribute(name)}
                     className={`relative flex-1 cursor-pointer overflow-hidden rounded border p-2 text-center transition-all hover:brightness-125 ${effective.colorClass}`}
                   >
-                    {/* SVG Background Layer */}
                     <img
                       src={`/dice/d${effective.value}.svg`}
                       alt=''
                       className='pointer-events-none absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 opacity-15 mix-blend-screen'
                     />
 
-                    {/* Foreground Content Layer */}
                     <div className='relative z-10'>
                       <span className='block text-xs font-bold uppercase tracking-wider opacity-80'>
                         {attributeDisplayMap[name]}

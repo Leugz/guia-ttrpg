@@ -13,32 +13,15 @@ import { getInitials } from '../../../shared/lib/initials';
 import { TrackerResourceBar } from './TrackerResourceBar';
 
 export interface GmPartyTrackerProps {
-  /** Only the true GM tracks the party; anyone else renders nothing. */
   isGM: boolean;
   roster: LanPlayer[];
 }
 
-/**
- * The GM's live view of every claimed sheet at the table.
- *
- * Owns the sheets it displays and the selection on top of them, so a player
- * editing their PV no longer re-renders the whole table shell — the toolbar,
- * the board, the chat drawer and the handout windows all used to reconcile
- * because `partySheets` lived in `VttApp`'s state.
- */
 export function GmPartyTracker({ isGM, roster }: GmPartyTrackerProps) {
   const [partySheets, setPartySheets] = useState<
     Record<string, CharacterSheetData>
   >({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Mestre carrega as fichas de todos que escolheram um personagem.
-  //
-  // Keyed off a joined string rather than the roster array: the host re-sends
-  // the roster on every connect, disconnect and claim, and each of those
-  // produced a brand-new array that re-ran this effect. `partySheets` is read
-  // through the setter instead of the dependency list for the same reason —
-  // listing it made the effect re-run on its own result.
   const claimedKey = roster
     .filter(
       (p) => p.connected && p.claimed_sheet && p.claimed_sheet !== '__GM__'
@@ -68,12 +51,10 @@ export function GmPartyTracker({ isGM, roster }: GmPartyTrackerProps) {
     };
   }, [isGM, claimedKey]);
 
-  // Mestre ouve as edições ao vivo
   useEffect(() => {
     if (!isGM) return;
     return lan.on('sheet', (message) => {
       setPartySheets((prev) =>
-        // Só redesenha se a ficha alterada já estiver sendo acompanhada.
         prev[message.sheetId]
           ? { ...prev, [message.sheetId]: message.sheet }
           : prev

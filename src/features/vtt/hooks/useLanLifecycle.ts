@@ -13,12 +13,6 @@ export interface LanLifecycleOptions {
   localClaim: string | null;
 }
 
-/**
- * Keeps the socket, presence roster and sheet claim in sync with the current
- * hosting/joining state. Split out of `VttApp` because these three effects
- * were interleaved with unrelated UI state there, which made the connection
- * lifecycle hard to audit on its own.
- */
 export function useLanLifecycle({
   isHosting,
   isLanOpen,
@@ -43,7 +37,6 @@ export function useLanLifecycle({
           color: identityColor,
         });
       } else {
-        // CORREÇÃO: O mestre mantém o estado da tela, apenas a porta de rede é fechada!
         useLanStore.getState().disconnectSocketOnly();
       }
     } else {
@@ -54,10 +47,9 @@ export function useLanLifecycle({
           color: identityColor,
         });
       } else {
-        disconnect(); // Saiu de vez
+        disconnect();
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHosting, isLanOpen, lanHostAddress]);
 
   useEffect(() => {

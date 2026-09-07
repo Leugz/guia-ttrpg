@@ -37,9 +37,6 @@ pub fn resolve_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Like `resolve_within`, but for the binary image an image-handout's body
-/// points at, rather than a Markdown document. Only the allowed extension
-/// list differs — traversal outside the campaign root is still refused.
 pub fn resolve_asset_within(root: &Path, reference: &str) -> Result<PathBuf, String> {
     let relative = PathBuf::from(reference.trim());
     if relative.is_absolute()
@@ -64,8 +61,6 @@ pub fn resolve_asset_within(root: &Path, reference: &str) -> Result<PathBuf, Str
     }
 }
 
-/// Best-effort MIME type for an image asset, used when handing raw bytes to a
-/// remote client instead of letting it resolve the path itself.
 pub fn mime_for_asset(path: &Path) -> &'static str {
     match path
         .extension()
@@ -80,12 +75,8 @@ pub fn mime_for_asset(path: &Path) -> &'static str {
     }
 }
 
-/// Minimal standard-alphabet base64 encoder (with padding). Small enough to
-/// hand-roll rather than pull in a whole extra crate just to ship a handful
-/// of handout images over the LAN socket.
 pub fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0];
@@ -172,7 +163,6 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     })
 }
 
-// --- NEW: Recursive folder clone logic ---
 pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
     fs::create_dir_all(&dst)?;
     for entry in fs::read_dir(src)? {
@@ -402,8 +392,6 @@ pub fn render_handout(handout: &Handout) -> Result<String, String> {
 
 use crate::models::MapDefinition;
 
-/// Parse one map file. The frontmatter carries the metadata and the body is
-/// the campaign-relative path to the image, exactly like an image handout.
 pub fn parse_map(id: &str, raw: &str) -> Result<MapDefinition, String> {
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     let parsed = matter.parse(raw);
@@ -418,8 +406,6 @@ pub fn parse_map(id: &str, raw: &str) -> Result<MapDefinition, String> {
     #[derive(serde::Deserialize)]
     struct Frontmatter {
         title: String,
-        /// Optional: when absent the image path is taken from the body, which
-        /// is the shape image handouts already use.
         #[serde(default)]
         image: String,
         #[serde(default)]
@@ -428,8 +414,8 @@ pub fn parse_map(id: &str, raw: &str) -> Result<MapDefinition, String> {
         is_active: bool,
     }
 
-    let fm: Frontmatter =
-        serde_yaml::from_str(&parsed.matter).map_err(|e| format!("Erro no formato do YAML: {}", e))?;
+    let fm: Frontmatter = serde_yaml::from_str(&parsed.matter)
+        .map_err(|e| format!("Erro no formato do YAML: {}", e))?;
 
     let image = if fm.image.trim().is_empty() {
         parsed.content.trim().to_string()
@@ -453,11 +439,6 @@ pub fn parse_map(id: &str, raw: &str) -> Result<MapDefinition, String> {
     })
 }
 
-/// Write a map back out.
-///
-/// `body` is whatever followed the frontmatter in the original file and is
-/// preserved verbatim, so revealing a map never eats the notes a GM keeps
-/// underneath it.
 pub fn render_map(map: &MapDefinition, body: &str) -> Result<String, String> {
     #[derive(serde::Serialize)]
     struct Frontmatter<'a> {
@@ -477,12 +458,11 @@ pub fn render_map(map: &MapDefinition, body: &str) -> Result<String, String> {
         is_active: map.is_active,
     };
 
-    let yaml = serde_yaml::to_string(&fm).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
+    let yaml =
+        serde_yaml::to_string(&fm).map_err(|e| format!("Failed to serialize YAML: {}", e))?;
     Ok(format!("---\n{}---\n{}", yaml, body))
 }
 
-/// The text after a document's frontmatter, or an empty string when there is
-/// none. Used to carry a map's notes through a rewrite.
 pub fn document_body(raw: &str) -> String {
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     matter.parse(raw).content
@@ -532,25 +512,12 @@ mod map_tests {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Board
-//
-// A table's pieces belong to the game they were placed in, so they are stored
-// inside that game instance instead of in shared, application-wide state.
-// Deleting a game deletes its board along with its sheets.
-// ---------------------------------------------------------------------------
-
 use crate::models::MapToken;
 
 pub fn board_path(root: &Path) -> PathBuf {
     root.join("board.json")
 }
 
-/// Read a game's board.
-///
-/// A missing file means the table has never been played, and a corrupt one is
-/// worth no more than an empty board, so neither is an error: the alternative
-/// is refusing to open a table over a file the GM cannot even see.
 pub fn read_board(root: &Path) -> Vec<MapToken> {
     let path = board_path(root);
     let Ok(raw) = fs::read_to_string(&path) else {

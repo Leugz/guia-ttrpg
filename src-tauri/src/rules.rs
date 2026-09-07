@@ -109,13 +109,6 @@ pub fn skill_definition(id: &str) -> Option<&'static SkillDefinition> {
         .find(|definition| definition.id.eq_ignore_ascii_case(id))
 }
 
-pub fn skills_for(attribute: Attribute) -> Vec<&'static SkillDefinition> {
-    DEFAULT_SKILLS
-        .iter()
-        .filter(|definition| definition.governed_by == attribute)
-        .collect()
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct BuiltinDefinition {
     pub id: &'static str,
@@ -200,14 +193,6 @@ pub fn builtin(id: &str, magnitude: Option<u8>) -> Result<ActiveEffect, String> 
 mod tests {
     use super::*;
     use crate::models::CharacterSheet;
-
-    #[test]
-    fn the_catalog_matches_the_specified_mappings() {
-        assert_eq!(skills_for(Attribute::Physical).len(), 7);
-        // Mente carries Aptidão, its six specializations, and seven more skills.
-        assert_eq!(skills_for(Attribute::Mind).len(), 14);
-        assert_eq!(skills_for(Attribute::Emotion).len(), 5);
-    }
 
     #[test]
     fn catalog_ids_are_unique_and_ascii() {

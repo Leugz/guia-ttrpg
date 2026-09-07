@@ -1,19 +1,3 @@
-//! The one error type crossing the IPC bridge.
-//!
-//! Every handler in `commands.rs` returns `AppResult<T>`. The variant is
-//! serialised alongside the message as `{ "kind": "...", "message": "..." }`,
-//! so the frontend can branch on `kind` instead of pattern-matching on
-//! human-readable Portuguese prose that is free to change at any time.
-//!
-//! Two bridges keep the rest of the crate compiling unchanged while the
-//! conversion works its way down:
-//!
-//! * `From<String>` folds a legacy `Result<_, String>` from `storage`,
-//!   `campaign`, `models`, `effects` or `dice` into `AppError::Rules`, so `?`
-//!   keeps working inside `api`.
-//! * `From<AppError>` back to `String` keeps `network::session::dispatch`
-//!   compiling, since the LAN protocol carries errors as a bare string.
-
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
@@ -22,35 +6,24 @@ pub type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    /// The addressed sheet, entry, effect, map or handout does not exist.
     #[error("{0}")]
     NotFound(String),
 
-    /// The caller passed something the domain cannot interpret at all — an
-    /// unknown resource key, an unparseable attribute, a bad die size.
     #[error("{0}")]
     InvalidInput(String),
 
-    /// The document is internally inconsistent and must not reach the disk.
     #[error("{0}")]
     Validation(String),
 
-    /// The request is well-formed but the current state forbids it: toggling a
-    /// trigger-only entry, saving when nothing is downed, removing an effect
-    /// that is not applied.
     #[error("{0}")]
     Conflict(String),
 
-    /// A rules-layer refusal that has not been given a sharper variant yet.
     #[error("{0}")]
     Rules(String),
 
-    /// The process-wide state or the LAN session is not available.
     #[error("{0}")]
     State(String),
 
-    /// A filesystem failure, kept alongside the path that caused it — the
-    /// bare `io::Error` says "No such file" and nothing about which file.
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -87,8 +60,6 @@ impl AppError {
         }
     }
 
-    /// The discriminant the frontend switches on. Stable: renaming one of
-    /// these is a breaking change to the IPC contract.
     pub fn kind(&self) -> &'static str {
         match self {
             AppError::NotFound(_) => "not_found",
@@ -123,8 +94,6 @@ impl From<&str> for AppError {
     }
 }
 
-/// Lets `network::session::dispatch`, which speaks the string-shaped LAN
-/// protocol, keep calling `api::*` with `?`.
 impl From<AppError> for String {
     fn from(error: AppError) -> Self {
         error.to_string()

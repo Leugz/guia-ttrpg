@@ -1,13 +1,3 @@
-/**
- * Bitmap loading for the board.
- *
- * Konva draws `HTMLImageElement`s, not URLs, and decoding a map is expensive
- * enough that doing it again on every render would be visible. Both caches
- * below are module-level and keyed by something stable, so a map you have
- * already looked at comes back instantly when the GM switches back to it, and
- * a portrait is decoded once no matter how many tokens use it.
- */
-
 import { useEffect, useState } from 'react';
 
 import type { MapDefinition } from '../../shared/types';
@@ -41,10 +31,6 @@ const decode = (key: string, url: string): Promise<HTMLImageElement> => {
   return pending;
 };
 
-/**
- * Decode a map's image. Returns `null` while it is still loading, which the
- * board renders as its "carregando" state rather than a blank stage.
- */
 export const loadMapImage = (map: MapDefinition) =>
   gameClient.getMapImageUrl(map).then((url) => decode(`map:${map.id}`, url));
 

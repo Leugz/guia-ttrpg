@@ -12,12 +12,6 @@ pub const COUNTED_DICE: usize = 3;
 pub const CRITICAL_SUCCESS_THRESHOLD: u32 = 6;
 pub const CRITICAL_SUCCESS_COUNT: usize = 2;
 
-/// `d4`, `d6`, ... as borrowed statics.
-///
-/// A roll used to `format!("d{}", sides)` once per die, then clone that String
-/// again into every `RolledDie`. There are exactly six possible answers and
-/// they are known at compile time, so a pool of four dice now costs zero
-/// allocations for its source labels instead of eight.
 pub fn notation_for_sides(sides: u8) -> &'static str {
     match sides {
         4 => "d4",
@@ -204,10 +198,6 @@ impl Die {
     pub fn sides(self) -> u8 {
         self.0
     }
-
-    pub fn notation(self) -> &'static str {
-        notation_for_sides(self.0)
-    }
 }
 
 impl From<StepDice> for Die {
@@ -234,9 +224,6 @@ pub struct RolledDie {
     pub sides: u8,
     pub value: u32,
     pub counted: bool,
-    /// Borrowed for the `dN` labels a free roll produces, owned only for the
-    /// ability and skill names a test pulls off a sheet. Serialises as a plain
-    /// string either way, so the wire format is unchanged.
     pub source: Cow<'static, str>,
     pub is_highest: bool,
     pub is_lowest: bool,
@@ -313,8 +300,6 @@ pub fn roll_pool_entries_with<R: Rng + ?Sized>(
             sides: entry.die.sides(),
             value,
             counted: resolution.counted.contains(&index),
-            // Free for the borrowed `dN` labels; only the owned sheet-derived
-            // names still copy, and those are at most two per pool.
             source: entry.source.clone(),
             is_highest: index == resolution.highest_index,
             is_lowest: index == resolution.lowest_index,
@@ -354,7 +339,6 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
     assert!(!values.is_empty(), "cannot resolve an empty pool");
 
     let mut ranked: Vec<usize> = (0..values.len()).collect();
-    // Sort descending by value; break ties by retaining original insertion order
     ranked.sort_by(|&a, &b| values[b].cmp(&values[a]).then(a.cmp(&b)));
 
     let mut counted: Vec<usize> = Vec::with_capacity(COUNTED_DICE.min(ranked.len()));
@@ -363,8 +347,6 @@ pub fn resolve_values(values: &[u32]) -> Resolution {
 
     let total: u32 = counted.iter().map(|&i| values[i]).sum();
 
-    // One pass instead of four: `max`, `min` and the two `position` scans all
-    // walked the pool separately.
     let mut highest = values[0];
     let mut lowest = values[0];
     let mut highest_index = 0usize;
@@ -466,8 +448,6 @@ pub fn roll_freeform(sides: &[u8], secret: bool) -> Result<RollResult, String> {
         }
     }
 
-    // Built into one buffer rather than a Vec<String> that is immediately
-    // joined and thrown away.
     let mut label = String::with_capacity(sides.len() * 6);
     for (index, &side) in sides.iter().enumerate() {
         if index > 0 {

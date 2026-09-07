@@ -83,8 +83,6 @@ export function VttApp() {
     activeGamePath,
   } = useSessionStore();
 
-  // Cada mesa guarda o próprio tabuleiro em board.json enquanto a LAN estiver
-  // fechada; ver useBoardPersistence para o porquê.
   useBoardPersistence({ isHosting, isLanOpen, activeGameId, activeGamePath });
 
   useEffect(() => {
@@ -155,10 +153,6 @@ export function VttApp() {
       ignoreIds: ['chat-open-btn', 'chat-panel'],
     },
   ]);
-
-  // -------------------------------------------------------------------------
-  // Core Connections
-  // -------------------------------------------------------------------------
 
   const activeSheetId = useCharacterStore((state) => state.activeSheetId);
   const portraitUrl = usePortraitUrl(activeSheetId, isTrueGM);
@@ -507,7 +501,7 @@ export function VttApp() {
           title='Jukebox'
           onClose={() => setIsJukeboxOpen(false)}
           initialX={84}
-          initialY={140} // Positioned nicely below the toolbars
+          initialY={140}
           initialWidth={300}
           initialHeight={355}
         >
@@ -575,10 +569,8 @@ export function VttApp() {
           </div>
         </div>
 
-        {/* GM PARTY TRACKER (Visível apenas para o Mestre) */}
         <GmPartyTracker isGM={isTrueGM} roster={roster} />
 
-        {/* Player Conditions & Trackers (Visível apenas para quem NÃO É mestre) */}
         {!isTrueGM && (
           <div className='flex flex-col gap-2'>
             {hasConditions && (
