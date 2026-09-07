@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Crosshair,
   Ruler,
@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Wifi,
   ShieldAlert,
-  X,
   ChevronDown,
   Copy,
   Music,
@@ -22,13 +21,9 @@ import {
   GM_COLOR,
 } from '../character-sheet/characterStore';
 import { useSessionStore } from '../session/sessionStore';
-import {
-  markBoardLoaded,
-  snapshotBoard,
-  useLanStore,
-} from '../session/net/lanStore';
+import { useLanStore } from '../session/net/lanStore';
 import * as gameClient from '../session/net/gameClient';
-import type { LanPlayer, SheetSummary } from '../session/net/protocol';
+import type { LanPlayer } from '../session/net/protocol';
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
@@ -38,202 +33,24 @@ import {
   type TokenDragPayload,
 } from '../map/components/GameBoard';
 import { MapSelector } from '../map/components/MapSelector';
-import { DieShape } from '../../shared/components/DieShape';
-import { tokenMotion } from '../map/tokenMotion';
 import { JukeboxPanel } from '../jukebox/components/JukeboxPanel';
 import { useJukeboxStore } from '../jukebox/jukeboxStore';
 import { DraggableWindow } from './components/DraggableWindow';
 import { GmPartyTracker } from './components/GmPartyTracker';
 import { HandoutWindowManager } from './components/HandoutWindowManager';
 import { TrackerResourceBar } from './components/TrackerResourceBar';
+import { CharacterSelectionModal } from './components/CharacterSelectionModal';
+import { ToastFeed } from './components/ToastFeed';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { useBoardPersistence } from './hooks/useBoardPersistence';
+import { useLanLifecycle } from './hooks/useLanLifecycle';
+import { usePortraitUrl } from './hooks/usePortraitUrl';
+import { useTokenPresenceSync } from './hooks/useTokenPresenceSync';
+import { useHostCatalogSync } from './hooks/useHostCatalogSync';
+import { useToastQueue } from './hooks/useToastQueue';
+import { getConditionDesc } from './lib/conditions';
+import { useCloseOnOutsideClick } from '../../shared/hooks/useCloseOnOutsideClick';
 import { getInitials } from '../../shared/lib/initials';
-
-const getConditionDesc = (id: string) => {
-  switch (id) {
-    case 'machucado':
-      return 'Seu Físico diminui em um passo até o fim da cena.';
-    case 'desatencao':
-      return 'Sua Mente diminui em um passo até o fim da cena.';
-    case 'irritacao':
-      return 'Sua Emoção diminui em um passo até o fim da cena.';
-    case 'ajudado':
-      return 'Você foi ajudado. Se o auxílio foi com uma perícia 6/8, receba +1 Passo. Se foi com uma perícia 10/12, receba +2 Passos.';
-    default:
-      return '';
-  }
-};
-
-const CharacterSelectionModal = ({
-  onClose,
-  onSelect,
-  onSelectSpecial,
-  sheets,
-  roster,
-  clientId,
-  isOfflineHost,
-  localClaim,
-}: {
-  onClose: () => void;
-  onSelect: (sheetId: string) => void;
-  onSelectSpecial: (role: string | null) => void;
-  sheets: SheetSummary[];
-  roster: LanPlayer[];
-  clientId: string;
-  isOfflineHost: boolean;
-  localClaim: string | null;
-}) => {
-  const isGmClaimedByAnyone = isOfflineHost
-    ? localClaim === '__GM__'
-    : roster.some((p) => p.connected && p.claimed_sheet === '__GM__');
-  const isGmClaimedByMe = isOfflineHost
-    ? localClaim === '__GM__'
-    : roster.find((p) => p.client_id === clientId)?.claimed_sheet === '__GM__';
-
-  return (
-    <div
-      className='pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm'
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className='flex w-[500px] flex-col rounded-sm border border-zinc-800 bg-black/80 shadow-2xl backdrop-blur-md'>
-        <div className='flex items-center justify-between border-b border-zinc-900 bg-zinc-950 p-4'>
-          <h2 className='font-serif text-xl font-black uppercase tracking-widest text-zinc-200'>
-            Selecionar Identidade
-          </h2>
-          <button
-            onClick={onClose}
-            className='text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <div className='flex flex-col p-4'>
-          <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
-            Opções do Sistema
-          </p>
-
-          <button
-            onClick={() => onSelectSpecial('__GM__')}
-            disabled={isGmClaimedByAnyone}
-            className={`group relative mb-2 flex items-center justify-between overflow-hidden rounded border p-4 outline-none transition-all focus:outline-none ${isGmClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
-          >
-            <div
-              className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-              style={{ backgroundColor: GM_COLOR }}
-            />
-            <div className='ml-2 flex flex-col items-start'>
-              <span
-                className='font-serif text-lg font-bold tracking-widest'
-                style={{
-                  color:
-                    isGmClaimedByAnyone && !isGmClaimedByMe
-                      ? '#71717a'
-                      : GM_COLOR,
-                }}
-              >
-                Mestre (GM)
-              </span>
-              <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                Apenas um mestre por mesa
-              </span>
-            </div>
-            <span
-              className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isGmClaimedByAnyone ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
-            >
-              {isGmClaimedByAnyone
-                ? isGmClaimedByMe
-                  ? 'Sua Ficha'
-                  : 'Bloqueado'
-                : 'Assumir'}
-            </span>
-          </button>
-
-          <button
-            onClick={() => onSelectSpecial(null)}
-            className='group relative mb-6 flex items-center justify-between overflow-hidden rounded border border-zinc-800 bg-zinc-900/50 p-4 outline-none transition-all hover:bg-zinc-900 focus:outline-none'
-          >
-            <div className='absolute bottom-0 left-0 top-0 w-1 bg-zinc-500 transition-all group-hover:w-2' />
-            <div className='ml-2 flex flex-col items-start'>
-              <span className='font-serif text-lg font-bold tracking-widest text-zinc-400'>
-                Convidado
-              </span>
-              <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                Participar usando seu Nome de Usuário
-              </span>
-            </div>
-            <span className='border border-zinc-800 bg-black px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-colors group-hover:border-zinc-600'>
-              Assumir
-            </span>
-          </button>
-
-          <p className='mb-2 text-sm font-bold uppercase tracking-wider text-zinc-500'>
-            Ato 1: Personagens
-          </p>
-          <div className='flex flex-col gap-2'>
-            {sheets.map((char) => {
-              const profileColor = getProfileColor(char.profile);
-              const isClaimedByMe = isOfflineHost
-                ? localClaim === char.id
-                : roster.find((p) => p.client_id === clientId)
-                    ?.claimed_sheet === char.id;
-              const isClaimedByAnyone = isOfflineHost
-                ? localClaim === char.id
-                : roster.some(
-                    (p) => p.connected && p.claimed_sheet === char.id
-                  );
-
-              return (
-                <button
-                  key={char.id}
-                  onClick={() => onSelect(char.id)}
-                  disabled={isClaimedByAnyone}
-                  className={`group relative flex items-center justify-between overflow-hidden rounded border p-4 outline-none transition-all focus:outline-none ${isClaimedByAnyone ? 'cursor-not-allowed border-zinc-900 bg-black opacity-50' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900'}`}
-                >
-                  <div
-                    className='absolute bottom-0 left-0 top-0 w-1 transition-all group-hover:w-2'
-                    style={{
-                      backgroundColor:
-                        isClaimedByAnyone && !isClaimedByMe
-                          ? '#3f3f46'
-                          : profileColor,
-                    }}
-                  />
-                  <div className='ml-2 flex flex-col items-start'>
-                    <span
-                      className='font-serif text-lg font-bold tracking-widest'
-                      style={{
-                        color:
-                          isClaimedByAnyone && !isClaimedByMe
-                            ? '#71717a'
-                            : profileColor,
-                      }}
-                    >
-                      {char.name}
-                    </span>
-                    <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                      {char.profile}
-                    </span>
-                  </div>
-                  <span
-                    className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-widest transition-colors ${isClaimedByAnyone ? 'border-zinc-800 bg-black text-zinc-600' : 'border-zinc-800 bg-black text-zinc-400 group-hover:border-zinc-600'}`}
-                  >
-                    {isClaimedByAnyone
-                      ? isClaimedByMe
-                        ? 'Sua Ficha'
-                        : 'Bloqueado'
-                      : 'Assumir'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export function VttApp() {
   const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
@@ -242,14 +59,6 @@ export function VttApp() {
   const messages = useChatStore((state) => state.messages);
   const roster = useLanStore((state) => state.roster);
   const sheets = useLanStore((state) => state.sheets);
-  const setSheets = useLanStore((state) => state.setSheets);
-
-  const setHandouts = useLanStore((state) => state.setHandouts);
-  const setMaps = useLanStore((state) => state.setMaps);
-
-  const connect = useLanStore((state) => state.connect);
-  const disconnect = useLanStore((state) => state.disconnect);
-  const updateIdentity = useLanStore((state) => state.updateIdentity);
   const claimSheet = useLanStore((state) => state.claimSheet);
   const connectionStatus = useLanStore((state) => state.status);
   const closedReason = useLanStore((state) => state.closedReason);
@@ -274,62 +83,9 @@ export function VttApp() {
     activeGamePath,
   } = useSessionStore();
 
-  // --- MESA SALVA: cada mesa guarda o próprio tabuleiro em board.json ---
-  //
-  // Both effects below only run while the LAN is closed. Once a table is open
-  // the Rust host owns the file: it loaded the board as it bound the port and
-  // it has every player's positions, not just this window's.
-  const tokens = useLanStore((state) => state.tokens);
-
-  useEffect(() => {
-    if (!isHosting || isLanOpen || !activeGameId) return;
-
-    let cancelled = false;
-
-    gameClient
-      .loadBoard()
-      .then((saved) => {
-        if (cancelled) return;
-        // Never clobber a board that is already live on screen.
-        if (saved.length > 0 && useLanStore.getState().tokens.length === 0) {
-          tokenMotion.seed(saved);
-          useLanStore.setState({ tokens: saved });
-        }
-        // Only now may this window save: until the read came back it had no
-        // idea what was on the table.
-        markBoardLoaded();
-      })
-      .catch((error) => {
-        console.error('Falha ao carregar o tabuleiro:', error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isHosting, isLanOpen, activeGameId]);
-
-  useEffect(() => {
-    if (!isHosting || isLanOpen || !activeGameId) return;
-
-    // Captured, so a save in flight while the table closes still names the
-    // game it belongs to.
-    const gameRoot = activeGamePath;
-    const save = () => {
-      const board = snapshotBoard();
-      if (!board) return;
-      gameClient.saveBoard(board, gameRoot).catch((error) => {
-        console.error('Falha ao salvar o tabuleiro:', error);
-      });
-    };
-
-    save(); // Toda vez que uma miniatura for colocada, movida ou removida
-    const interval = setInterval(save, 120000); // Rede de segurança
-    window.addEventListener('beforeunload', save);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('beforeunload', save);
-    };
-  }, [tokens, isHosting, isLanOpen, activeGameId, activeGamePath]);
+  // Cada mesa guarda o próprio tabuleiro em board.json enquanto a LAN estiver
+  // fechada; ver useBoardPersistence para o porquê.
+  useBoardPersistence({ isHosting, isLanOpen, activeGameId, activeGamePath });
 
   useEffect(() => {
     if (closedReason && !isHosting) {
@@ -379,120 +135,40 @@ export function VttApp() {
 
   const [activeTool, setActiveTool] = useState('select');
   const [isMapSelectorOpen, setIsMapSelectorOpen] = useState(false);
-  const [toasts, setToasts] = useState<any[]>([]);
 
   const [isHandoutListOpen, setIsHandoutListOpen] = useState(false);
 
-  // -------------------------------------------------------------------------
-  // Click-Away Listeners
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const path = event.composedPath();
-
-      const isMapBtn = path.some(
-        (el) => (el as HTMLElement).id === 'map-selector-btn'
-      );
-      const isMapMenu = path.some(
-        (el) => (el as HTMLElement).id === 'map-selector-menu'
-      );
-      if (isMapSelectorOpen && !isMapBtn && !isMapMenu) {
-        setIsMapSelectorOpen(false);
-      }
-
-      const isSetBtn = path.some(
-        (el) => (el as HTMLElement).id === 'settings-btn'
-      );
-      const isSetMenu = path.some(
-        (el) => (el as HTMLElement).id === 'settings-menu'
-      );
-      if (isSettingsOpen && !isSetBtn && !isSetMenu) {
-        setIsSettingsOpen(false);
-      }
-
-      const isChatBtn = path.some(
-        (el) => (el as HTMLElement).id === 'chat-open-btn'
-      );
-      const isChatPanel = path.some(
-        (el) => (el as HTMLElement).id === 'chat-panel'
-      );
-      if (isChatOpen && !isChatBtn && !isChatPanel) {
-        setIsChatOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isMapSelectorOpen, isSettingsOpen, isChatOpen]);
+  useCloseOnOutsideClick([
+    {
+      isOpen: isMapSelectorOpen,
+      onClose: () => setIsMapSelectorOpen(false),
+      ignoreIds: ['map-selector-btn', 'map-selector-menu'],
+    },
+    {
+      isOpen: isSettingsOpen,
+      onClose: () => setIsSettingsOpen(false),
+      ignoreIds: ['settings-btn', 'settings-menu'],
+    },
+    {
+      isOpen: isChatOpen,
+      onClose: () => setIsChatOpen(false),
+      ignoreIds: ['chat-open-btn', 'chat-panel'],
+    },
+  ]);
 
   // -------------------------------------------------------------------------
   // Core Connections
   // -------------------------------------------------------------------------
 
   const activeSheetId = useCharacterStore((state) => state.activeSheetId);
-
-  const [resolvedPortrait, setResolvedPortrait] = useState<{
-    sheetId: string;
-    url: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!activeSheetId && !isTrueGM) return;
-    let cancelled = false;
-    const requestTarget = isTrueGM ? '__GM__' : activeSheetId!;
-
-    gameClient
-      .getPortraitUrl(requestTarget)
-      .then((url) => {
-        if (!cancelled) setResolvedPortrait({ sheetId: requestTarget, url });
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSheetId, isTrueGM]);
-
-  const portraitUrl =
-    resolvedPortrait &&
-    resolvedPortrait.sheetId === (isTrueGM ? '__GM__' : activeSheetId)
-      ? resolvedPortrait.url
-      : null;
+  const portraitUrl = usePortraitUrl(activeSheetId, isTrueGM);
 
   const myTokenId =
     isTrueGM || activeSheetId
       ? `token:${clientId}:${isTrueGM ? '__GM__' : activeSheetId}`
       : null;
 
-  useEffect(() => {
-    if (!myTokenId || (!character && !isTrueGM)) return;
-    const hpDown = character
-      ? (character.resources.hp.current || 0) <= 0
-      : false;
-    const dpDown = character
-      ? (character.resources.dp.current || 0) <= 0
-      : false;
-    const hpFailed = character
-      ? Boolean(character.death_saves?.hp?.failed)
-      : false;
-    const dpFailed = character
-      ? Boolean(character.death_saves?.dp?.failed)
-      : false;
-
-    const grayscale = hpFailed || dpFailed;
-    const owesHp = hpDown && !hpFailed;
-    const owesDp = dpDown && !dpFailed;
-    const saveIndicator = grayscale
-      ? null
-      : owesHp && owesDp
-        ? 'both'
-        : owesHp
-          ? 'hp'
-          : owesDp
-            ? 'dp'
-            : null;
-    gameClient.setTokenState(clientId, myTokenId, grayscale, saveIndicator);
-  }, [myTokenId, clientId, character, isTrueGM]);
+  useTokenPresenceSync(myTokenId, clientId, character, isTrueGM);
 
   const handleTokenDragStart = (event: React.DragEvent<HTMLDivElement>) => {
     if (isTrueGM || !character || !activeSheetId) return;
@@ -553,37 +229,16 @@ export function VttApp() {
     }
   };
 
-  useEffect(() => {
-    if (isHosting) {
-      if (isLanOpen) {
-        connect('127.0.0.1', {
-          clientId,
-          username: username || 'Unknown',
-          color: identityColor,
-        });
-      } else {
-        // CORREÇÃO: O mestre mantém o estado da tela, apenas a porta de rede é fechada!
-        useLanStore.getState().disconnectSocketOnly();
-      }
-    } else {
-      if (lanHostAddress) {
-        connect(lanHostAddress, {
-          clientId,
-          username: username || 'Unknown',
-          color: identityColor,
-        });
-      } else {
-        disconnect(); // Saiu de vez
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHosting, isLanOpen, lanHostAddress]);
-
-  useEffect(() => {
-    if (isLanOpen && connectionStatus === 'online' && localClaim) {
-      claimSheet(clientId, localClaim);
-    }
-  }, [isLanOpen, connectionStatus, localClaim, clientId, claimSheet]);
+  useLanLifecycle({
+    isHosting,
+    isLanOpen,
+    lanHostAddress,
+    clientId,
+    username,
+    identityColor,
+    connectionStatus,
+    localClaim,
+  });
 
   const toggleRoller = useCallback(() => setIsRollerOpen((open) => !open), []);
   const toggleChat = useCallback(() => setIsChatOpen((open) => !open), []);
@@ -596,70 +251,9 @@ export function VttApp() {
     canOpenSheet: Boolean(character),
   });
 
-  useEffect(() => {
-    updateIdentity({
-      clientId,
-      username: username || 'Unknown',
-      color: identityColor,
-    });
-  }, [identityColor, clientId, username, updateIdentity]);
+  useHostCatalogSync(isHosting);
 
-  useEffect(() => {
-    if (!isHosting) return;
-    let cancelled = false;
-
-    gameClient
-      .listSheets()
-      .then((available) => {
-        if (!cancelled) setSheets(available);
-      })
-      .catch((error) => console.error(error));
-    gameClient
-      .listHandouts()
-      .then((available) => {
-        if (!cancelled) setHandouts(available);
-      })
-      .catch((error) => console.error(error));
-    gameClient
-      .listMaps()
-      .then((available) => {
-        if (!cancelled) setMaps(available);
-      })
-      .catch((error) => console.error(error));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isHosting, setSheets, setHandouts, setMaps]);
-
-  const pushToast = (toast: any) =>
-    setToasts((prev) =>
-      [...prev, { ...toast, toastId: Date.now() + Math.random() }].slice(-3)
-    );
-
-  const prevMsgCount = useRef(messages.length);
-  const isChatOpenRef = useRef(isChatOpen);
-
-  useEffect(() => {
-    isChatOpenRef.current = isChatOpen;
-  }, [isChatOpen]);
-
-  useEffect(() => {
-    if (messages.length > prevMsgCount.current) {
-      if (!isChatOpenRef.current && prevMsgCount.current > 0) {
-        const newMessages = messages.slice(prevMsgCount.current);
-        newMessages.forEach((msg) => pushToast(msg));
-      }
-    }
-    prevMsgCount.current = messages.length;
-  }, [messages]);
-
-  useEffect(() => {
-    if (toasts.length > 0) {
-      const timer = setTimeout(() => setToasts((prev) => prev.slice(1)), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toasts]);
+  const { toasts, pushToast } = useToastQueue(messages, isChatOpen);
 
   const themeColor = getProfileColor(character?.profile);
   const hasConditions =
@@ -921,99 +515,7 @@ export function VttApp() {
         </DraggableWindow>
       )}
 
-      <div className='pointer-events-none absolute bottom-28 right-6 z-[60] flex flex-col items-end gap-3'>
-        {toasts.map((toast) => {
-          // Lógica para destacar dados de Crítico na notificação
-          const critValues = new Set<number>();
-          if (toast.type === 'roll' && toast.rollResult?.is_critical_success) {
-            const counts: Record<number, number> = {};
-            toast.rollResult.dice.forEach((d: any) => {
-              counts[d.value] = (counts[d.value] || 0) + 1;
-            });
-            Object.entries(counts).forEach(([val, count]) => {
-              if (Number(val) >= 6 && count >= 2) {
-                critValues.add(Number(val));
-              }
-            });
-          }
-
-          return (
-            <div
-              key={toast.toastId}
-              className='animate-float-up-fade w-fit min-w-[340px] max-w-md rounded-sm border border-zinc-700 bg-black/80 px-4 py-3 shadow-2xl backdrop-blur-md'
-            >
-              {toast.type === 'text' ? (
-                <div className='text-sm leading-relaxed'>
-                  <span
-                    className='font-serif font-bold tracking-wider'
-                    style={{ color: toast.color }}
-                  >
-                    {toast.sender}:{' '}
-                  </span>
-                  <span className='text-zinc-200'>{toast.content}</span>
-                </div>
-              ) : (
-                <div className='flex flex-col gap-3'>
-                  <div className='text-sm leading-none'>
-                    <span
-                      className='font-serif font-bold tracking-wider'
-                      style={{ color: toast.color }}
-                    >
-                      {toast.sender}:{' '}
-                    </span>
-                    <span className='font-bold tracking-wide text-white'>
-                      {toast.rollLabel || 'Rolagem'}
-                    </span>
-                  </div>
-
-                  {toast.rollResult && (
-                    <div className='flex items-center justify-between'>
-                      <div className='flex flex-wrap items-center gap-2 py-1'>
-                        {toast.rollResult.dice.map((d: any, i: number) => (
-                          <DieShape
-                            key={i}
-                            sides={d.sides}
-                            value={d.value}
-                            className='h-10 w-10 text-lg'
-                            colorClass={
-                              toast.rollResult.is_critical_success &&
-                              critValues.has(d.value)
-                                ? 'text-indigo-400'
-                                : toast.rollResult.is_critical_failure
-                                  ? 'text-red-500'
-                                  : !d.counted
-                                    ? 'text-zinc-500'
-                                    : 'text-white'
-                            }
-                            isDropped={!d.counted}
-                          />
-                        ))}
-                      </div>
-
-                      <div className='ml-4 flex min-w-[70px] shrink-0 flex-col items-center justify-center border-l border-zinc-700/60 pl-4'>
-                        <span className='mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
-                          Total
-                        </span>
-                        <span
-                          className={`font-serif text-3xl font-black leading-none ${
-                            toast.rollResult.is_critical_success
-                              ? 'text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]'
-                              : toast.rollResult.is_critical_failure
-                                ? 'text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                                : 'text-white'
-                          }`}
-                        >
-                          {toast.rollResult.total_sum}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <ToastFeed toasts={toasts} />
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
         <div className='flex flex-col gap-2'>
