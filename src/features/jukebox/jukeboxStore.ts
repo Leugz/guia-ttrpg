@@ -106,7 +106,7 @@ export const useJukeboxStore = create<JukeboxState>()(
       },
     }),
     {
-      name: 'guia-jukebox-settings',
+      name: 'amip-jukebox-settings',
       partialize: (state) => ({ localVolume: state.localVolume }),
       onRehydrateStorage: () => (state) => {
         if (state) state.setLocalVolume(state.localVolume);

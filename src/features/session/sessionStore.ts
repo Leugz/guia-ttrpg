@@ -243,7 +243,7 @@ export const useSessionStore = create<SessionState>()(
       setLocalClaim: (claim) => set({ localClaim: claim }),
     }),
     {
-      name: 'guia-user-identity',
+      name: 'amip-user-identity',
       partialize: (state) => ({
         clientId: state.clientId,
         username: state.username,

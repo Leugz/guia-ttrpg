@@ -30,7 +30,7 @@ const MAX_SCALE = 6;
 const ZOOM_STEP = 1.08;
 const FADE_MS = 350;
 
-export const TOKEN_DRAG_MIME = 'application/x-guia-token';
+export const TOKEN_DRAG_MIME = 'application/x-amip-token';
 
 interface RulerShape {
   start_x: number;

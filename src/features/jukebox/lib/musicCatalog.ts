@@ -5,7 +5,10 @@ export interface JukeboxTrack {
 }
 
 const audioFiles = import.meta.glob(
-  '../../../../campaigns/act_1/templates/assets/music/*.{mp3,wav,ogg}',
+  [
+    '../../../../campaigns/act_*/templates/assets/music/*.{mp3,wav,ogg}',
+    '../../../../campaigns/shared/music/*.{mp3,wav,ogg}',
+  ],
   {
     eager: true,
     query: '?url',
@@ -19,7 +22,7 @@ export const JUKEBOX_TRACKS: JukeboxTrack[] = Object.entries(audioFiles).map(
     const title = fileName.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
 
     return {
-      id: fileName,
+      id: path,
       title,
       url: url as string,
     };

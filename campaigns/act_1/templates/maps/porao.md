@@ -2,7 +2,7 @@
 type: "map"
 title: "O Porão"
 image: "assets/porao.jpg"
-grid_size: 230
+grid_size: 200
 is_active: false
 ---
 Mapa de exemplo, reaproveitando a imagem que já existe em `assets/`.

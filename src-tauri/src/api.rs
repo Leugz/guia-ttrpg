@@ -338,7 +338,7 @@ mod tests {
     use crate::models::Entry;
 
     fn scratch(tag: &str) -> String {
-        let dir = std::env::temp_dir().join(format!("guia-api-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-api-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("ficha.md").to_string_lossy().into_owned();

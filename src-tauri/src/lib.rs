@@ -21,6 +21,13 @@ use crate::state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             logging::init(app.handle());
 
             let data_dir = app

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/2/tauri.schema.json",
-  "productName": "OP2-Playtest",
+  "productName": "A Maldição do Idolo de Pedra",
   "version": "1.0.0",
-  "identifier": "com.guia.ttrpg",
+  "identifier": "com.github.leugz.amip",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "G.U.I.A TTRPG",
+        "title": "A Maldição do Idolo de Pedra",
         "width": 1280,
         "height": 720,
         "backgroundColor": "#171717"
@@ -24,7 +24,7 @@
         "enable": true,
         "scope": {
           "allow": [
-            "$HOME/.local/share/com.guia.ttrpg/games/**/*"
+            "$HOME/.local/share/com.github.leugz.amip/games/**/*"
           ],
           "requireLiteralLeadingDot": false
         }

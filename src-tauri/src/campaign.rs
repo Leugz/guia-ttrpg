@@ -67,7 +67,6 @@ pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<P
     if destination.is_dir() && has_sheets(&destination) {
         return Ok(destination);
     }
-
     let act_id = safe_component(act_id, "act id")?;
     let source = templates_root(app)?.join(&act_id).join("templates");
     if !source.is_dir() {
@@ -77,9 +76,14 @@ pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<P
             source.display()
         ));
     }
-
     storage::copy_dir_all(&source, &destination)
         .map_err(|e| format!("Failed to provision the game instance: {}", e))?;
+
+    let shared_handouts = templates_root(app)?.join("shared").join("handouts");
+    if shared_handouts.is_dir() {
+        let dest_handouts = destination.join("handouts");
+        let _ = storage::copy_dir_all(&shared_handouts, &dest_handouts);
+    }
 
     tracing::info!(
         game_id,
@@ -173,7 +177,7 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("guia-campaign-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-campaign-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

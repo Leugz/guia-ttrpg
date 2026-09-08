@@ -992,7 +992,7 @@ mod tests {
     use serde_json::json;
 
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("guia-session-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-session-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         api::create_character_sheet(

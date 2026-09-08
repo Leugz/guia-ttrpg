@@ -27,6 +27,7 @@ export function HomeScreen() {
   const [nameInput, setNameInput] = useState(username || '');
   const [isCreatingGame, setIsCreatingGame] = useState(false);
   const [newGameName, setNewGameName] = useState('');
+  const [selectedAct, setSelectedAct] = useState('act_1');
 
   const handleUpdateName = () => {
     if (nameInput.trim().length > 1) {
@@ -37,7 +38,7 @@ export function HomeScreen() {
 
   const handleCreateGame = () => {
     if (newGameName.trim().length > 0) {
-      createGame(newGameName.trim(), 'act_1');
+      createGame(newGameName.trim(), selectedAct);
       setIsCreatingGame(false);
       setNewGameName('');
     }
@@ -103,7 +104,8 @@ export function HomeScreen() {
           {isCreatingGame ? (
             <div className='mt-auto flex flex-col gap-4'>
               <p className='mb-2 text-sm leading-relaxed text-zinc-500'>
-                O sistema criará uma cópia independente do Ato 1 para esta mesa.
+                O sistema criar uma c pia independente do Ato selecionado para
+                esta mesa.
               </p>
               <label className='flex flex-col gap-2'>
                 <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
@@ -113,10 +115,31 @@ export function HomeScreen() {
                   type='text'
                   value={newGameName}
                   onChange={(e) => setNewGameName(e.target.value)}
-                  placeholder='Ex: Grupo de Sábado'
+                  placeholder='Ex: Grupo de S bado'
                   className='border border-zinc-800 bg-black p-4 font-bold uppercase tracking-widest text-white outline-none transition-colors focus:border-red-700'
                 />
               </label>
+
+              <label className='mt-2 flex flex-col gap-2'>
+                <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
+                  Ato da Campanha
+                </span>
+                <div className='flex gap-2'>
+                  <button
+                    onClick={() => setSelectedAct('act_1')}
+                    className={`flex-1 border p-3 text-xs font-bold uppercase tracking-widest transition-colors ${selectedAct === 'act_1' ? 'border-red-700 bg-red-900/20 text-red-500' : 'border-zinc-800 bg-black text-zinc-500 hover:border-zinc-600'}`}
+                  >
+                    Ato 1
+                  </button>
+                  <button
+                    onClick={() => setSelectedAct('act_2')}
+                    className={`flex-1 border p-3 text-xs font-bold uppercase tracking-widest transition-colors ${selectedAct === 'act_2' ? 'border-red-700 bg-red-900/20 text-red-500' : 'border-zinc-800 bg-black text-zinc-500 hover:border-zinc-600'}`}
+                  >
+                    Ato 2
+                  </button>
+                </div>
+              </label>
+
               <div className='mt-2 flex gap-3'>
                 <button
                   onClick={() => setIsCreatingGame(false)}
@@ -147,8 +170,10 @@ export function HomeScreen() {
                       </span>
                       <span className='text-[10px] uppercase tracking-widest text-zinc-500'>
                         {game.actId === 'act_1'
-                          ? 'Ato 1: O Início'
-                          : game.actId}
+                          ? 'Ato 1'
+                          : game.actId === 'act_2'
+                            ? 'Ato 2'
+                            : game.actId}
                       </span>
                     </div>
                     <div className='flex items-center gap-2'>
@@ -201,7 +226,7 @@ export function HomeScreen() {
           <div className='mt-auto flex flex-col gap-4'>
             <label className='flex flex-col gap-2'>
               <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                Endereço IP do Mestre
+                Endere o IP do Mestre
               </span>
               <input
                 type='text'

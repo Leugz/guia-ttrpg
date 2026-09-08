@@ -1,10 +1,10 @@
 [package]
-name = "OP2-Playtest"
-version = "1.0.0"
+name = "amip"
+version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "guia_ttrpg_lib"
+name = "amip_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]

@@ -121,7 +121,7 @@ The client automatically adds port `37373` when the entered address does not alr
 ## Project structure
 
 ```text
-guia-ttrpg/
+amip-ttrpg/
 ├── campaigns/
 │   └── act_1/
 │       └── templates/                 Bundled campaign source content

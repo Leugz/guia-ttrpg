@@ -210,7 +210,7 @@ Conteúdo livre do jogador.
 "#;
 
     fn scratch_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("guia-storage-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-storage-{tag}"));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -543,7 +543,7 @@ mod board_tests {
     use super::*;
 
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("guia-storage-board-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-storage-board-{tag}"));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

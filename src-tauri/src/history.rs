@@ -75,7 +75,7 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("guia-history-{tag}"));
+        let dir = std::env::temp_dir().join(format!("amip-history-{tag}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("session.db")

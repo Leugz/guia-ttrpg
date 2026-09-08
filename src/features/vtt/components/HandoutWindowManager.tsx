@@ -280,17 +280,17 @@ export function HandoutWindowManager({
           resizable
         >
           <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-black/50 pb-2 backdrop-blur-lg'>
-            {(regras.length > 0 || isGM) &&
-              renderSection(
-                'Regras do Sistema',
-                regras,
-                'Nenhuma regra disponível.'
-              )}
             {(documentos.length > 0 || isGM) &&
               renderSection(
                 'Documentos & Pistas',
                 documentos,
                 'Nenhum documento disponível.'
+              )}
+            {(regras.length > 0 || isGM) &&
+              renderSection(
+                'Regras do Sistema',
+                regras,
+                'Nenhuma regra disponível.'
               )}
           </div>
         </DraggableWindow>
