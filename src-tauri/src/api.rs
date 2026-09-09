@@ -857,3 +857,7 @@ pub fn get_sheet_token_image(root: &Path, sheet_id: &str) -> AppResult<AssetPayl
 
     read_asset(root, asset_path)
 }
+
+pub fn reroll_die(result: RollResult, index: usize) -> AppResult<RollResult> {
+    crate::dice::reroll_die(result, index).map_err(AppError::InvalidInput)
+}

@@ -688,3 +688,31 @@ mod tests {
         assert_eq!(result.dice[1].sides, 6);
     }
 }
+
+pub fn reroll_die(mut result: RollResult, index: usize) -> Result<RollResult, String> {
+    if index >= result.dice.len() || index >= result.rolls.len() {
+        return Err("Invalid die index.".into());
+    }
+    let mut rng = rand::thread_rng();
+    let sides = result.dice[index].sides;
+    result.rolls[index] = rng.gen_range(1..=sides as u32);
+
+    let resolution = resolve_values(&result.rolls);
+    for (i, die) in result.dice.iter_mut().enumerate() {
+        die.value = result.rolls[i];
+        die.counted = resolution.counted.contains(&i);
+        die.is_highest = i == resolution.highest_index;
+        die.is_lowest = i == resolution.lowest_index;
+    }
+
+    result.total_sum = resolution.total;
+    result.highest = resolution.highest;
+    result.lowest = resolution.lowest;
+    result.highest_index = resolution.highest_index;
+    result.lowest_index = resolution.lowest_index;
+    result.dropped_index = resolution.dropped;
+    result.is_critical_success = resolution.is_critical_success;
+    result.is_critical_failure = resolution.is_critical_failure;
+
+    Ok(result)
+}

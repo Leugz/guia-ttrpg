@@ -8,6 +8,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::api;
 use crate::campaign;
+use crate::dice::RollResult;
 use crate::effects::TestRequest;
 use crate::history;
 use crate::models::{MapToken, SaveIndicator};
@@ -980,6 +981,16 @@ fn dispatch(root: &PathBuf, method: &str, params: Value) -> Result<Value, String
         method::GET_SHEET_TOKEN_IMAGE => {
             let p: SheetParams = parse(params)?;
             to_value(api::get_sheet_token_image(root, &p.sheet_id)?)
+        }
+
+        method::REROLL_DIE => {
+            #[derive(Deserialize)]
+            struct RerollParams {
+                result: RollResult,
+                index: usize,
+            }
+            let p: RerollParams = parse(params)?;
+            to_value(api::reroll_die(p.result, p.index)?)
         }
 
         unknown => Err(format!("Unknown method: {}", unknown)),

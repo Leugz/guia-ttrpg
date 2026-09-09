@@ -435,3 +435,12 @@ export const sendToolEvent = (clientId: string, payload: ToolPayload) => {
     lan.sendTool({ type: 'tool', clientId, payload });
   }
 };
+
+export const rerollDie = (
+  result: RollResult,
+  index: number
+): Promise<RollResult> =>
+  dispatch(
+    () => invoke<RollResult>('reroll_die', { result, index }),
+    () => lan.request(RpcMethod.rerollDie, { result, index })
+  );

@@ -11,6 +11,7 @@ import {
   ArrowDown,
   X,
   Skull,
+  Eye,
 } from 'lucide-react';
 import { useChatStore } from '../chatStore';
 import {
@@ -19,6 +20,8 @@ import {
 } from '../../character-sheet/characterStore';
 import { useSessionStore } from '../../session/sessionStore';
 import { useLanStore } from '../../session/net/lanStore';
+import * as gameClient from '../../session/net/gameClient';
+import { RerollDiceModal } from './RerollDiceModal';
 import { DieShape } from '../../../shared/components/DieShape';
 import { GM_COLOR } from '../../character-sheet/characterStore';
 
@@ -26,7 +29,6 @@ const TextMessage = ({ msg }: { msg: any }) => {
   const isGuestOrGM = msg.sender === 'Convidado' || msg.sender === 'Mestre';
   const primaryName = isGuestOrGM && msg.username ? msg.username : msg.sender;
   const secondaryName = isGuestOrGM && msg.username ? msg.sender : msg.username;
-
   const timeString = msg.timestamp
     ? new Date(msg.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
@@ -63,7 +65,15 @@ const TextMessage = ({ msg }: { msg: any }) => {
   );
 };
 
-const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
+const RollMessage = ({
+  rollMsg,
+  canReroll,
+  onReroll,
+}: {
+  rollMsg: any;
+  canReroll?: boolean;
+  onReroll?: () => void;
+}) => {
   const result = rollMsg.rollResult;
   if (!result) return null;
 
@@ -77,7 +87,6 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
     isGuestOrGM && rollMsg.username ? rollMsg.username : rollMsg.sender;
   const secondaryName =
     isGuestOrGM && rollMsg.username ? rollMsg.sender : rollMsg.username;
-
   const timeString = rollMsg.timestamp
     ? new Date(rollMsg.timestamp).toLocaleTimeString([], {
         hour: '2-digit',
@@ -108,6 +117,7 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
           <EyeOff size={12} /> Apenas Mestre
         </div>
       )}
+
       <div className='mb-2 flex items-baseline gap-2'>
         <span
           className='font-serif text-sm font-bold tracking-wider'
@@ -122,11 +132,13 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
         )}
         <span className='ml-auto text-[10px] text-zinc-700'>{timeString}</span>
       </div>
+
       <div className='mb-4'>
         <div className='text-sm font-bold text-zinc-200'>
           {rollMsg.rollLabel}
         </div>
       </div>
+
       <div className='mb-5 flex flex-wrap items-center gap-4'>
         {result.dice.map((d: any, i: number) => (
           <DieShape
@@ -147,10 +159,12 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
           />
         ))}
       </div>
+
       <div className='flex items-center justify-between border-t border-zinc-800/50 pt-3'>
         <div className='font-mono text-sm text-zinc-500'>
           ({countedResults.join(' + ')})
         </div>
+
         <div className='flex items-center gap-3'>
           <div className='flex flex-col gap-1'>
             <span className='flex items-center justify-end gap-1 text-[10px] text-zinc-400'>
@@ -162,6 +176,7 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
               {result.lowest}
             </span>
           </div>
+
           <div className='flex items-center gap-2'>
             <span className='mt-1 text-xs font-bold uppercase tracking-widest text-zinc-500'>
               Total
@@ -177,14 +192,23 @@ const RollMessage = ({ rollMsg }: { rollMsg: any }) => {
 
       {result.is_critical_success && (
         <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-indigo-900/50 bg-indigo-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-indigo-400'>
-          <Sparkles size={14} /> Sucesso Crítico <Sparkles size={14} />
+          <Sparkles size={14} /> Sucesso Cr&iacute;tico <Sparkles size={14} />
         </div>
       )}
 
       {result.is_critical_failure && (
         <div className='mt-3 flex items-center justify-center gap-2 rounded-sm border border-red-900/50 bg-red-950/30 px-2 py-1 text-xs font-bold uppercase tracking-widest text-red-500'>
-          <Skull size={14} /> Falha Crítica <Skull size={14} />
+          <Skull size={14} /> Falha Cr&iacute;tica <Skull size={14} />
         </div>
+      )}
+
+      {canReroll && onReroll && (
+        <button
+          onClick={onReroll}
+          className='mt-3 flex w-full items-center justify-center gap-2 rounded border border-blue-900/50 bg-blue-950/30 py-1.5 text-xs font-bold uppercase tracking-widest text-blue-400 transition-colors hover:bg-blue-900/40'
+        >
+          <Eye size={12} /> Olhar Infal&iacute;vel (-2 PD)
+        </button>
       )}
     </div>
   );
@@ -201,11 +225,14 @@ export function ChatPanel({
 }) {
   const { messages, addMessage } = useChatStore();
   const { character } = useCharacterStore();
+  const activeSheetId = useCharacterStore((state) => state.activeSheetId);
   const { username, clientId } = useSessionStore();
   const { roster } = useLanStore();
 
   const [filter, setFilter] = useState('default');
   const [inputText, setInputText] = useState('');
+  const [rerollTarget, setRerollTarget] = useState<any>(null);
+  const [usedRerolls, setUsedRerolls] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -237,6 +264,43 @@ export function ChatPanel({
       ? 'Mestre'
       : 'Convidado';
 
+  const hasOlharInfalivel = character?.abilities.some(
+    (a: any) => a.id === 'olhar_infalivel'
+  );
+
+  const canRerollMsg = (msg: any) =>
+    Boolean(
+      hasOlharInfalivel &&
+      activeSheetId &&
+      msg.type === 'roll' &&
+      msg.sender === character?.name &&
+      msg.rollResult &&
+      !msg.rollResult.secret &&
+      !usedRerolls.has(msg.id) &&
+      (character?.resources.dp.current ?? 0) >= 2
+    );
+
+  const handleReroll = async (index: number) => {
+    const rollMsg = rerollTarget;
+    setRerollTarget(null);
+    if (!rollMsg || !activeSheetId) return;
+    try {
+      await gameClient.applyResourceChange(activeSheetId, 'dp', -2);
+      const newResult = await gameClient.rerollDie(rollMsg.rollResult, index);
+      setUsedRerolls((prev) => new Set(prev).add(rollMsg.id));
+      addMessage({
+        sender: rollMsg.sender,
+        username: rollMsg.username,
+        color: rollMsg.color,
+        type: 'roll',
+        rollLabel: `${rollMsg.rollLabel ?? 'Rolagem'} (Olhar Infal vel)`,
+        rollResult: newResult,
+      });
+    } catch (error) {
+      console.error('Reroll failed:', error);
+    }
+  };
+
   const handleSend = () => {
     if (!inputText.trim()) return;
 
@@ -254,7 +318,7 @@ export function ChatPanel({
   return (
     <div
       id='chat-panel'
-      className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a] shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      className={`pointer-events-auto absolute right-0 top-0 z-50 flex h-full w-full max-w-sm transform flex-col border-l border-zinc-900 bg-[#0a0a0a]/80 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
     >
       <div className='relative z-10 flex shrink-0 flex-col gap-3 border-b border-zinc-800/80 bg-zinc-950 p-4'>
         <div className='flex items-center justify-between'>
@@ -268,6 +332,7 @@ export function ChatPanel({
             <X size={18} />
           </button>
         </div>
+
         <div className='flex gap-1 rounded-sm bg-zinc-900 p-1'>
           <button
             onClick={() => setFilter('default')}
@@ -306,7 +371,12 @@ export function ChatPanel({
             msg.type === 'text' ? (
               <TextMessage key={msg.id} msg={msg} />
             ) : (
-              <RollMessage key={msg.id} rollMsg={msg} />
+              <RollMessage
+                key={msg.id}
+                rollMsg={msg}
+                canReroll={canRerollMsg(msg)}
+                onReroll={() => setRerollTarget(msg)}
+              />
             )
           )
         )}
@@ -344,6 +414,14 @@ export function ChatPanel({
           </div>
         </div>
       </div>
+
+      {rerollTarget && (
+        <RerollDiceModal
+          rollResult={rerollTarget.rollResult}
+          onClose={() => setRerollTarget(null)}
+          onConfirm={handleReroll}
+        />
+      )}
     </div>
   );
 }

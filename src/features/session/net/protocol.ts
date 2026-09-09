@@ -217,6 +217,7 @@ export const RpcMethod = {
   getMapAsset: 'get_map_asset',
   getSheetPortrait: 'get_sheet_portrait',
   getSheetTokenImage: 'get_sheet_token_image',
+  rerollDie: 'reroll_die',
 } as const;
 
 export type RpcMethodName = (typeof RpcMethod)[keyof typeof RpcMethod];
@@ -254,6 +255,7 @@ export interface RpcResults {
   [RpcMethod.getMapAsset]: AssetPayload;
   [RpcMethod.getSheetPortrait]: AssetPayload;
   [RpcMethod.getSheetTokenImage]: AssetPayload;
+  [RpcMethod.rerollDie]: RollResult;
 }
 
 export interface TestRpcParams {

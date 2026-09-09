@@ -83,6 +83,7 @@ pub fn run() {
             commands::open_handout_for_player,
             commands::list_game_maps,
             commands::set_active_map,
+            commands::reroll_die,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

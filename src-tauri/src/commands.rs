@@ -279,3 +279,8 @@ pub async fn set_active_map(
 ) -> AppResult<Vec<crate::models::MapDefinition>> {
     api::set_active_map(std::path::Path::new(&game_root), &map_id)
 }
+
+#[tauri::command]
+pub fn reroll_die(result: RollResult, index: usize) -> AppResult<RollResult> {
+    api::reroll_die(result, index)
+}

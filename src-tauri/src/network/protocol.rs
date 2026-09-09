@@ -292,6 +292,7 @@ pub mod method {
     pub const GET_MAP_ASSET: &str = "get_map_asset";
     pub const GET_SHEET_PORTRAIT: &str = "get_sheet_portrait";
     pub const GET_SHEET_TOKEN_IMAGE: &str = "get_sheet_token_image";
+    pub const REROLL_DIE: &str = "reroll_die";
 }
 
 #[cfg(test)]
