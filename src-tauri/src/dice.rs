@@ -687,15 +687,67 @@ mod tests {
         assert_eq!(result.dice[1].source, "Furtividade");
         assert_eq!(result.dice[1].sides, 6);
     }
+
+    #[test]
+    fn rerolling_freeform_keeps_every_die_counted() {
+        let result = roll_freeform(&[6, 6, 6, 6], false).unwrap();
+        let rerolled = reroll_die(result, 0).unwrap();
+
+        assert!(rerolled.dice.iter().all(|die| die.counted));
+        assert_eq!(rerolled.dropped_index, None);
+        assert_eq!(rerolled.total_sum, rerolled.rolls.iter().sum::<u32>());
+    }
+
+    #[test]
+    fn reroll_rejects_invalid_die_sides_instead_of_panicking() {
+        let mut result = roll_freeform(&[6], false).unwrap();
+        result.dice[0].sides = 0;
+
+        assert!(reroll_die(result, 0).is_err());
+    }
 }
 
 pub fn reroll_die(mut result: RollResult, index: usize) -> Result<RollResult, String> {
     if index >= result.dice.len() || index >= result.rolls.len() {
         return Err("Invalid die index.".into());
     }
+
     let mut rng = rand::thread_rng();
     let sides = result.dice[index].sides;
+    if !ROLLABLE_SIDES.contains(&sides) {
+        return Err(format!("Unsupported die size: d{}", sides));
+    }
+
+    let count_all_dice = result.dropped_index.is_none() && result.dice.iter().all(|die| die.counted);
     result.rolls[index] = rng.gen_range(1..=sides as u32);
+
+    if count_all_dice {
+        let highest = *result.rolls.iter().max().unwrap();
+        let lowest = *result.rolls.iter().min().unwrap();
+        let highest_index = result.rolls.iter().position(|&v| v == highest).unwrap_or(0);
+        let lowest_index = result.rolls.iter().position(|&v| v == lowest).unwrap_or(0);
+
+        for (i, die) in result.dice.iter_mut().enumerate() {
+            die.value = result.rolls[i];
+            die.counted = true;
+            die.is_highest = i == highest_index;
+            die.is_lowest = i == lowest_index;
+        }
+
+        result.total_sum = result.rolls.iter().sum();
+        result.highest = highest;
+        result.lowest = lowest;
+        result.highest_index = highest_index;
+        result.lowest_index = lowest_index;
+        result.dropped_index = None;
+        result.is_critical_failure = result.rolls.iter().all(|&v| v == 1);
+        result.is_critical_success = result.rolls.iter().any(|&v| {
+            v >= CRITICAL_SUCCESS_THRESHOLD
+                && result.rolls.iter().filter(|&&x| x == v).count() >= CRITICAL_SUCCESS_COUNT
+        });
+
+        return Ok(result);
+    }
 
     let resolution = resolve_values(&result.rolls);
     for (i, die) in result.dice.iter_mut().enumerate() {

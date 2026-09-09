@@ -276,6 +276,9 @@ export function ChatPanel({
       msg.sender === character?.name &&
       msg.rollResult &&
       !msg.rollResult.secret &&
+      typeof msg.rollLabel === 'string' &&
+      msg.rollLabel.startsWith('Teste de ') &&
+      !msg.rollLabel.includes('(Olhar Infalível)') &&
       !usedRerolls.has(msg.id) &&
       (character?.resources.dp.current ?? 0) >= 2
     );
@@ -284,19 +287,26 @@ export function ChatPanel({
     const rollMsg = rerollTarget;
     setRerollTarget(null);
     if (!rollMsg || !activeSheetId) return;
+
+    setUsedRerolls((prev) => new Set(prev).add(rollMsg.id));
+
     try {
-      await gameClient.applyResourceChange(activeSheetId, 'dp', -2);
       const newResult = await gameClient.rerollDie(rollMsg.rollResult, index);
-      setUsedRerolls((prev) => new Set(prev).add(rollMsg.id));
+      await gameClient.applyResourceChange(activeSheetId, 'dp', -2);
       addMessage({
         sender: rollMsg.sender,
         username: rollMsg.username,
         color: rollMsg.color,
         type: 'roll',
-        rollLabel: `${rollMsg.rollLabel ?? 'Rolagem'} (Olhar Infal vel)`,
+        rollLabel: `${rollMsg.rollLabel ?? 'Rolagem'} (Olhar Infalível)`,
         rollResult: newResult,
       });
     } catch (error) {
+      setUsedRerolls((prev) => {
+        const next = new Set(prev);
+        next.delete(rollMsg.id);
+        return next;
+      });
       console.error('Reroll failed:', error);
     }
   };
