@@ -1,4 +1,4 @@
-![OP - Fan Content Seal](/public/Selos%20Licen%C3%A7a%20Aberta/Ordem%20Paranormal%20Selo%20Branco.png)
+<img src="images/screenshot.png" alt="Description" width="200">
 
 # G.U.I.A TTRPG
 
