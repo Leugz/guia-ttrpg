@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { HeartCrack, Brain, MessageSquare } from 'lucide-react';
+import { HeartCrack, Brain, MessageSquare, X } from 'lucide-react';
 import { useCharacterStore, getProfileColor } from '../characterStore';
 import { useChatStore } from '../../chat/chatStore';
 import { DieShape } from '../../../shared/components/DieShape';
 import { SkillPromptModal } from './SkillPromptModal';
 import { useSessionStore } from '../../session/sessionStore';
+import * as gameClient from '../../session/net/gameClient';
 
 const BUILTIN_CONDITIONS = [
   {
@@ -90,14 +91,20 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
     setAvaliacao,
     pendingImpetoD4,
     setPendingImpetoD4,
+    pendingImpetoD10,
+    setPendingImpetoD10,
     ajudado,
     setAjudado,
+    activeSheetId,
+    activeImpetoBuff,
+    setActiveImpetoBuff,
   } = useCharacterStore();
 
   const { addMessage } = useChatStore();
   const { username } = useSessionStore();
-  const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
+  const [impetoBuffModal, setImpetoBuffModal] = useState(false);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [activeAttribute, setActiveAttribute] = useState<string | null>(null);
 
   if (!character) return null;
 
@@ -120,6 +127,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
   const LADDER = [4, 6, 8, 10, 12, 20];
   const getEffectiveDie = (baseValue: number, attrKey: string) => {
     let steps = 0;
+
     if (
       attrKey === 'physical' &&
       character.active_effects.some((e) => e.id === 'machucado')
@@ -136,13 +144,22 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
     )
       steps -= 1;
 
-    if (steps === 0) return { value: baseValue, modified: false };
+    if (activeImpetoBuff === attrKey) {
+      steps += 1;
+    }
+
+    if (steps === 0) return { value: baseValue, direction: 'none' };
 
     const idx = LADDER.indexOf(baseValue);
-    if (idx === -1) return { value: baseValue, modified: false };
+    if (idx === -1) return { value: baseValue, direction: 'none' };
 
     const newIdx = Math.max(0, Math.min(LADDER.length - 1, idx + steps));
-    return { value: LADDER[newIdx], modified: true };
+
+    let direction = 'none';
+    if (steps < 0) direction = 'down';
+    else if (steps > 0) direction = 'up';
+
+    return { value: LADDER[newIdx], direction };
   };
 
   return (
@@ -225,14 +242,21 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                               sides={effective.value}
                               className='h-10 w-10 sm:h-12 sm:w-12'
                               colorClass={
-                                effective.modified
+                                effective.direction === 'down'
                                   ? 'text-red-500'
-                                  : 'text-[var(--theme-color)]'
+                                  : effective.direction === 'up'
+                                    ? 'text-blue-500'
+                                    : 'text-[var(--theme-color)]'
                               }
                             />
-                            {effective.modified && (
+                            {effective.direction === 'down' && (
                               <span className='absolute -right-2 -top-1 text-[10px] font-bold text-red-500'>
                                 ↓
+                              </span>
+                            )}
+                            {effective.direction === 'up' && (
+                              <span className='absolute -right-2 -top-1 text-[10px] font-bold text-blue-500'>
+                                ↑
                               </span>
                             )}
                           </div>
@@ -278,9 +302,11 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                               sides={effectiveAttr.value}
                               className='h-7 w-7 sm:h-8 sm:w-8'
                               colorClass={
-                                effectiveAttr.modified
+                                effectiveAttr.direction === 'down'
                                   ? 'text-red-500'
-                                  : 'text-[var(--theme-color)]'
+                                  : effectiveAttr.direction === 'up'
+                                    ? 'text-blue-500'
+                                    : 'text-[var(--theme-color)]'
                               }
                             />
                           </div>
@@ -427,6 +453,11 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                 <div className='flex flex-col space-y-6'>
                   {character.abilities.map((ability) => {
                     if (ability.id === 'impeto') {
+                      const isFive = ability.description
+                        .toLowerCase()
+                        .includes('cinco');
+                      const maxMomentum = isFive ? 5 : 3;
+
                       return (
                         <div
                           key={ability.id}
@@ -438,22 +469,58 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                               {ability.name}
                             </SectionTitle>
                             <div className='flex gap-1 rounded-sm border border-zinc-800 bg-black p-1'>
-                              {[0, 1, 2].map((i) => (
-                                <div
-                                  key={i}
-                                  onClick={() =>
-                                    setImpeto(i < impeto ? i : i + 1)
-                                  }
-                                  className={`h-4 w-6 cursor-pointer transition-colors ${i < impeto ? 'bg-[var(--theme-color)]' : 'bg-zinc-900 hover:bg-zinc-800'}`}
-                                />
-                              ))}
+                              {Array.from({ length: maxMomentum }).map(
+                                (_, i) => (
+                                  <div
+                                    key={i}
+                                    onClick={() =>
+                                      setImpeto(i < impeto ? i : i + 1)
+                                    }
+                                    className={`h-4 w-6 cursor-pointer transition-colors ${i < impeto ? 'bg-[var(--theme-color)]' : 'bg-zinc-900 hover:bg-zinc-800'}`}
+                                  />
+                                )
+                              )}
                             </div>
                           </div>
                           <div className='mb-4 text-sm leading-relaxed text-zinc-400'>
                             {ability.description}
                           </div>
 
-                          <div className='flex gap-2 border-t border-zinc-800 pt-3 opacity-0 transition-opacity group-hover:opacity-100'>
+                          {activeImpetoBuff && (
+                            <div className='mb-3 flex items-center justify-between rounded border border-blue-900/50 bg-blue-950/30 px-3 py-2'>
+                              <span className='text-xs font-bold uppercase tracking-widest text-blue-400'>
+                                +1 Step in{' '}
+                                {activeImpetoBuff === 'physical'
+                                  ? 'Physical'
+                                  : activeImpetoBuff === 'mind'
+                                    ? 'Mind'
+                                    : 'Emotion'}
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  if (!activeSheetId) return;
+                                  try {
+                                    await gameClient.stepAttribute(
+                                      activeSheetId,
+                                      activeImpetoBuff,
+                                      -1
+                                    );
+                                    setActiveImpetoBuff(null);
+                                  } catch (error) {
+                                    console.error(
+                                      'Failed to remove buff:',
+                                      error
+                                    );
+                                  }
+                                }}
+                                className='text-blue-400 transition-colors hover:text-red-400'
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          )}
+
+                          <div className='grid grid-cols-2 gap-2 border-t border-zinc-800 pt-3 opacity-0 transition-opacity group-hover:opacity-100'>
                             <button
                               onClick={() => {
                                 if (impeto >= 1 && !pendingImpetoD4) {
@@ -469,31 +536,65 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                 }
                               }}
                               disabled={impeto < 1 || pendingImpetoD4}
-                              className={`flex-1 rounded border py-1.5 text-[10px] uppercase tracking-wider transition-colors ${pendingImpetoD4 ? 'border-[var(--theme-color)] bg-[var(--theme-color)] text-white opacity-80' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'}`}
+                              className={`rounded border py-1.5 text-[10px] uppercase tracking-wider transition-colors ${pendingImpetoD4 ? 'border-[var(--theme-color)] bg-[var(--theme-color)] text-white opacity-80' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'}`}
                             >
                               {pendingImpetoD4
-                                ? 'Ímpeto Preparado (+d4)'
-                                : 'Gastar 1 (+d4)'}
+                                ? 'Prepared (+d4)'
+                                : 'Spend 1 (+d4)'}
                             </button>
 
+                            {isFive && (
+                              <button
+                                onClick={() => {
+                                  if (impeto >= 2 && !pendingImpetoD10) {
+                                    setImpeto((prev) => prev - 2);
+                                    setPendingImpetoD10(true);
+                                    addMessage({
+                                      sender: character.name,
+                                      color: getProfileColor(character.profile),
+                                      type: 'text',
+                                      content:
+                                        'Preparou 2 Ímpeto! O próximo teste receberá +d10.',
+                                    });
+                                  }
+                                }}
+                                disabled={impeto < 2 || pendingImpetoD10}
+                                className={`rounded border py-1.5 text-[10px] uppercase tracking-wider transition-colors ${pendingImpetoD10 ? 'border-[var(--theme-color)] bg-[var(--theme-color)] text-white opacity-80' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'}`}
+                              >
+                                {pendingImpetoD10
+                                  ? 'Prepared (+d10)'
+                                  : 'Spend 2 (+d10)'}
+                              </button>
+                            )}
+
                             <button
-                              onClick={() => {
-                                if (impeto >= 3) {
-                                  setImpeto((prev) => prev - 3);
-                                  addMessage({
-                                    sender: character.name,
-                                    color: getProfileColor(character.profile),
-                                    type: 'text',
-                                    content:
-                                      'Gastou 3 Ímpeto para aumentar um atributo em um passo até o fim da cena.',
-                                  });
-                                }
-                              }}
-                              disabled={impeto < 3}
-                              className='flex-1 rounded border border-zinc-800 bg-zinc-900 py-1.5 text-[10px] uppercase tracking-wider text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'
+                              onClick={() => setImpetoBuffModal(true)}
+                              disabled={impeto < 3 || activeImpetoBuff !== null}
+                              className='rounded border border-zinc-800 bg-zinc-900 py-1.5 text-[10px] uppercase tracking-wider text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'
                             >
-                              Gastar 3 (+1 Passo)
+                              Spend 3 (+1 Step)
                             </button>
+
+                            {isFive && (
+                              <button
+                                onClick={() => {
+                                  if (impeto >= 5) {
+                                    setImpeto((prev) => prev - 5);
+                                    addMessage({
+                                      sender: character.name,
+                                      color: getProfileColor(character.profile),
+                                      type: 'text',
+                                      content:
+                                        'Gastou 5 Ímpeto para fazer uma ação extra na rodada!',
+                                    });
+                                  }
+                                }}
+                                disabled={impeto < 5}
+                                className='rounded border border-zinc-800 bg-zinc-900 py-1.5 text-[10px] uppercase tracking-wider text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'
+                              >
+                                Spend 5 (Extra Action)
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -614,6 +715,65 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
             setActiveSkillId(null);
           }}
         />
+      )}
+
+      {impetoBuffModal && (
+        <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm'>
+          <div className='w-[320px] rounded-lg border border-zinc-700 bg-[#0a0a0a] p-6 shadow-2xl'>
+            <h3 className='mb-4 text-center font-serif text-lg font-black uppercase tracking-widest text-white'>
+              Increase Attribute
+            </h3>
+            <p className='mb-6 text-center text-xs text-zinc-500'>
+              Choose which attribute will receive +1 Step until the end of the
+              scene. (Cost: 3 Momentum)
+            </p>
+            <div className='flex flex-col gap-3'>
+              {['physical', 'mind', 'emotion'].map((attr) => (
+                <button
+                  key={attr}
+                  onClick={async () => {
+                    if (!activeSheetId) return;
+                    try {
+                      await gameClient.stepAttribute(activeSheetId, attr, 1);
+
+                      setImpeto((prev) => prev - 3);
+                      setActiveImpetoBuff(attr);
+                      setImpetoBuffModal(false);
+
+                      addMessage({
+                        sender: character.name,
+                        color: getProfileColor(character.profile),
+                        type: 'text',
+                        content: `Spent 3 Momentum to increase ${
+                          attr === 'physical'
+                            ? 'Physical'
+                            : attr === 'mind'
+                              ? 'Mind'
+                              : 'Emotion'
+                        } by +1 Step!`,
+                      });
+                    } catch (error) {
+                      console.error('Failed to step attribute:', error);
+                    }
+                  }}
+                  className='rounded border border-zinc-800 bg-zinc-900 p-3 font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:border-[var(--theme-color)] hover:bg-zinc-800 hover:text-white'
+                >
+                  {attr === 'physical'
+                    ? 'Physical'
+                    : attr === 'mind'
+                      ? 'Mind'
+                      : 'Emotion'}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setImpetoBuffModal(false)}
+              className='mt-6 w-full text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white'
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

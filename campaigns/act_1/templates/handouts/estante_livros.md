@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/estante_livros.jpg
+assets/clues/estante_livros.jpg

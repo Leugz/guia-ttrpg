@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/anotacoes_arqueologia.jpg
+assets/clues/anotacoes_arqueologia.jpg

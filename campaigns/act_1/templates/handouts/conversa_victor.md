@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/conversa_victor.png
+assets/clues/conversa_victor.png

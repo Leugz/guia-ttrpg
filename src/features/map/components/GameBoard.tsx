@@ -707,7 +707,7 @@ export function GameBoard({
                   <Shape
                     listening={false}
                     perfectDrawEnabled={false}
-                    stroke='rgba(255,255,255,0.10)'
+                    stroke='transparent'
                     strokeWidth={1}
                     sceneFunc={(context, shape) => {
                       const step = displayed.map.grid_size;

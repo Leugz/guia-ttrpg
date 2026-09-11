@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/foto_freezer.png
+assets/clues/foto_freezer.png

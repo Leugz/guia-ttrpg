@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/poster_ldr.jpg
+assets/clues/poster_ldr.jpg

@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/simbolo_teto.jpg
+assets/clues/simbolo_teto.jpg

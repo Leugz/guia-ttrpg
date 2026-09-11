@@ -37,12 +37,14 @@ interface CharacterStore {
   avaliacao: number;
   activeImpetoBuff: string | null;
   pendingImpetoD4: boolean;
+  pendingImpetoD10: boolean;
   ajudado: boolean;
 
   setImpeto: (val: number | ((prev: number) => number)) => void;
   setAvaliacao: (val: number | ((prev: number) => number)) => void;
   setActiveImpetoBuff: (attr: string | null) => void;
   setPendingImpetoD4: (val: boolean) => void;
+  setPendingImpetoD10: (val: boolean) => void;
   setAjudado: (val: boolean) => void;
 
   loadCharacter: (doc: ParsedDocument, sheetId: string) => void;
@@ -63,6 +65,7 @@ const SCENE_DEFAULTS = {
   avaliacao: 0,
   activeImpetoBuff: null,
   pendingImpetoD4: false,
+  pendingImpetoD10: false,
   ajudado: false,
 } as const;
 
@@ -82,6 +85,7 @@ export const useCharacterStore = create<CharacterStore>((set, get) => ({
     })),
   setActiveImpetoBuff: (attr) => set({ activeImpetoBuff: attr }),
   setPendingImpetoD4: (val) => set({ pendingImpetoD4: val }),
+  setPendingImpetoD10: (val) => set({ pendingImpetoD10: val }),
   setAjudado: (val) => set({ ajudado: val }),
 
   loadCharacter: (doc, sheetId) =>

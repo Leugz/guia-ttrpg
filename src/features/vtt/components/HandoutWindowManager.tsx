@@ -158,6 +158,10 @@ export function HandoutWindowManager({
     () => visible.filter((h) => h.category === 'documentos'),
     [visible]
   );
+  const historico = useMemo(
+    () => visible.filter((h) => h.category === 'historico'),
+    [visible]
+  );
   const players = useMemo(
     () => roster.filter((p) => p.connected && p.claimed_sheet !== '__GM__'),
     [roster]
@@ -290,6 +294,12 @@ export function HandoutWindowManager({
               renderSection(
                 'Regras do Sistema',
                 regras,
+                'Nenhuma regra disponível.'
+              )}
+            {(regras.length > 0 || isGM) &&
+              renderSection(
+                'Histórico do Personagem',
+                historico,
                 'Nenhuma regra disponível.'
               )}
           </div>

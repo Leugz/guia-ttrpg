@@ -1,9 +1,9 @@
 ---
 type: "handout"
-title: "Thunderland 2008"
-category: "documentos"
+title: "Histórico de Alan"
+category: "historico"
 content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/clues/thunderland.jpg
+assets/backgrounds/alan.jpg

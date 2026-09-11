@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/email_gustavo_2.png
+assets/clues/email_gustavo_2.png

@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/cadaver_gustavo.jpg
+assets/clues/cadaver_gustavo.jpg

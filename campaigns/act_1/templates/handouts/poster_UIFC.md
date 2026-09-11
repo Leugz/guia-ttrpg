@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/poster_UIFC.jpg
+assets/clues/poster_UIFC.jpg

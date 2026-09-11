@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/poster_explosao_explosiva.jpg
+assets/clues/poster_explosao_explosiva.jpg

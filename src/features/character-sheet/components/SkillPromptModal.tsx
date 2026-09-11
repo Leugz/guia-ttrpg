@@ -24,6 +24,8 @@ export function SkillPromptModal({
     setAvaliacao,
     pendingImpetoD4,
     setPendingImpetoD4,
+    pendingImpetoD10,
+    setPendingImpetoD10,
     ajudado,
     setAjudado,
   } = useCharacterStore();
@@ -38,38 +40,75 @@ export function SkillPromptModal({
   const [helpSteps, setHelpSteps] = useState<number>(ajudado ? 1 : 0);
 
   const [triggeredAbilities, setTriggeredAbilities] = useState<string[]>(() => {
-    const actives =
-      character?.abilities.filter((a) => a.active).map((a) => a.id) || [];
-    if (pendingImpetoD4) actives.push('impeto_1');
-    return actives;
+    const initial: string[] = [];
+    if (pendingImpetoD4) initial.push('impeto_1');
+    if (pendingImpetoD10) initial.push('impeto_2');
+    return initial;
   });
 
   const [dt, setDt] = useState<number | ''>(7);
   const [preview, setPreview] = useState<ResolvedPool | null>(null);
 
   const virtualTriggers: any[] = [];
-  if (
-    attributeName === 'mind' &&
-    character?.abilities.some((a) => a.id === 'foco_mental') &&
-    character.resources.dp.current >= 2
-  ) {
-    virtualTriggers.push({
-      id: 'foco_mental',
-      name: 'Foco Mental (+d4)',
-      cost: '-2 PD',
-    });
+  const dpCosts: Record<string, number> = {};
+
+  const mentalFocus = character?.abilities.find((a) => a.id === 'foco_mental');
+  if (attributeName === 'mind' && mentalFocus) {
+    const isUpgraded =
+      mentalFocus.description.includes('4 PD') ||
+      mentalFocus.effects[0]?.unit === 8;
+    const cost = isUpgraded ? 4 : 2;
+    const dieStr = mentalFocus.effects[0]?.unit || '4';
+    if ((character?.resources.dp.current ?? 0) >= cost) {
+      virtualTriggers.push({
+        id: 'foco_mental',
+        name: `Foco Mental (+d${dieStr})`,
+        cost: `-${cost} PD`,
+      });
+      dpCosts['foco_mental'] = cost;
+    }
   }
+
+  const emotionalFocus = character?.abilities.find(
+    (a) => a.id === 'foco_emocional'
+  );
   if (
     attributeName === 'emotion' &&
-    character?.abilities.some((a) => a.id === 'foco_emocional') &&
-    character.resources.dp.current >= 2
+    emotionalFocus &&
+    (character?.resources.dp.current ?? 0) >= 2
   ) {
     virtualTriggers.push({
       id: 'foco_emocional',
       name: 'Foco Emocional (+d4)',
       cost: '-2 PD',
     });
+    dpCosts['foco_emocional'] = 2;
   }
+
+  const lineOfFire = character?.abilities.find((a) => a.id === 'linha_de_tiro');
+  if (
+    selectedSkill === 'pontaria' &&
+    lineOfFire &&
+    (character?.resources.dp.current ?? 0) >= 4
+  ) {
+    virtualTriggers.push({
+      id: 'linha_de_tiro',
+      name: 'Linha de Tiro (+d10)',
+      cost: '-4 PD',
+    });
+    dpCosts['linha_de_tiro'] = 4;
+  }
+
+  const stoic = character?.abilities.find((a) => a.id === 'estoico');
+  if (selectedSkill === 'disciplina' && stoic) {
+    virtualTriggers.push({
+      id: 'estoico',
+      name: 'Estoico (+d6)',
+      cost: 'Trauma',
+    });
+    dpCosts['estoico'] = 0;
+  }
+
   if (impeto >= 1 || pendingImpetoD4) {
     virtualTriggers.push({
       id: 'impeto_1',
@@ -77,6 +116,15 @@ export function SkillPromptModal({
       cost: '-1 Ímpeto',
     });
   }
+
+  if (impeto >= 2 || pendingImpetoD10) {
+    virtualTriggers.push({
+      id: 'impeto_2',
+      name: 'Gastar 2 de Ímpeto (+d10)',
+      cost: '-2 Ímpeto',
+    });
+  }
+
   if (avaliacao >= 1) {
     virtualTriggers.push({
       id: 'avaliacao_1',
@@ -84,6 +132,7 @@ export function SkillPromptModal({
       cost: '-1 Avaliação',
     });
   }
+
   if (avaliacao >= 2) {
     virtualTriggers.push({
       id: 'avaliacao_2',
@@ -95,8 +144,7 @@ export function SkillPromptModal({
   const buildRequest = (): TestRequest => {
     const extraDice: number[] = [];
     if (triggeredAbilities.includes('impeto_1')) extraDice.push(4);
-    if (triggeredAbilities.includes('foco_mental')) extraDice.push(4);
-    if (triggeredAbilities.includes('foco_emocional')) extraDice.push(4);
+    if (triggeredAbilities.includes('impeto_2')) extraDice.push(10);
     if (triggeredAbilities.includes('avaliacao_1')) extraDice.push(4);
     if (triggeredAbilities.includes('avaliacao_2')) {
       extraDice.push(4);
@@ -105,13 +153,7 @@ export function SkillPromptModal({
 
     const cleanTriggers = triggeredAbilities.filter(
       (id) =>
-        ![
-          'impeto_1',
-          'foco_mental',
-          'foco_emocional',
-          'avaliacao_1',
-          'avaliacao_2',
-        ].includes(id)
+        !['impeto_1', 'impeto_2', 'avaliacao_1', 'avaliacao_2'].includes(id)
     );
 
     return {
@@ -128,14 +170,12 @@ export function SkillPromptModal({
   useEffect(() => {
     if (!activeSheetId) return;
     let cancelled = false;
-
     gameClient
       .previewTest(activeSheetId, buildRequest())
       .then((pool: ResolvedPool) => {
         if (!cancelled) setPreview(pool);
       })
       .catch(console.error);
-
     return () => {
       cancelled = true;
     };
@@ -150,30 +190,33 @@ export function SkillPromptModal({
 
   const handleRoll = async () => {
     if (!activeSheetId || !character) return;
-
     try {
       const outcome: TestOutcome = await gameClient.rollTest(
         activeSheetId,
         buildRequest()
       );
 
-      if (triggeredAbilities.includes('foco_mental'))
-        applyResourceChange('dp', -2);
-      if (triggeredAbilities.includes('foco_emocional'))
-        applyResourceChange('dp', -2);
+      let totalDpCost = 0;
+      for (const id of triggeredAbilities) {
+        if (dpCosts[id]) totalDpCost += dpCosts[id];
+      }
+      if (totalDpCost > 0) {
+        applyResourceChange('dp', -totalDpCost);
+      }
 
       if (triggeredAbilities.includes('impeto_1')) {
         if (!pendingImpetoD4) setImpeto((prev) => prev - 1);
         setPendingImpetoD4(false);
       }
+      if (triggeredAbilities.includes('impeto_2')) {
+        if (!pendingImpetoD10) setImpeto((prev) => prev - 2);
+        setPendingImpetoD10(false);
+      }
       if (triggeredAbilities.includes('avaliacao_1'))
         setAvaliacao((prev) => prev - 1);
       if (triggeredAbilities.includes('avaliacao_2'))
         setAvaliacao((prev) => prev - 2);
-
-      if (helpSteps > 0 && ajudado) {
-        setAjudado(false);
-      }
+      if (helpSteps > 0 && ajudado) setAjudado(false);
 
       addMessage({
         sender: character.name,
@@ -185,12 +228,18 @@ export function SkillPromptModal({
       });
 
       if (dt !== '' && outcome.result.total_sum < dt) {
+        const momentumAb = character.abilities.find((a) => a.id === 'impeto');
         if (
-          character.abilities.some(
-            (a) => a.id === 'impeto' || a.id === 'esforco_e_suor'
-          )
+          momentumAb ||
+          character.abilities.some((a) => a.id === 'esforco_e_suor')
         ) {
-          setImpeto((prev) => Math.min(3, prev + 1));
+          const maxMomentum = momentumAb?.description
+            .toLowerCase()
+            .includes('cinco')
+            ? 5
+            : 3;
+
+          setImpeto((prev) => Math.min(maxMomentum, prev + 1));
           addMessage({
             sender: 'Sistema',
             color: getProfileColor(character.profile),
@@ -309,54 +358,64 @@ export function SkillPromptModal({
                     </span>
                   </div>
                 ))}
-              {virtualTriggers.map((entry) => (
-                <label
-                  key={entry.id}
-                  className={`flex items-center justify-between rounded border px-3 py-2 transition-colors ${
-                    triggeredAbilities.includes(entry.id)
-                      ? 'cursor-pointer border-[var(--theme-color)] bg-zinc-900'
-                      : 'cursor-pointer border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800'
-                  } ${entry.id === 'impeto_1' && pendingImpetoD4 ? 'cursor-not-allowed opacity-80' : ''}`}
-                >
-                  <div className='flex items-center gap-2'>
-                    <input
-                      type='checkbox'
-                      className='h-3 w-3'
-                      checked={triggeredAbilities.includes(entry.id)}
-                      disabled={entry.id === 'impeto_1' && pendingImpetoD4}
-                      onChange={(e) => {
-                        let newTriggers = [...triggeredAbilities];
-                        if (e.target.checked) {
-                          newTriggers.push(entry.id);
-                          if (entry.id === 'avaliacao_1')
-                            newTriggers = newTriggers.filter(
-                              (id) => id !== 'avaliacao_2'
-                            );
-                          if (entry.id === 'avaliacao_2')
-                            newTriggers = newTriggers.filter(
-                              (id) => id !== 'avaliacao_1'
-                            );
-                        } else {
-                          newTriggers = newTriggers.filter(
-                            (id) => id !== entry.id
-                          );
-                        }
-                        setTriggeredAbilities(newTriggers);
-                      }}
-                    />
-                    <span className='text-sm font-medium text-white'>
-                      {entry.name}
-                    </span>
-                  </div>
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-bold ${entry.id === 'impeto_1' && pendingImpetoD4 ? 'bg-green-950 text-green-500' : 'bg-red-950/50 text-red-400'}`}
+              {virtualTriggers.map((entry) => {
+                const isPreparedImpeto1 =
+                  entry.id === 'impeto_1' && pendingImpetoD4;
+                const isPreparedImpeto2 =
+                  entry.id === 'impeto_2' && pendingImpetoD10;
+                const isPrepared = isPreparedImpeto1 || isPreparedImpeto2;
+
+                return (
+                  <label
+                    key={entry.id}
+                    className={`flex items-center justify-between rounded border px-3 py-2 transition-colors ${
+                      triggeredAbilities.includes(entry.id)
+                        ? 'cursor-pointer border-[var(--theme-color)] bg-zinc-900'
+                        : 'cursor-pointer border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800'
+                    } ${isPrepared ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
-                    {entry.id === 'impeto_1' && pendingImpetoD4
-                      ? 'Pago na Ficha'
-                      : entry.cost}
-                  </span>
-                </label>
-              ))}
+                    <div className='flex items-center gap-2'>
+                      <input
+                        type='checkbox'
+                        className='h-3 w-3'
+                        checked={triggeredAbilities.includes(entry.id)}
+                        disabled={isPrepared}
+                        onChange={(e) => {
+                          let newTriggers = [...triggeredAbilities];
+                          if (e.target.checked) {
+                            newTriggers.push(entry.id);
+                            if (entry.id === 'avaliacao_1')
+                              newTriggers = newTriggers.filter(
+                                (id) => id !== 'avaliacao_2'
+                              );
+                            if (entry.id === 'avaliacao_2')
+                              newTriggers = newTriggers.filter(
+                                (id) => id !== 'avaliacao_1'
+                              );
+                          } else {
+                            newTriggers = newTriggers.filter(
+                              (id) => id !== entry.id
+                            );
+                          }
+                          setTriggeredAbilities(newTriggers);
+                        }}
+                      />
+                      <span className='text-sm font-medium text-white'>
+                        {entry.name}
+                      </span>
+                    </div>
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-bold ${
+                        isPrepared
+                          ? 'bg-green-950 text-green-500'
+                          : 'bg-red-950/50 text-red-400'
+                      }`}
+                    >
+                      {isPrepared ? 'Pago na Ficha' : entry.cost}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}

@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/foto_aniversario.jpg
+assets/clues/foto_aniversario.jpg

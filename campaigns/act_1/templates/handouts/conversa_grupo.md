@@ -6,4 +6,4 @@ content_type: "image"
 is_public: false
 shared_with: []
 ---
-assets/pistas/conversa_grupo.png
+assets/clues/conversa_grupo.png
