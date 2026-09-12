@@ -85,6 +85,12 @@ pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<P
         let _ = storage::copy_dir_all(&shared_handouts, &dest_handouts);
     }
 
+    let shared_assets = templates_root(app)?.join("shared").join("assets");
+    if shared_assets.is_dir() {
+        let dest_assets = destination.join("assets");
+        let _ = storage::copy_dir_all(&shared_assets, &dest_assets);
+    }
+
     tracing::info!(
         game_id,
         act_id,
