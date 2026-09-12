@@ -107,7 +107,7 @@ abilities:
         target: disciplina
   - id: impeto
     name: "Ímpeto"
-    description: "Você possui uma barra de ímpeto com três espaços. Sempre que falha em um teste, você preenche um espaço na barra. Você pode apagar espaços preenchidos para: (1) receber +d4 em um teste. (3) aumentar um atributo em um passo até o fim da cena."
+    description: "Você possui uma barra de ímpeto com três espaços. Sempre que falha em um teste, você preenche um espaço na barra. Você pode apagar espaços preenchidos para:"
     active: false
     effects: []
   - id: para_bellum

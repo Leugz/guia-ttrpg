@@ -12,19 +12,16 @@ const BUILTIN_CONDITIONS = [
     id: 'machucado',
     label: 'Machucado',
     desc: 'Físico -1 Passo',
-    activeClass: 'text-red-400 border-red-900/50 bg-red-950/30',
   },
   {
     id: 'desatencao',
     label: 'Desatenção',
     desc: 'Mente -1 Passo',
-    activeClass: 'text-blue-400 border-blue-900/50 bg-blue-950/30',
   },
   {
     id: 'irritacao',
     label: 'Irritação',
     desc: 'Emoção -1 Passo',
-    activeClass: 'text-green-400 border-green-900/50 bg-green-950/30',
   },
 ];
 
@@ -341,7 +338,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                         title={cond.desc}
                         className={`rounded border px-3 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${
                           isActive
-                            ? cond.activeClass
+                            ? 'border-red-900/50 bg-red-950/30 text-red-400'
                             : 'border-zinc-800 bg-black/50 text-zinc-600 hover:border-zinc-600 hover:text-zinc-300'
                         }`}
                       >
@@ -539,8 +536,8 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                               className={`rounded border py-1.5 text-[10px] uppercase tracking-wider transition-colors ${pendingImpetoD4 ? 'border-[var(--theme-color)] bg-[var(--theme-color)] text-white opacity-80' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'}`}
                             >
                               {pendingImpetoD4
-                                ? 'Prepared (+d4)'
-                                : 'Spend 1 (+d4)'}
+                                ? 'Preparado (+d4)'
+                                : 'Gastar 1 (+d4)'}
                             </button>
 
                             {isFive && (
@@ -562,8 +559,8 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                 className={`rounded border py-1.5 text-[10px] uppercase tracking-wider transition-colors ${pendingImpetoD10 ? 'border-[var(--theme-color)] bg-[var(--theme-color)] text-white opacity-80' : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'}`}
                               >
                                 {pendingImpetoD10
-                                  ? 'Prepared (+d10)'
-                                  : 'Spend 2 (+d10)'}
+                                  ? 'Preparado (+d10)'
+                                  : 'Gastar 2 (+d10)'}
                               </button>
                             )}
 
@@ -572,7 +569,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                               disabled={impeto < 3 || activeImpetoBuff !== null}
                               className='rounded border border-zinc-800 bg-zinc-900 py-1.5 text-[10px] uppercase tracking-wider text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'
                             >
-                              Spend 3 (+1 Step)
+                              Gastar 3 (+1 Passo)
                             </button>
 
                             {isFive && (
@@ -592,7 +589,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                                 disabled={impeto < 5}
                                 className='rounded border border-zinc-800 bg-zinc-900 py-1.5 text-[10px] uppercase tracking-wider text-zinc-300 hover:bg-zinc-800 disabled:opacity-50'
                               >
-                                Spend 5 (Extra Action)
+                                Gastar 5 (Ação Extra)
                               </button>
                             )}
                           </div>
@@ -721,11 +718,11 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
         <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm'>
           <div className='w-[320px] rounded-lg border border-zinc-700 bg-[#0a0a0a] p-6 shadow-2xl'>
             <h3 className='mb-4 text-center font-serif text-lg font-black uppercase tracking-widest text-white'>
-              Increase Attribute
+              Aumentar Atributo
             </h3>
             <p className='mb-6 text-center text-xs text-zinc-500'>
-              Choose which attribute will receive +1 Step until the end of the
-              scene. (Cost: 3 Momentum)
+              Escolha qual atributo receberá +1 Passo até o fim da cena. (Custo:
+              3 Ímpeto)
             </p>
             <div className='flex flex-col gap-3'>
               {['physical', 'mind', 'emotion'].map((attr) => (
@@ -746,10 +743,10 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                         type: 'text',
                         content: `Spent 3 Momentum to increase ${
                           attr === 'physical'
-                            ? 'Physical'
+                            ? 'Físico'
                             : attr === 'mind'
-                              ? 'Mind'
-                              : 'Emotion'
+                              ? 'Mente'
+                              : 'Emoção'
                         } by +1 Step!`,
                       });
                     } catch (error) {
@@ -759,10 +756,10 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
                   className='rounded border border-zinc-800 bg-zinc-900 p-3 font-bold uppercase tracking-widest text-zinc-300 transition-colors hover:border-[var(--theme-color)] hover:bg-zinc-800 hover:text-white'
                 >
                   {attr === 'physical'
-                    ? 'Physical'
+                    ? 'Físico'
                     : attr === 'mind'
-                      ? 'Mind'
-                      : 'Emotion'}
+                      ? 'Mente'
+                      : 'Emoção'}
                 </button>
               ))}
             </div>
@@ -770,7 +767,7 @@ export function CharacterSheet({ onClose }: { onClose: () => void }) {
               onClick={() => setImpetoBuffModal(false)}
               className='mt-6 w-full text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white'
             >
-              Cancel
+              Cancelar
             </button>
           </div>
         </div>

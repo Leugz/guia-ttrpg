@@ -98,7 +98,7 @@ skills:
 abilities:
   - id: impeto
     name: "Ímpeto"
-    description: "Você possui uma barra de ímpeto com cinco espaços. Sempre que falha em um teste, você preenche um espaço na barra. Você pode apagar espaços preenchidos para: (1) receber +d4 em um teste. (1) receber +d10 em um dano. (3) aumentar um atributo em um passo até o fim da cena. (5) fazer uma ação extra na rodada."
+    description: "Você possui uma barra de ímpeto com cinco espaços. Sempre que falha em um teste, você preenche um espaço na barra. Você pode apagar espaços preenchidos para:"
     active: false
     effects: []
   - id: incansavel
