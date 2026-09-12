@@ -82,13 +82,21 @@ pub fn ensure_instance(app: &AppHandle, game_id: &str, act_id: &str) -> Result<P
     let shared_handouts = templates_root(app)?.join("shared").join("handouts");
     if shared_handouts.is_dir() {
         let dest_handouts = destination.join("handouts");
-        let _ = storage::copy_dir_all(&shared_handouts, &dest_handouts);
+        if let Err(e) = storage::copy_dir_all(&shared_handouts, &dest_handouts) {
+            tracing::error!("Failed to copy shared handouts: {}", e);
+        }
+    } else {
+        tracing::warn!("Shared handouts missing at: {}", shared_handouts.display());
     }
 
     let shared_assets = templates_root(app)?.join("shared").join("assets");
     if shared_assets.is_dir() {
         let dest_assets = destination.join("assets");
-        let _ = storage::copy_dir_all(&shared_assets, &dest_assets);
+        if let Err(e) = storage::copy_dir_all(&shared_assets, &dest_assets) {
+            tracing::error!("Failed to copy shared assets: {}", e);
+        }
+    } else {
+        tracing::warn!("Shared assets missing at: {}", shared_assets.display());
     }
 
     tracing::info!(
