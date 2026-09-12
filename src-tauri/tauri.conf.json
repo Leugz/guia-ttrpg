@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/2/tauri.schema.json",
-  "productName": "A Maldição do Idolo de Pedra",
+  "productName": "A Maldicao do Idolo de Pedra",
   "version": "1.0.0",
   "identifier": "com.github.leugz.amip",
   "build": {
