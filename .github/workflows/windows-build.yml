@@ -1,9 +1,7 @@
 name: Build Windows Installer
 on:
-  workflow_dispatch: # Allows you to trigger the build manually
   push:
-    paths:
-      - 'src-tauri/tauri.conf.json' # Only auto-runs if you update Tauri configs
+    branches: [ main ]
 
 jobs:
   build-windows:
@@ -12,14 +10,14 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v3
         with:
           version: 9
           
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'pnpm'
           
       - name: Install Rust
@@ -29,12 +27,11 @@ jobs:
         run: pnpm install
         
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v0.5.20
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Automatically generates a unique tag like "build-14" to prevent conflicts
-          tagName: 'build-${{ github.run_number }}'
-          releaseName: 'A Maldicao do Idolo de Pedra (Build ${{ github.run_number }})'
-          releaseBody: 'Automated Windows build.'
+          tagName: v1.0.0
+          releaseName: 'A Maldicao do Idolo de Pedra v1.0.0'
+          releaseBody: 'First release'
           releaseDraft: true
