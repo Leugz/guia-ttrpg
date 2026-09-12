@@ -1,3 +1,5 @@
+<img src="/public/Selos%20Licen%C3%A7a%20Aberta/Ordem%20Paranormal%20Selo%20Branco.png" alt="OP - Fan Content Seal" width="200">
+
 # G.U.I.A TTRPG
 
 G.U.I.A is a desktop-first virtual tabletop and campaign manager built with Tauri 2, React, TypeScript, and Rust. It is designed around local campaign files and a host-authoritative LAN session: the GM owns the campaign data and rules engine, while players connect to the GM over LAN or a VPN.
