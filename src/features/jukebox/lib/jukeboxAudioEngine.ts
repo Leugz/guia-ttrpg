@@ -16,6 +16,59 @@ const moveTowards = (value: number, target: number) => {
   return value;
 };
 
+const MIME_BY_EXTENSION: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+};
+
+const mimeForSource = (src: string) => {
+  const extension = src.split(/[?#]/)[0].split('.').pop()?.toLowerCase() ?? '';
+  return MIME_BY_EXTENSION[extension] ?? 'audio/mpeg';
+};
+
+const blobUrlCache = new Map<string, string>();
+const inFlightLoads = new Map<string, Promise<string>>();
+
+const resolveAudioSource = (src: string): Promise<string> => {
+  const cached = blobUrlCache.get(src);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = inFlightLoads.get(src);
+  if (pending) return pending;
+
+  const request = fetch(src)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} while loading ${src}`);
+      }
+
+      const blob = await response.blob();
+      const typedBlob = new Blob([blob], { type: mimeForSource(src) });
+
+      // Convert to a base64 data URI to sever the IPC connection
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(typedBlob);
+      });
+    })
+    .then((dataUrl) => {
+      blobUrlCache.set(src, dataUrl);
+      return dataUrl;
+    })
+    .finally(() => {
+      inFlightLoads.delete(src);
+    });
+
+  inFlightLoads.set(src, request);
+  return request;
+};
+
 class JukeboxAudioEngine {
   private readonly audioA = new Audio();
   private readonly audioB = new Audio();
@@ -28,6 +81,12 @@ class JukeboxAudioEngine {
   private progress: JukeboxProgress = { currentTime: 0, duration: 0 };
   private readonly progressListeners = new Set<() => void>();
   private readonly endedListeners = new Set<() => void>();
+
+  private currentSrc: string | null = null;
+  private desiredPlaying = false;
+  private looped = true;
+  private pendingSeek: number | null = null;
+  private loadToken = 0;
 
   constructor() {
     this.bindAudio(this.audioA);
@@ -47,6 +106,10 @@ class JukeboxAudioEngine {
     return () => this.endedListeners.delete(listener);
   }
 
+  preload(src: string) {
+    void resolveAudioSource(src).catch(() => undefined);
+  }
+
   setVolume(volume: number) {
     this.localVolume = clamp(
       Number.isFinite(volume) ? volume : DEFAULT_VOLUME,
@@ -57,6 +120,7 @@ class JukeboxAudioEngine {
   }
 
   play(src: string, looped: boolean) {
+    const token = ++this.loadToken;
     this.cancelFade();
 
     const previousAudio = this.activeAudio;
@@ -68,16 +132,32 @@ class JukeboxAudioEngine {
     this.activeFade = 0;
     this.inactiveFade = previousFade;
 
+    this.currentSrc = src;
+    this.desiredPlaying = true;
+    this.looped = looped;
+    this.pendingSeek = null;
+
     nextAudio.pause();
-    nextAudio.src = src;
+    nextAudio.removeAttribute('src');
+    nextAudio.load();
     nextAudio.loop = looped;
-    nextAudio.currentTime = 0;
     this.applyVolumes();
     this.updateProgress(true);
 
-    void nextAudio.play().catch((error) => {
-      console.error('Failed to play jukebox audio', error);
-    });
+    void resolveAudioSource(src)
+      .then((resolvedUrl) => {
+        if (token !== this.loadToken) return;
+
+        nextAudio.src = resolvedUrl;
+        nextAudio.loop = this.looped;
+        nextAudio.load();
+
+        if (!this.desiredPlaying) return;
+        return nextAudio.play();
+      })
+      .catch((error) => {
+        console.error('Failed to play jukebox audio', src, error);
+      });
 
     this.fadeTo(1, 0, () => {
       this.inactiveAudio.pause();
@@ -86,6 +166,7 @@ class JukeboxAudioEngine {
   }
 
   pause() {
+    this.desiredPlaying = false;
     this.cancelFade();
     this.activeAudio.pause();
     this.inactiveAudio.pause();
@@ -96,13 +177,16 @@ class JukeboxAudioEngine {
   }
 
   resume() {
-    if (!this.activeAudio.src) return;
+    if (!this.currentSrc) return;
 
+    this.desiredPlaying = true;
     this.cancelFade();
     this.inactiveAudio.pause();
     this.activeFade = 1;
     this.inactiveFade = 0;
     this.applyVolumes();
+
+    if (!this.activeAudio.src) return;
 
     void this.activeAudio.play().catch((error) => {
       console.error('Failed to resume jukebox audio', error);
@@ -110,6 +194,10 @@ class JukeboxAudioEngine {
   }
 
   stop() {
+    this.loadToken += 1;
+    this.currentSrc = null;
+    this.desiredPlaying = false;
+    this.pendingSeek = null;
     this.cancelFade();
 
     this.fadeTo(0, 0, () => {
@@ -125,13 +213,20 @@ class JukeboxAudioEngine {
   }
 
   seek(position: number) {
-    if (!this.activeAudio.src || !Number.isFinite(position)) return;
+    if (!this.currentSrc || !Number.isFinite(position)) return;
 
-    const duration = this.getDuration(this.activeAudio);
+    const audio = this.activeAudio;
+
+    if (!audio.src || audio.readyState < 1) {
+      this.pendingSeek = Math.max(0, position);
+      return;
+    }
+
+    const duration = this.getDuration(audio);
     const nextPosition = clamp(position, 0, duration > 0 ? duration : position);
 
     try {
-      this.activeAudio.currentTime = nextPosition;
+      audio.currentTime = nextPosition;
       this.updateProgress(true);
     } catch (error) {
       console.error('Failed to seek jukebox audio', error);
@@ -139,6 +234,7 @@ class JukeboxAudioEngine {
   }
 
   setLoop(looped: boolean) {
+    this.looped = looped;
     this.activeAudio.loop = looped;
   }
 
@@ -148,6 +244,22 @@ class JukeboxAudioEngine {
     };
 
     audio.addEventListener('loadedmetadata', () => {
+      if (audio === this.activeAudio && this.pendingSeek !== null) {
+        const target = this.pendingSeek;
+        this.pendingSeek = null;
+        const duration = this.getDuration(audio);
+
+        try {
+          audio.currentTime = clamp(
+            duration > 0 && audio.loop ? target % duration : target,
+            0,
+            duration > 0 ? duration : target
+          );
+        } catch (error) {
+          console.error('Failed to apply pending jukebox seek', error);
+        }
+      }
+
       if (
         audio.loop &&
         audio.duration > 0 &&
@@ -161,8 +273,17 @@ class JukeboxAudioEngine {
     audio.addEventListener('timeupdate', update);
     audio.addEventListener('seeking', update);
     audio.addEventListener('seeked', update);
+    audio.addEventListener('error', () => {
+      if (!audio.src) return;
+      console.error(
+        'Jukebox audio element error',
+        audio.error?.code,
+        audio.error?.message
+      );
+    });
     audio.addEventListener('ended', () => {
       if (audio !== this.activeAudio || audio.loop) return;
+      this.desiredPlaying = false;
       this.updateProgress(true);
       this.endedListeners.forEach((listener) => listener());
     });
