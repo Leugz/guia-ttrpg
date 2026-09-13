@@ -13,6 +13,8 @@ import {
   Copy,
   Music,
   Volume2,
+  EyeOff,
+  HelpCircle,
 } from 'lucide-react';
 import { useChatStore } from '../chat/chatStore';
 import {
@@ -27,21 +29,22 @@ import type { LanPlayer } from '../session/net/protocol';
 import { ChatPanel } from '../chat/components/ChatPanel';
 import { CharacterSheet } from '../character-sheet/components/CharacterSheet';
 import { FreeDiceRoller } from '../dice/components/FreeDiceRoller';
-import {
-  GameBoard,
-  TOKEN_DRAG_MIME,
-  type TokenDragPayload,
-} from '../map/components/GameBoard';
+import { GameBoard } from '../map/components/GameBoard';
 import { MapSelector } from '../map/components/MapSelector';
 import { JukeboxPanel } from '../jukebox/components/JukeboxPanel';
 import { useJukeboxStore } from '../jukebox/jukeboxStore';
+import { CurtainOverlay } from '../curtain/components/CurtainOverlay';
+import { CurtainPanel } from '../curtain/components/CurtainPanel';
+import { useCurtainStore } from '../curtain/curtainStore';
 import { DraggableWindow } from './components/DraggableWindow';
 import { GmPartyTracker } from './components/GmPartyTracker';
 import { HandoutWindowManager } from './components/HandoutWindowManager';
 import { TrackerResourceBar } from './components/TrackerResourceBar';
 import { CharacterSelectionModal } from './components/CharacterSelectionModal';
+import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { ToastFeed } from './components/ToastFeed';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { useTokenDragHandle } from './hooks/useTokenDragHandle';
 import { useBoardPersistence } from './hooks/useBoardPersistence';
 import { useLanLifecycle } from './hooks/useLanLifecycle';
 import { usePortraitUrl } from './hooks/usePortraitUrl';
@@ -54,6 +57,9 @@ import { getInitials } from '../../shared/lib/initials';
 
 export function VttApp() {
   const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
+  const [isCurtainPanelOpen, setIsCurtainPanelOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const toggleCurtain = useCurtainStore((state) => state.toggle);
   const localVolume = useJukeboxStore((state) => state.localVolume);
   const setLocalVolume = useJukeboxStore((state) => state.setLocalVolume);
   const messages = useChatStore((state) => state.messages);
@@ -164,17 +170,17 @@ export function VttApp() {
 
   useTokenPresenceSync(myTokenId, clientId, character, isTrueGM);
 
-  const handleTokenDragStart = (event: React.DragEvent<HTMLDivElement>) => {
-    if (isTrueGM || !character || !activeSheetId) return;
+  const canDragToken =
+    !isTrueGM && Boolean(character) && Boolean(activeSheetId);
 
-    const payload: TokenDragPayload = {
+  const tokenDrag = useTokenDragHandle(canDragToken, () => {
+    if (isTrueGM || !character || !activeSheetId) return null;
+    return {
       sheetId: activeSheetId,
       label: character.name,
       color: identityColor,
     };
-    event.dataTransfer.setData(TOKEN_DRAG_MIME, JSON.stringify(payload));
-    event.dataTransfer.effectAllowed = 'copy';
-  };
+  });
 
   const displayIp =
     vpnIp || (lanHostAddress ? lanHostAddress.replace(/:\d+$/, '') : '');
@@ -238,11 +244,16 @@ export function VttApp() {
   const toggleChat = useCallback(() => setIsChatOpen((open) => !open), []);
   const toggleSheet = useCallback(() => setIsSheetOpen((open) => !open), []);
 
+  const toggleHelp = useCallback(() => setIsHelpOpen((open) => !open), []);
+
   useGlobalShortcuts({
     onToggleRoller: toggleRoller,
     onToggleChat: toggleChat,
     onToggleSheet: toggleSheet,
+    onToggleHelp: toggleHelp,
+    onToggleCurtain: toggleCurtain,
     canOpenSheet: Boolean(character),
+    canUseCurtain: isTrueGM,
   });
 
   useHostCatalogSync(isHosting);
@@ -250,6 +261,8 @@ export function VttApp() {
   useEffect(() => {
     return () => {
       useJukeboxStore.getState().stop();
+      // Otherwise a pause left up on one table follows you to the next.
+      useCurtainStore.setState({ curtain: null });
     };
   }, []);
 
@@ -298,6 +311,7 @@ export function VttApp() {
           isGM={isTrueGM}
           activeTool={activeTool}
           identityColor={identityColor}
+          mySheetId={isTrueGM ? null : (activeSheetId ?? null)}
         />
       </div>
 
@@ -338,6 +352,13 @@ export function VttApp() {
                 >
                   <Music size={18} />
                 </button>
+                <button
+                  onClick={() => setIsCurtainPanelOpen(!isCurtainPanelOpen)}
+                  className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${isCurtainPanelOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
+                  title='Cortina / Pausa (V)'
+                >
+                  <EyeOff size={18} />
+                </button>
               </>
             )}
             <button
@@ -360,6 +381,14 @@ export function VttApp() {
             className='flex items-center gap-2 rounded-sm border border-zinc-800 bg-black/50 px-3 py-1.5 shadow-xl backdrop-blur-md'
             style={{ borderColor: 'var(--theme-color)' }}
           >
+            <button
+              onClick={toggleHelp}
+              title='Atalhos do teclado (?)'
+              className='mr-1 border-r border-zinc-700 pr-2 text-zinc-500 outline-none transition-colors hover:text-white focus:outline-none'
+            >
+              <HelpCircle size={14} />
+            </button>
+
             <div
               onClick={isHosting && isLanOpen ? handleCopyIp : undefined}
               className={`flex items-center gap-2 ${isHosting && isLanOpen ? 'cursor-pointer text-zinc-400 transition-colors hover:text-white' : 'text-zinc-400'}`}
@@ -515,6 +544,20 @@ export function VttApp() {
         </DraggableWindow>
       )}
 
+      {isCurtainPanelOpen && isTrueGM && (
+        <DraggableWindow
+          title='Cortina'
+          onClose={() => setIsCurtainPanelOpen(false)}
+          initialX={84}
+          initialY={140}
+          initialWidth={300}
+          initialHeight={460}
+          resizable
+        >
+          <CurtainPanel />
+        </DraggableWindow>
+      )}
+
       <ToastFeed toasts={toasts} />
 
       <div className='pointer-events-auto absolute bottom-6 left-6 z-10 flex items-end gap-4'>
@@ -534,13 +577,14 @@ export function VttApp() {
           </button>
 
           <div
-            onClick={() =>
-              character ? setIsSheetOpen(true) : setIsSelectionModalOpen(true)
-            }
-            draggable={!isTrueGM && Boolean(character)}
-            onDragStart={handleTokenDragStart}
-            className={`group relative h-32 w-32 shrink-0 rounded-sm transition-transform hover:scale-105 ${
-              !isTrueGM && character
+            onClick={() => {
+              if (tokenDrag.shouldIgnoreClick()) return;
+              if (character) setIsSheetOpen(true);
+              else setIsSelectionModalOpen(true);
+            }}
+            onPointerDown={tokenDrag.onPointerDown}
+            className={`group relative h-32 w-32 shrink-0 touch-none rounded-sm transition-transform hover:scale-105 ${
+              canDragToken
                 ? 'cursor-grab active:cursor-grabbing'
                 : 'cursor-pointer'
             } ${
@@ -680,6 +724,35 @@ export function VttApp() {
         isOpen={isRollerOpen}
         onClose={() => setIsRollerOpen(false)}
       />
+
+      {tokenDrag.ghost && (
+        <div
+          className='pointer-events-none fixed z-[150] flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full opacity-80'
+          style={{ left: tokenDrag.ghost.x, top: tokenDrag.ghost.y }}
+        >
+          {portraitUrl ? (
+            <img
+              src={portraitUrl}
+              alt=''
+              className='h-full w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.9)]'
+              draggable={false}
+            />
+          ) : (
+            <span
+              className='flex h-full w-full items-center justify-center rounded-full border-4 bg-zinc-900 font-serif text-lg font-bold'
+              style={{ borderColor: identityColor, color: identityColor }}
+            >
+              {getInitials(charName)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {isHelpOpen && (
+        <ShortcutsHelp isGM={isTrueGM} onClose={() => setIsHelpOpen(false)} />
+      )}
+
+      <CurtainOverlay isGM={isTrueGM} />
     </div>
   );
 }

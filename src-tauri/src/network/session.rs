@@ -12,7 +12,7 @@ use crate::dice::RollResult;
 use crate::effects::TestRequest;
 use crate::history;
 use crate::models::{MapToken, SaveIndicator};
-use crate::network::protocol::JukeboxPayload;
+use crate::network::protocol::{CurtainPayload, CurtainState, JukeboxPayload};
 use crate::network::protocol::{
     method, ChatEnvelope, ClientMessage, Player, ServerMessage, Target, HISTORY_LIMIT,
 };
@@ -242,6 +242,19 @@ async fn handle_text(
             }
             None
         }
+        ClientMessage::Ping => serde_json::to_string(&ServerMessage::Pong).ok(),
+        ClientMessage::Curtain {
+            _client_id: _,
+            payload,
+        } => {
+            let sender = client_id.as_deref().unwrap_or("");
+            if state.is_gm(sender).await {
+                set_curtain(state, payload).await;
+            } else {
+                tracing::warn!(sender, "rejected a curtain command from a non-GM");
+            }
+            None
+        }
         ClientMessage::Rpc {
             request_id,
             method,
@@ -302,7 +315,7 @@ async fn move_token(
     let Some(sender) = sender else {
         return;
     };
-    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+    if !(state.controls_token(sender, token_id).await || state.is_gm(sender).await) {
         return;
     }
 
@@ -340,7 +353,7 @@ async fn restyle_token(
     let Some(sender) = sender else {
         return;
     };
-    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+    if !(state.controls_token(sender, token_id).await || state.is_gm(sender).await) {
         return;
     }
 
@@ -360,7 +373,7 @@ async fn remove_token(state: &Arc<AppState>, sender: Option<&str>, token_id: &st
     let Some(sender) = sender else {
         return;
     };
-    if !(state.owns_token(sender, token_id).await || state.is_gm(sender).await) {
+    if !(state.controls_token(sender, token_id).await || state.is_gm(sender).await) {
         return;
     }
     {
@@ -481,14 +494,49 @@ pub async fn broadcast_roster(state: &Arc<AppState>) {
     }
 }
 
+/// Stores the curtain on the session so a player who joins mid pause sees it,
+/// then tells every table at once.
+async fn set_curtain(state: &Arc<AppState>, payload: CurtainPayload) {
+    let next = match payload {
+        CurtainPayload::Lower => None,
+        CurtainPayload::Raise {
+            gif_url,
+            label,
+            duration,
+        } => Some(CurtainState {
+            gif_url,
+            label,
+            started_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            duration: duration.filter(|seconds| *seconds > 0.0),
+        }),
+    };
+
+    {
+        let mut session_lock = state.session.write().await;
+        let Some(session) = session_lock.as_mut() else {
+            return;
+        };
+        session.curtain = next.clone();
+    }
+
+    let message = ServerMessage::CurtainSync { state: next };
+    if let Ok(payload) = serde_json::to_string(&message) {
+        state.send(Target::All, payload);
+    }
+}
+
 async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
-    let (game_id, root, jukebox) = {
+    let (game_id, root, jukebox, curtain) = {
         let session = state.session.read().await;
         match session.as_ref() {
             Some(session) => (
                 session.game_id.clone(),
                 session.root.clone(),
                 session.jukebox.clone(),
+                session.curtain.clone(),
             ),
             None => return,
         }
@@ -516,6 +564,7 @@ async fn send_session_state(state: &Arc<AppState>, client_id: &str) {
         maps,
         tokens,
         jukebox,
+        curtain,
     };
 
     match serde_json::to_string(&message) {

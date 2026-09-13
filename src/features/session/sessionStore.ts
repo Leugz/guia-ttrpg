@@ -17,6 +17,14 @@ export interface HostedGame {
   createdAt: number;
 }
 
+/** A table someone else hosts, kept around so nobody retypes an IP. */
+export interface SavedHost {
+  id: string;
+  label: string;
+  address: string;
+  lastUsedAt: number;
+}
+
 interface HostInfo {
   address: string;
   port: number;
@@ -35,6 +43,7 @@ interface SessionState {
   isLanOpen: boolean;
 
   hostedGames: HostedGame[];
+  savedHosts: SavedHost[];
   sessionError: string | null;
 
   vpnIp: string | null;
@@ -49,6 +58,9 @@ interface SessionState {
   closeLan: () => Promise<void>;
 
   joinGame: (ipAddress: string) => void;
+  saveHost: (address: string, label?: string) => void;
+  renameHost: (id: string, label: string) => void;
+  forgetHost: (id: string) => void;
   leaveGame: () => Promise<void>;
   setLocalClaim: (claim: string | null) => void;
 }
@@ -89,6 +101,7 @@ export const useSessionStore = create<SessionState>()(
       isHosting: false,
       isLanOpen: false,
       hostedGames: [],
+      savedHosts: [],
       sessionError: null,
       vpnIp: null,
 
@@ -197,7 +210,55 @@ export const useSessionStore = create<SessionState>()(
         lan.disconnect();
       },
 
+      saveHost: (address, label) => {
+        const trimmed = address.trim();
+        if (!trimmed) return;
+
+        const existing = get().savedHosts.find(
+          (host) => host.address === trimmed
+        );
+        if (existing) {
+          set({
+            savedHosts: get().savedHosts.map((host) =>
+              host.id === existing.id
+                ? {
+                    ...host,
+                    label: label?.trim() || host.label,
+                    lastUsedAt: Date.now(),
+                  }
+                : host
+            ),
+          });
+          return;
+        }
+
+        set({
+          savedHosts: [
+            ...get().savedHosts,
+            {
+              id: Date.now().toString(36),
+              label: label?.trim() || trimmed,
+              address: trimmed,
+              lastUsedAt: Date.now(),
+            },
+          ],
+        });
+      },
+
+      renameHost: (id, label) =>
+        set({
+          savedHosts: get().savedHosts.map((host) =>
+            host.id === id
+              ? { ...host, label: label.trim() || host.label }
+              : host
+          ),
+        }),
+
+      forgetHost: (id) =>
+        set({ savedHosts: get().savedHosts.filter((host) => host.id !== id) }),
+
       joinGame: (ipAddress) => {
+        get().saveHost(ipAddress);
         resetTableState();
         setGameContext({ mode: 'client', gameRoot: null });
         set({
@@ -248,6 +309,7 @@ export const useSessionStore = create<SessionState>()(
         clientId: state.clientId,
         username: state.username,
         hostedGames: state.hostedGames,
+        savedHosts: state.savedHosts,
         vpnIp: state.vpnIp,
       }),
     }

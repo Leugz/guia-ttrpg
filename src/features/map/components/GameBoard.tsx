@@ -22,6 +22,10 @@ import type { MapDefinition, MapToken } from '../../../shared/types';
 import * as gameClient from '../../session/net/gameClient';
 import { selectActiveMap, useLanStore } from '../../session/net/lanStore';
 import { tokenMotion } from '../tokenMotion';
+import {
+  registerTokenDropTarget,
+  type TokenDragPayload,
+} from '../tokenDragSource';
 import { loadMapImage, useTokenImage } from '../useMapImages';
 
 const DEFAULT_TOKEN_SIZE = 64;
@@ -29,20 +33,15 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 6;
 const ZOOM_STEP = 1.08;
 const FADE_MS = 350;
-
-export const TOKEN_DRAG_MIME = 'application/x-amip-token';
+const MAP_RETRY_LIMIT = 8;
+const MAP_RETRY_BASE_MS = 1500;
+const MAP_RETRY_CEILING_MS = 8000;
 
 interface RulerShape {
   start_x: number;
   start_y: number;
   end_x: number;
   end_y: number;
-  color: string;
-}
-
-export interface TokenDragPayload {
-  sheetId: string | null;
-  label: string;
   color: string;
 }
 
@@ -316,6 +315,8 @@ interface GameBoardProps {
   isGM: boolean;
   activeTool: string;
   identityColor: string;
+  /** Sheet this client has claimed, so its own token stays movable. */
+  mySheetId: string | null;
 }
 
 export function GameBoard({
@@ -323,6 +324,7 @@ export function GameBoard({
   isGM,
   activeTool,
   identityColor,
+  mySheetId,
 }: GameBoardProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -348,6 +350,8 @@ export function GameBoard({
     message: string;
   } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const failures = useRef(0);
 
   const [localRuler, setLocalRuler] = useState<RulerShape | null>(null);
 
@@ -458,6 +462,8 @@ export function GameBoard({
     loadMapImage(activeMap)
       .then((image) => {
         if (cancelled) return;
+        failures.current = 0;
+        setLoadError(null);
         if (shown) {
           setOutgoing({ image: shown.image, grid_size: shown.map.grid_size });
         }
@@ -467,13 +473,45 @@ export function GameBoard({
       .catch((error: Error) => {
         if (cancelled) return;
         console.error('Failed to load the map image:', error);
+        failures.current += 1;
         setLoadError({ mapId: activeMap.id, message: error.message });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeMap, shownId, frameMap, shown]);
+  }, [activeMap, shownId, frameMap, shown, loadAttempt]);
+
+  const retryMap = useCallback(() => {
+    setLoadError(null);
+    setLoadAttempt((attempt) => attempt + 1);
+  }, []);
+
+  // A dropped packet used to leave the board blank until the player rejoined,
+  // because nothing ever asked for the image a second time. Back off and retry.
+  useEffect(() => {
+    if (!activeMap || !loadError || loadError.mapId !== activeMap.id) return;
+    if (failures.current >= MAP_RETRY_LIMIT) return;
+
+    const delay = Math.min(
+      MAP_RETRY_BASE_MS * failures.current,
+      MAP_RETRY_CEILING_MS
+    );
+    const timer = setTimeout(retryMap, delay);
+    return () => clearTimeout(timer);
+  }, [activeMap, loadError, retryMap]);
+
+  // A fresh socket means the asset request can succeed again. Subscribing
+  // rather than selecting keeps status changes from re-rendering the canvas.
+  useEffect(
+    () =>
+      useLanStore.subscribe((state, previous) => {
+        if (state.status !== 'online' || previous.status === 'online') return;
+        failures.current = 0;
+        retryMap();
+      }),
+    [retryMap]
+  );
 
   useEffect(() => {
     if (outgoing && incomingGroupRef.current) {
@@ -620,26 +658,21 @@ export function GameBoard({
   );
 
   const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
+    (payload: TokenDragPayload, clientX: number, clientY: number) => {
       const stage = stageRef.current;
       if (!stage || !displayed) return;
 
-      const raw = event.dataTransfer.getData(TOKEN_DRAG_MIME);
-      if (!raw) return;
-
-      let payload: TokenDragPayload;
-      try {
-        payload = JSON.parse(raw);
-      } catch {
+      const bounds = stage.container().getBoundingClientRect();
+      if (
+        clientX < bounds.left ||
+        clientX > bounds.right ||
+        clientY < bounds.top ||
+        clientY > bounds.bottom
+      ) {
         return;
       }
 
-      const bounds = stage.container().getBoundingClientRect();
-      const local = {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      };
+      const local = { x: clientX - bounds.left, y: clientY - bounds.top };
       const point = stage.getAbsoluteTransform().copy().invert().point(local);
       const clampedX = Math.max(0, Math.min(point.x, displayed.image.width));
       const clampedY = Math.max(0, Math.min(point.y, displayed.image.height));
@@ -660,18 +693,10 @@ export function GameBoard({
     [clientId, displayed]
   );
 
+  useEffect(() => registerTokenDropTarget(handleDrop), [handleDrop]);
+
   return (
-    <div
-      ref={containerRef}
-      className='relative h-full w-full bg-[#121212]'
-      onDragOver={(event) => {
-        if (event.dataTransfer.types.includes(TOKEN_DRAG_MIME)) {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'copy';
-        }
-      }}
-      onDrop={handleDrop}
-    >
+    <div ref={containerRef} className='relative h-full w-full bg-[#121212]'>
       {size.width > 0 && size.height > 0 && (
         <Stage
           ref={stageRef}
@@ -735,7 +760,11 @@ export function GameBoard({
                 key={token.id}
                 token={token}
                 size={tokenSize}
-                canDrag={isGM || token.owner_client_id === clientId}
+                canDrag={
+                  isGM ||
+                  token.owner_client_id === clientId ||
+                  (mySheetId !== null && token.sheet_id === mySheetId)
+                }
                 clientId={clientId}
                 mapWidth={displayed?.image.width ?? 0}
                 mapHeight={displayed?.image.height ?? 0}
@@ -809,14 +838,22 @@ export function GameBoard({
       )}
 
       {!displayed && (
-        <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
-          <p className='max-w-xs text-center font-serif text-sm tracking-widest text-zinc-700'>
+        <div className='absolute inset-0 flex flex-col items-center justify-center gap-4'>
+          <p className='pointer-events-none max-w-xs text-center font-serif text-sm tracking-widest text-zinc-700'>
             {loadError && loadError.mapId === activeMap?.id
               ? `Não foi possível abrir o mapa. ${loadError.message}`
               : activeMap
                 ? 'Revelando o mapa…'
                 : 'O mestre ainda não revelou nenhum mapa.'}
           </p>
+          {loadError && loadError.mapId === activeMap?.id && (
+            <button
+              onClick={retryMap}
+              className='rounded-sm border border-zinc-800 bg-black/60 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400 outline-none transition-colors hover:border-zinc-600 hover:text-white focus:outline-none'
+            >
+              Tentar novamente
+            </button>
+          )}
         </div>
       )}
     </div>

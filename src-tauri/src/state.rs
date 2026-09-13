@@ -17,6 +17,7 @@ pub struct HostedSession {
     pub address: String,
     pub shutdown: Option<oneshot::Sender<()>>,
     pub jukebox: Option<crate::network::protocol::JukeboxState>,
+    pub curtain: Option<crate::network::protocol::CurtainState>,
 }
 
 #[derive(Default)]
@@ -133,6 +134,28 @@ impl AppState {
             .tokens
             .get(token_id)
             .is_some_and(|token| token.owner_client_id == client_id)
+    }
+
+    /// A player controls their own token even when someone else put it down,
+    /// and keeps control after a reconnect hands them a fresh client id.
+    pub async fn controls_token(&self, client_id: &str, token_id: &str) -> bool {
+        if self.owns_token(client_id, token_id).await {
+            return true;
+        }
+
+        let claimed = {
+            let roster = self.roster.read().await;
+            match roster.get(client_id).and_then(|p| p.claimed_sheet.clone()) {
+                Some(sheet) if sheet != "__GM__" => sheet,
+                _ => return false,
+            }
+        };
+
+        let board = self.board.read().await;
+        board
+            .tokens
+            .get(token_id)
+            .is_some_and(|token| token.sheet_id.as_deref() == Some(claimed.as_str()))
     }
 
     pub async fn is_gm(&self, client_id: &str) -> bool {

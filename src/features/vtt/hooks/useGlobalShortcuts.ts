@@ -4,8 +4,17 @@ export interface GlobalShortcutHandlers {
   onToggleRoller: () => void;
   onToggleChat: () => void;
   onToggleSheet: () => void;
+  onToggleHelp: () => void;
+  onToggleCurtain: () => void;
   canOpenSheet: boolean;
+  canUseCurtain: boolean;
 }
+
+const isTypingTarget = (target: EventTarget | null) =>
+  target instanceof HTMLInputElement ||
+  target instanceof HTMLTextAreaElement ||
+  target instanceof HTMLSelectElement ||
+  (target instanceof HTMLElement && target.isContentEditable);
 
 export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
   const handlersRef = useRef(handlers);
@@ -15,12 +24,9 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
+      if (isTypingTarget(event.target)) return;
+      // Leave browser and window chords (copy, reload, alt-tab) alone.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
 
       const current = handlersRef.current;
       const key = event.key.toLowerCase();
@@ -34,6 +40,13 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
       } else if (key === 'c') {
         event.preventDefault();
         if (current.canOpenSheet) current.onToggleSheet();
+      } else if (key === 'v') {
+        if (!current.canUseCurtain) return;
+        event.preventDefault();
+        current.onToggleCurtain();
+      } else if (key === '?' || key === 'h') {
+        event.preventDefault();
+        current.onToggleHelp();
       }
     };
 

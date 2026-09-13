@@ -15,7 +15,8 @@
         "title": "A Maldição do Idolo de Pedra",
         "width": 1280,
         "height": 720,
-        "backgroundColor": "#171717"
+        "backgroundColor": "#171717",
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -23,9 +24,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "$APPLOCALDATA/games/**/*"
-          ],
+          "allow": ["$APPLOCALDATA/games/**/*"],
           "requireLiteralLeadingDot": false
         }
       }

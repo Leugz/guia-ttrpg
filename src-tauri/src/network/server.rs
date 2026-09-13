@@ -70,6 +70,7 @@ pub async fn start(
             address: address.clone(),
             shutdown: Some(shutdown_tx),
             jukebox: None,
+            curtain: None,
         });
     }
 

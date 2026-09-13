@@ -5,20 +5,29 @@
 @tailwind utilities;
 
 @layer base {
-
   html {
     font-family: 'Oswald', sans-serif;
   }
 }
 
 @layer utilities {
-
   .font-sans {
     font-family: 'Oswald', sans-serif !important;
   }
 
   .font-serif {
     font-family: 'Special Elite', monospace !important;
+  }
+}
+
+@keyframes curtain-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.82;
   }
 }
 

@@ -43,6 +43,35 @@ export type JukeboxPayload =
   | { action: 'seek'; position: number }
   | { action: 'set_loop'; looped: boolean };
 
+export type CurtainPayload =
+  | {
+      action: 'raise';
+      gif_url: string | null;
+      label: string | null;
+      duration: number | null;
+    }
+  | { action: 'lower' };
+
+export interface CurtainState {
+  gif_url: string | null;
+  label: string | null;
+  /** Milliseconds since the epoch, so a late joiner resumes mid countdown. */
+  started_at: number;
+  /** Countdown in seconds, or null for an open-ended pause. */
+  duration: number | null;
+}
+
+export interface CurtainSyncMessage {
+  type: 'curtain_sync';
+  state: CurtainState | null;
+}
+
+export interface CurtainClientMessage {
+  type: 'curtain';
+  clientId: string;
+  payload: CurtainPayload;
+}
+
 export interface JukeboxState {
   track_url: string;
   looped: boolean;
@@ -71,6 +100,7 @@ export interface SessionStateMessage {
   maps: MapDefinition[];
   tokens: MapToken[];
   jukebox?: JukeboxState;
+  curtain?: CurtainState | null;
 }
 
 export interface SheetUpdateMessage {
@@ -133,7 +163,8 @@ export type ServerMessage =
   | TokensSyncMessage
   | TokenMovedMessage
   | ToolSyncMessage
-  | JukeboxSyncMessage;
+  | JukeboxSyncMessage
+  | CurtainSyncMessage;
 
 export interface TokenPlaceMessage {
   type: 'token_place';

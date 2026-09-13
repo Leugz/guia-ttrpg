@@ -28,6 +28,18 @@ pub struct JukeboxState {
     pub timestamp: u64,
 }
 
+/// The blindfold the GM drops over every table at once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurtainState {
+    /// Frontend asset URL of the looping image, if one was picked.
+    pub gif_url: Option<String>,
+    pub label: Option<String>,
+    /// Milliseconds since the epoch, so late joiners resume mid countdown.
+    pub started_at: u64,
+    /// Countdown in seconds. `None` keeps it up until the GM lifts it.
+    pub duration: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SheetSummary {
     pub id: String,
@@ -46,6 +58,20 @@ pub enum JukeboxPayload {
     Stop,
     Seek { position: f64 },
     SetLoop { looped: bool },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum CurtainPayload {
+    Raise {
+        #[serde(default)]
+        gif_url: Option<String>,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        duration: Option<f64>,
+    },
+    Lower,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -136,6 +162,15 @@ pub enum ClientMessage {
         _client_id: String,
         payload: JukeboxPayload,
     },
+
+    Curtain {
+        #[serde(rename = "clientId")]
+        _client_id: String,
+        payload: CurtainPayload,
+    },
+
+    /// Liveness probe from the UI; answered with `Pong`.
+    Ping,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -173,6 +208,8 @@ pub enum ServerMessage {
         tokens: Vec<MapToken>,
         #[serde(default)]
         jukebox: Option<JukeboxState>,
+        #[serde(default)]
+        curtain: Option<CurtainState>,
     },
     SheetUpdate {
         #[serde(rename = "sheetId")]
@@ -208,6 +245,11 @@ pub enum ServerMessage {
     JukeboxSync {
         payload: JukeboxPayload,
     },
+    /// `None` means the curtain is down and play carries on.
+    CurtainSync {
+        state: Option<CurtainState>,
+    },
+    Pong,
     RpcResult {
         #[serde(rename = "requestId")]
         request_id: String,
@@ -333,6 +375,35 @@ mod tests {
         let raw = r#"{"type":"roll","id":"2","rollResult":{"secret":true,"total_sum":9}}"#;
         match serde_json::from_str::<ClientMessage>(raw).unwrap() {
             ClientMessage::Roll(envelope) => assert!(envelope.is_secret()),
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn heartbeats_round_trip_as_bare_tagged_objects() {
+        assert!(matches!(
+            serde_json::from_str::<ClientMessage>(r#"{"type":"ping"}"#).unwrap(),
+            ClientMessage::Ping
+        ));
+        assert_eq!(
+            serde_json::to_string(&ServerMessage::Pong).unwrap(),
+            r#"{"type":"pong"}"#
+        );
+    }
+
+    #[test]
+    fn the_curtain_accepts_a_timer_or_no_timer_at_all() {
+        let raw = r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","gif_url":"/a.gif"}}"#;
+        match serde_json::from_str::<ClientMessage>(raw).unwrap() {
+            ClientMessage::Curtain { payload, .. } => match payload {
+                CurtainPayload::Raise {
+                    gif_url, duration, ..
+                } => {
+                    assert_eq!(gif_url.as_deref(), Some("/a.gif"));
+                    assert!(duration.is_none());
+                }
+                other => panic!("unexpected payload: {other:?}"),
+            },
             other => panic!("unexpected variant: {other:?}"),
         }
     }

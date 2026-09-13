@@ -7,6 +7,7 @@ import {
   Play,
   Trash2,
   AlertCircle,
+  Star,
 } from 'lucide-react';
 import { useSessionStore } from '../../session/sessionStore';
 
@@ -20,6 +21,9 @@ export function HomeScreen() {
     loadLocalGame,
     joinGame,
     sessionError,
+    savedHosts,
+    saveHost,
+    forgetHost,
   } = useSessionStore();
 
   const [ipInput, setIpInput] = useState('');
@@ -28,6 +32,18 @@ export function HomeScreen() {
   const [isCreatingGame, setIsCreatingGame] = useState(false);
   const [newGameName, setNewGameName] = useState('');
   const [selectedAct, setSelectedAct] = useState('act_1');
+  const [hostLabel, setHostLabel] = useState('');
+
+  const orderedHosts = [...savedHosts].sort(
+    (a, b) => b.lastUsedAt - a.lastUsedAt
+  );
+  const canUseIp = ipInput.trim().length >= 7;
+
+  const handleSaveHost = () => {
+    if (!canUseIp) return;
+    saveHost(ipInput, hostLabel);
+    setHostLabel('');
+  };
 
   const handleUpdateName = () => {
     if (nameInput.trim().length > 1) {
@@ -218,27 +234,80 @@ export function HomeScreen() {
               Conectar a Jogo
             </h2>
           </div>
-          <p className='mb-8 text-sm leading-relaxed text-zinc-500'>
+          <p className='mb-4 text-sm leading-relaxed text-zinc-500'>
             Conecte-se a um servidor hospedado por outro jogador na mesma rede
             local (LAN) ou via VPN (Radmin/Hamachi).
           </p>
 
-          <div className='mt-auto flex flex-col gap-4'>
-            <label className='flex flex-col gap-2'>
-              <span className='text-xs font-bold uppercase tracking-wider text-zinc-500'>
-                Endere o IP do Mestre
-              </span>
+          <div className='scrollbar-thin scrollbar-thumb-zinc-800 flex flex-1 flex-col gap-2 overflow-y-auto pr-2'>
+            {orderedHosts.map((host) => (
+              <div
+                key={host.id}
+                className='group/host flex items-center justify-between border border-zinc-800/80 bg-zinc-900/50 p-3 transition-colors hover:border-zinc-600'
+              >
+                <div className='flex min-w-0 flex-col'>
+                  <span className='truncate text-sm font-bold uppercase tracking-wider text-white'>
+                    {host.label}
+                  </span>
+                  <span className='truncate font-mono text-[10px] tracking-widest text-zinc-500'>
+                    {host.address}
+                  </span>
+                </div>
+                <div className='flex shrink-0 items-center gap-2'>
+                  <button
+                    onClick={() => forgetHost(host.id)}
+                    title='Esquecer este endereço'
+                    className='p-2 text-zinc-600 opacity-0 transition-all hover:text-red-500 group-hover/host:opacity-100'
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <button
+                    onClick={() => joinGame(host.address)}
+                    title='Conectar'
+                    className='rounded bg-zinc-800 p-2 text-zinc-300 transition-colors hover:bg-blue-900 hover:text-white'
+                  >
+                    <Play size={16} fill='currentColor' />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {orderedHosts.length === 0 && (
+              <div className='flex h-full flex-col items-center justify-center text-zinc-600 opacity-50'>
+                <span className='font-serif text-sm uppercase tracking-widest'>
+                  Nenhum Endereço Salvo
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className='mt-4 flex shrink-0 flex-col gap-2'>
+            <div className='flex gap-2'>
               <input
                 type='text'
                 value={ipInput}
                 onChange={(e) => setIpInput(e.target.value)}
                 placeholder='Ex: 192.168.1.100'
-                className='border border-zinc-800 bg-black p-4 font-mono text-white outline-none transition-colors focus:border-blue-700'
+                className='min-w-0 flex-1 border border-zinc-800 bg-black p-3 font-mono text-sm text-white outline-none transition-colors focus:border-blue-700'
               />
-            </label>
+              <input
+                type='text'
+                value={hostLabel}
+                onChange={(e) => setHostLabel(e.target.value)}
+                placeholder='Apelido'
+                className='w-28 min-w-0 border border-zinc-800 bg-black p-3 text-sm text-white outline-none transition-colors focus:border-blue-700'
+              />
+              <button
+                onClick={handleSaveHost}
+                disabled={!canUseIp}
+                title='Salvar este endereço'
+                className='shrink-0 border border-zinc-800 bg-zinc-900 px-3 text-zinc-400 transition-colors hover:border-blue-700 hover:text-white disabled:opacity-40'
+              >
+                <Star size={16} />
+              </button>
+            </div>
             <button
               onClick={() => joinGame(ipInput)}
-              disabled={ipInput.trim().length < 7}
+              disabled={!canUseIp}
               className='w-full bg-zinc-800 p-4 font-bold uppercase tracking-widest text-white transition-colors hover:bg-blue-900 disabled:bg-zinc-900'
             >
               Conectar

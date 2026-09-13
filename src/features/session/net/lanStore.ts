@@ -239,11 +239,18 @@ setLocalBoardSink({
 });
 
 lan.on('handout', (message) => {
-  useLanStore.setState((state) => ({
-    handouts: state.handouts.map((h) =>
-      h.id === message.handout.id ? message.handout : h
-    ),
-  }));
+  useLanStore.setState((state) => {
+    // An update can be the first time this client hears about a document, so
+    // replacing in place is not enough: append when it is new.
+    const known = state.handouts.some((h) => h.id === message.handout.id);
+    return {
+      handouts: known
+        ? state.handouts.map((h) =>
+            h.id === message.handout.id ? message.handout : h
+          )
+        : [...state.handouts, message.handout],
+    };
+  });
 });
 lan.on('closed', (reason) => useLanStore.setState({ closedReason: reason }));
 

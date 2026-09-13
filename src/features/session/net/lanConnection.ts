@@ -1,5 +1,7 @@
 import {
   buildWsUrl,
+  CurtainClientMessage,
+  CurtainSyncMessage,
   HandoutForceOpenMessage,
   HandoutUpdateMessage,
   JukeboxSyncMessage,
@@ -18,8 +20,30 @@ import {
   type TokensSyncMessage,
 } from './protocol';
 
-const RECONNECT_DELAY_MS = 2000;
 const REQUEST_TIMEOUT_MS = 15000;
+
+/** How often a liveness probe is sent while the socket looks open. */
+const HEARTBEAT_INTERVAL_MS = 5000;
+/** No reply within this window means the socket is dead but not yet closed. */
+const HEARTBEAT_TIMEOUT_MS = 14000;
+
+const RECONNECT_MIN_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 10000;
+
+/** How long a call will sit waiting for the socket to come back. */
+const SOCKET_WAIT_MS = 12000;
+const SOCKET_POLL_MS = 150;
+
+/**
+ * Raised when the socket is down. Callers can tell this apart from a refusal
+ * the host actually sent back.
+ */
+export class LanOffline extends Error {
+  constructor(message = 'Sem conexão com o mestre.') {
+    super(message);
+    this.name = 'LanOffline';
+  }
+}
 
 export interface Identity {
   clientId: string;
@@ -41,6 +65,7 @@ export interface LanEvents {
   tokenMoved: TokenMovedMessage;
   tool: ToolSyncMessage;
   jukeboxSync: JukeboxSyncMessage;
+  curtain: CurtainSyncMessage;
 }
 
 type Listener<K extends keyof LanEvents> = (payload: LanEvents[K]) => void;
@@ -63,6 +88,9 @@ class LanConnection {
   private pending = new Map<string, Pending>();
   private listeners = new Map<keyof LanEvents, Set<Listener<never>>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPongAt = 0;
   private closing = false;
   private status: ConnectionStatus = 'idle';
 
@@ -139,8 +167,10 @@ class LanConnection {
     this.socket = socket;
 
     socket.onopen = () => {
+      this.reconnectAttempts = 0;
       this.setStatus('online');
       this.announce();
+      this.startHeartbeat();
     };
 
     socket.onmessage = (event) => this.receive(event.data);
@@ -151,7 +181,8 @@ class LanConnection {
 
     socket.onclose = () => {
       if (this.socket === socket) this.socket = null;
-      this.failPending(new Error('A conexão com o mestre foi perdida.'));
+      this.stopHeartbeat();
+      this.failPending(new LanOffline('A conexão com o mestre foi perdida.'));
       if (this.closing) {
         this.setStatus('idle');
         return;
@@ -163,10 +194,15 @@ class LanConnection {
 
   private scheduleReconnect() {
     if (this.closing || this.reconnectTimer) return;
+    const delay = Math.min(
+      RECONNECT_MIN_DELAY_MS * 2 ** this.reconnectAttempts,
+      RECONNECT_MAX_DELAY_MS
+    );
+    this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.openSocket();
-    }, RECONNECT_DELAY_MS);
+    }, delay);
   }
 
   private clearReconnect() {
@@ -174,6 +210,70 @@ class LanConnection {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  /**
+   * A half-open socket looks healthy to the browser but never delivers
+   * anything, which is why a player could sit there unable to roll until they
+   * rejoined. Probe it and recycle it the moment the host stops answering.
+   */
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastPongAt = Date.now();
+    this.heartbeatTimer = setInterval(() => {
+      const socket = this.socket;
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+      if (Date.now() - this.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+        console.warn('The host stopped answering; recycling the LAN socket.');
+        this.stopHeartbeat();
+        socket.close();
+        return;
+      }
+
+      try {
+        socket.send(JSON.stringify({ type: 'ping' }));
+      } catch (error) {
+        console.warn('Heartbeat could not be sent', error);
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  /** Skip the remaining backoff; something needs the socket right now. */
+  private reconnectNow() {
+    if (this.closing || !this.address) return;
+    if (this.socket && this.socket.readyState === WebSocket.CONNECTING) return;
+    this.clearReconnect();
+    this.openSocket();
+  }
+
+  private waitForSocket(timeoutMs: number): Promise<void> {
+    if (this.isOpen()) return Promise.resolve();
+    if (this.closing || !this.address) {
+      return Promise.reject(new LanOffline());
+    }
+
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = setInterval(() => {
+        if (this.isOpen()) {
+          clearInterval(tick);
+          resolve();
+          return;
+        }
+        if (this.closing || Date.now() - started > timeoutMs) {
+          clearInterval(tick);
+          reject(new LanOffline());
+        }
+      }, SOCKET_POLL_MS);
+    });
   }
 
   private announce() {
@@ -194,7 +294,9 @@ class LanConnection {
   disconnect() {
     this.closing = true;
     this.clearReconnect();
-    this.failPending(new Error('A sessão foi encerrada.'));
+    this.stopHeartbeat();
+    this.reconnectAttempts = 0;
+    this.failPending(new LanOffline('A sessão foi encerrada.'));
     const socket = this.socket;
     this.socket = null;
     this.address = null;
@@ -229,13 +331,33 @@ class LanConnection {
     this.send(message);
   }
 
-  request<M extends keyof RpcResults>(
+  sendCurtain(message: CurtainClientMessage) {
+    this.send(message);
+  }
+
+  /**
+   * Gives a dropped connection a chance to come back before giving up, so a
+   * blip no longer costs the player their roll. The wait happens *before* the
+   * request leaves, never after, so nothing can be applied twice.
+   */
+  async request<M extends keyof RpcResults>(
     method: M,
     params: Record<string, unknown> = {}
   ): Promise<RpcResults[M]> {
+    if (!this.isOpen()) {
+      this.reconnectNow();
+      await this.waitForSocket(SOCKET_WAIT_MS);
+    }
+    return this.dispatch(method, params);
+  }
+
+  private dispatch<M extends keyof RpcResults>(
+    method: M,
+    params: Record<string, unknown>
+  ): Promise<RpcResults[M]> {
     return new Promise((resolve, reject) => {
       if (!this.isOpen()) {
-        reject(new Error('Sem conexão com o mestre.'));
+        reject(new LanOffline());
         return;
       }
       const requestId = newId();
@@ -254,7 +376,7 @@ class LanConnection {
       if (!sent) {
         clearTimeout(timer);
         this.pending.delete(requestId);
-        reject(new Error('Sem conexão com o mestre.'));
+        reject(new LanOffline());
       }
     });
   }
@@ -279,6 +401,9 @@ class LanConnection {
     }
 
     switch (message.type) {
+      case 'pong':
+        this.lastPongAt = Date.now();
+        return;
       case 'rpc_result': {
         const result = message as Extract<
           ServerMessage,
@@ -337,6 +462,9 @@ class LanConnection {
         return;
       case 'jukebox_sync':
         this.emit('jukeboxSync', message as JukeboxSyncMessage);
+        return;
+      case 'curtain_sync':
+        this.emit('curtain', message as CurtainSyncMessage);
         return;
       default:
         console.warn('Ignoring an unknown LAN message type', message.type);
