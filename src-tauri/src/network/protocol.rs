@@ -31,8 +31,10 @@ pub struct JukeboxState {
 /// The blindfold the GM drops over every table at once.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurtainState {
-    /// Frontend asset URL of the looping image, if one was picked.
-    pub gif_url: Option<String>,
+    /// Frontend asset URL of the looping clip (mp4/webm, or a still), if one
+    /// was picked. `gif_url` is the pre-mp4 name and still deserializes.
+    #[serde(default, alias = "gif_url")]
+    pub clip_url: Option<String>,
     pub label: Option<String>,
     /// Milliseconds since the epoch, so late joiners resume mid countdown.
     pub started_at: u64,
@@ -64,8 +66,8 @@ pub enum JukeboxPayload {
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum CurtainPayload {
     Raise {
-        #[serde(default)]
-        gif_url: Option<String>,
+        #[serde(default, alias = "gif_url")]
+        clip_url: Option<String>,
         #[serde(default)]
         label: Option<String>,
         #[serde(default)]
@@ -393,14 +395,28 @@ mod tests {
 
     #[test]
     fn the_curtain_accepts_a_timer_or_no_timer_at_all() {
-        let raw = r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","gif_url":"/a.gif"}}"#;
+        let raw = r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","clip_url":"/a.mp4"}}"#;
         match serde_json::from_str::<ClientMessage>(raw).unwrap() {
             ClientMessage::Curtain { payload, .. } => match payload {
                 CurtainPayload::Raise {
-                    gif_url, duration, ..
+                    clip_url, duration, ..
                 } => {
-                    assert_eq!(gif_url.as_deref(), Some("/a.gif"));
+                    assert_eq!(clip_url.as_deref(), Some("/a.mp4"));
                     assert!(duration.is_none());
+                }
+                other => panic!("unexpected payload: {other:?}"),
+            },
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_curtain_still_reads_the_pre_mp4_field_name() {
+        let raw = r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","gif_url":"/a.gif"}}"#;
+        match serde_json::from_str::<ClientMessage>(raw).unwrap() {
+            ClientMessage::Curtain { payload, .. } => match payload {
+                CurtainPayload::Raise { clip_url, .. } => {
+                    assert_eq!(clip_url.as_deref(), Some("/a.gif"));
                 }
                 other => panic!("unexpected payload: {other:?}"),
             },

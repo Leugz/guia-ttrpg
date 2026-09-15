@@ -7,20 +7,26 @@ import { useSessionStore } from '../session/sessionStore';
 interface CurtainStoreState {
   /** Null whenever the table can see the board. */
   curtain: CurtainState | null;
-  /** The GM's last choices, reused when V toggles the curtain back on. */
-  lastGifUrl: string | null;
+  /** The GM's last choices, reused when the curtain goes back up. */
+  lastClipUrl: string | null;
   lastDuration: number | null;
 
   raise: (options?: {
-    gifUrl?: string | null;
+    clipUrl?: string | null;
     label?: string | null;
     duration?: number | null;
   }) => void;
   lower: () => void;
   toggle: () => void;
-  remember: (gifUrl: string | null, duration: number | null) => void;
+  remember: (clipUrl: string | null, duration: number | null) => void;
   applyRemote: (curtain: CurtainState | null) => void;
 }
+
+/** Hosts still on the GIF-era field name keep working. */
+const normalize = (curtain: CurtainState | null): CurtainState | null =>
+  curtain
+    ? { ...curtain, clip_url: curtain.clip_url ?? curtain.gif_url ?? null }
+    : null;
 
 /** Host-authoritative when a table is open; local-only when playing offline. */
 const broadcast = (
@@ -36,29 +42,29 @@ const broadcast = (
 
 export const useCurtainStore = create<CurtainStoreState>()((set, get) => ({
   curtain: null,
-  lastGifUrl: null,
+  lastClipUrl: null,
   lastDuration: null,
 
   raise: (options = {}) => {
-    const gifUrl =
-      options.gifUrl !== undefined ? options.gifUrl : get().lastGifUrl;
+    const clipUrl =
+      options.clipUrl !== undefined ? options.clipUrl : get().lastClipUrl;
     const duration =
       options.duration !== undefined ? options.duration : get().lastDuration;
     const label = options.label ?? null;
 
     const local = broadcast({
       action: 'raise',
-      gif_url: gifUrl ?? null,
+      clip_url: clipUrl ?? null,
       label,
       duration: duration && duration > 0 ? duration : null,
     });
 
-    set({ lastGifUrl: gifUrl ?? null, lastDuration: duration ?? null });
+    set({ lastClipUrl: clipUrl ?? null, lastDuration: duration ?? null });
 
     if (local) {
       set({
         curtain: {
-          gif_url: gifUrl ?? null,
+          clip_url: clipUrl ?? null,
           label,
           started_at: Date.now(),
           duration: duration && duration > 0 ? duration : null,
@@ -76,10 +82,10 @@ export const useCurtainStore = create<CurtainStoreState>()((set, get) => ({
     else get().raise();
   },
 
-  remember: (gifUrl, duration) =>
-    set({ lastGifUrl: gifUrl, lastDuration: duration }),
+  remember: (clipUrl, duration) =>
+    set({ lastClipUrl: clipUrl, lastDuration: duration }),
 
-  applyRemote: (curtain) => set({ curtain }),
+  applyRemote: (curtain) => set({ curtain: normalize(curtain) }),
 }));
 
 lan.on('curtain', (message) =>

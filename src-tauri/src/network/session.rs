@@ -500,11 +500,11 @@ async fn set_curtain(state: &Arc<AppState>, payload: CurtainPayload) {
     let next = match payload {
         CurtainPayload::Lower => None,
         CurtainPayload::Raise {
-            gif_url,
+            clip_url,
             label,
             duration,
         } => Some(CurtainState {
-            gif_url,
+            clip_url,
             label,
             started_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

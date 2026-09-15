@@ -59,7 +59,8 @@ export function VttApp() {
   const [isJukeboxOpen, setIsJukeboxOpen] = useState(false);
   const [isCurtainPanelOpen, setIsCurtainPanelOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const toggleCurtain = useCurtainStore((state) => state.toggle);
+  const lowerCurtain = useCurtainStore((state) => state.lower);
+  const isCurtainRaised = useCurtainStore((state) => state.curtain !== null);
   const localVolume = useJukeboxStore((state) => state.localVolume);
   const setLocalVolume = useJukeboxStore((state) => state.setLocalVolume);
   const messages = useChatStore((state) => state.messages);
@@ -246,12 +247,20 @@ export function VttApp() {
 
   const toggleHelp = useCallback(() => setIsHelpOpen((open) => !open), []);
 
+  // V is the same button as the one in the toolbar: it opens the panel where
+  // the clip, the timer and the message are chosen. The one exception is a
+  // curtain that is already up, where V is still the way back out.
+  const handleCurtainKey = useCallback(() => {
+    if (useCurtainStore.getState().curtain) lowerCurtain();
+    else setIsCurtainPanelOpen((open) => !open);
+  }, [lowerCurtain]);
+
   useGlobalShortcuts({
     onToggleRoller: toggleRoller,
     onToggleChat: toggleChat,
     onToggleSheet: toggleSheet,
     onToggleHelp: toggleHelp,
-    onToggleCurtain: toggleCurtain,
+    onCurtainKey: handleCurtainKey,
     canOpenSheet: Boolean(character),
     canUseCurtain: isTrueGM,
   });
@@ -318,21 +327,28 @@ export function VttApp() {
       <div className='pointer-events-none absolute left-0 top-0 z-40 flex w-full items-start justify-between p-4'>
         <div className='pointer-events-auto flex gap-2'>
           <div className='flex w-fit flex-col gap-1 rounded-sm border border-zinc-900 bg-black/50 p-1.5 shadow-xl backdrop-blur-md'>
+            {/*
+              The board tools go dead while the curtain is up: there is
+              nothing to point at. Handouts and the GM tools stay live.
+            */}
             <button
               onClick={() => setActiveTool('select')}
-              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'select' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
+              disabled={isCurtainRaised}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none disabled:pointer-events-none disabled:opacity-30 ${activeTool === 'select' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
             >
               <MousePointer2 size={18} />
             </button>
             <button
               onClick={() => setActiveTool('ping')}
-              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'ping' ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
+              disabled={isCurtainRaised}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none disabled:pointer-events-none disabled:opacity-30 ${activeTool === 'ping' ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
             >
               <Crosshair size={18} />
             </button>
             <button
               onClick={() => setActiveTool('ruler')}
-              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${activeTool === 'ruler' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
+              disabled={isCurtainRaised}
+              className={`rounded-sm p-2 outline-none transition-colors focus:outline-none disabled:pointer-events-none disabled:opacity-30 ${activeTool === 'ruler' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'}`}
             >
               <Ruler size={18} />
             </button>
@@ -355,7 +371,7 @@ export function VttApp() {
                 <button
                   onClick={() => setIsCurtainPanelOpen(!isCurtainPanelOpen)}
                   className={`rounded-sm p-2 outline-none transition-colors focus:outline-none ${isCurtainPanelOpen ? 'bg-zinc-900 text-[var(--theme-color)]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-[var(--theme-color)]'}`}
-                  title='Cortina / Pausa (V)'
+                  title='Cortina / Pausa (V abre este painel)'
                 >
                   <EyeOff size={18} />
                 </button>

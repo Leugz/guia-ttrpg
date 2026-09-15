@@ -5,7 +5,8 @@ export interface GlobalShortcutHandlers {
   onToggleChat: () => void;
   onToggleSheet: () => void;
   onToggleHelp: () => void;
-  onToggleCurtain: () => void;
+  /** V: opens the curtain panel, or lifts the curtain when one is up. */
+  onCurtainKey: () => void;
   canOpenSheet: boolean;
   canUseCurtain: boolean;
 }
@@ -43,7 +44,7 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
       } else if (key === 'v') {
         if (!current.canUseCurtain) return;
         event.preventDefault();
-        current.onToggleCurtain();
+        current.onCurtainKey();
       } else if (key === '?' || key === 'h') {
         event.preventDefault();
         current.onToggleHelp();

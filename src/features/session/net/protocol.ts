@@ -46,14 +46,17 @@ export type JukeboxPayload =
 export type CurtainPayload =
   | {
       action: 'raise';
-      gif_url: string | null;
+      /** Asset URL of the loop: mp4/webm, or a still/gif for older packs. */
+      clip_url: string | null;
       label: string | null;
       duration: number | null;
     }
   | { action: 'lower' };
 
 export interface CurtainState {
-  gif_url: string | null;
+  clip_url: string | null;
+  /** @deprecated Pre-mp4 hosts still send the clip under its GIF-era name. */
+  gif_url?: string | null;
   label: string | null;
   /** Milliseconds since the epoch, so a late joiner resumes mid countdown. */
   started_at: number;

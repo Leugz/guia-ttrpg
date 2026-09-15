@@ -20,6 +20,27 @@
   }
 }
 
+/* Duration lives in CurtainOverlay (FADE_MS) so both ends stay in sync. */
+@keyframes curtain-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes curtain-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes curtain-breathe {
   0%,
   100% {

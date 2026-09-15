@@ -47,7 +47,8 @@ const GROUPS: ShortcutGroup[] = [
     shortcuts: [
       {
         keys: ['V'],
-        description: 'Fechar e abrir a cortina (pausa da mesa)',
+        description:
+          'Abrir o painel da cortina (e sair da pausa quando ela está fechada)',
         gmOnly: true,
       },
     ],
