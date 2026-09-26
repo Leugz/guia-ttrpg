@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-
 import type { CurtainState } from '../../session/net/protocol';
 import { useCurtainStore } from '../curtainStore';
 import { isVideoClip } from '../lib/curtainCatalog';
+import { TypewriterText } from '../../../shared/components/TypewriterText';
 
 const TICK_MS = 250;
-/** Both ends of the pause get the same two second dissolve. */
 const FADE_MS = 2000;
 
 const formatClock = (totalSeconds: number) => {
@@ -22,24 +21,15 @@ interface CurtainOverlayProps {
 export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
   const curtain = useCurtainStore((state) => state.curtain);
   const lower = useCurtainStore((state) => state.lower);
-
   const [countdown, setCountdown] = useState<number | null>(null);
-  /**
-   * The curtain the screen is currently painting. It outlives `curtain` by one
-   * fade so the table dissolves back to the map instead of snapping to it.
-   */
   const [painted, setPainted] = useState<CurtainState | null>(null);
   const [opaque, setOpaque] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     if (!curtain?.duration) return;
-
     const endsAt = curtain.started_at + curtain.duration * 1000;
     const tick = () => setCountdown((endsAt - Date.now()) / 1000);
-
-    // Deferred rather than called inline so the first frame is already
-    // correct without writing state during the effect itself.
     const immediate = setTimeout(tick, 0);
     const timer = setInterval(tick, TICK_MS);
     return () => {
@@ -48,8 +38,6 @@ export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
     };
   }, [curtain]);
 
-  // The GM's window owns the clock, so the whole table comes back together
-  // instead of each machine deciding on its own.
   useEffect(() => {
     if (!isGM || !curtain?.duration) return;
     const endsAt = curtain.started_at + curtain.duration * 1000;
@@ -57,29 +45,19 @@ export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
     return () => clearTimeout(timer);
   }, [curtain, isGM, lower]);
 
-  // Players start their fade out the moment the clock runs out, even if the
-  // host's confirmation is still in flight. Derived from `curtain` and not
-  // from `painted` so it stays latched while the dissolve plays.
   const expired =
     !isGM && Boolean(curtain?.duration) && countdown !== null && countdown <= 0;
 
-  // A CSS animation rather than a transition: it plays from its own first
-  // keyframe on mount, so the curtain fades in without a two frame dance.
+  // FIX: Eliminated requestAnimationFrame race conditions that caused visual blinking
   useEffect(() => {
     if (curtain && !expired) {
-      const frame = requestAnimationFrame(() => {
-        setPainted(curtain);
-        setOpaque(true);
-      });
-      return () => cancelAnimationFrame(frame);
+      setPainted(curtain);
+      setOpaque(true);
+    } else {
+      setOpaque(false);
+      const timer = setTimeout(() => setPainted(null), FADE_MS);
+      return () => clearTimeout(timer);
     }
-
-    const frame = requestAnimationFrame(() => setOpaque(false));
-    const timer = setTimeout(() => setPainted(null), FADE_MS);
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(timer);
-    };
   }, [curtain, expired]);
 
   const clipUrl = painted?.clip_url ?? painted?.gif_url ?? null;
@@ -88,8 +66,6 @@ export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    // Belt and braces for the autoplay policy: the attribute alone is not
-    // always enough, and a refused play() must not surface as an error.
     video.muted = true;
     video.defaultMuted = true;
     video.volume = 0;
@@ -103,12 +79,6 @@ export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
   return (
     <div
       aria-hidden={!opaque}
-      /*
-       * z-[5] puts it above the board and below every panel, so the UI stays
-       * usable while the table is paused and only the map is hidden. Pointer
-       * events are captured for the whole dissolve, so nothing under a half
-       * faded veil can be clicked by accident.
-       */
       className={`absolute inset-0 z-[5] select-none overflow-hidden bg-black ${opaque ? 'opacity-100' : 'opacity-0'}`}
       style={{
         animationName: opaque ? 'curtain-fade-in' : 'curtain-fade-out',
@@ -146,16 +116,16 @@ export function CurtainOverlay({ isGM }: CurtainOverlayProps) {
       )}
 
       {painted.label && (
-        <p className='pointer-events-none absolute inset-x-0 top-20 mx-auto max-w-3xl px-8 text-center font-serif text-2xl tracking-widest text-zinc-200 drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)]'>
-          {painted.label}
-        </p>
+        <div className='pointer-events-none absolute inset-x-0 top-20 mx-auto flex max-w-3xl justify-center px-8 text-center font-serif text-2xl tracking-widest text-zinc-200 drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)]'>
+          <TypewriterText text={painted.label} />
+        </div>
       )}
 
       {remaining !== null && (
-        // Clear of the chat button, which floats over the curtain now.
-        <span className='pointer-events-none absolute bottom-6 right-24 font-mono text-5xl font-bold tabular-nums text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)]'>
+        // FIX: Changed span to div and added 'leading-normal py-2' to prevent Special Elite ascender clipping
+        <div className='pointer-events-none absolute bottom-6 right-24 py-2 font-serif text-5xl font-bold tabular-nums leading-normal text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)]'>
           {formatClock(remaining)}
-        </span>
+        </div>
       )}
 
       {isGM && (

@@ -46,10 +46,10 @@ export type JukeboxPayload =
 export type CurtainPayload =
   | {
       action: 'raise';
-      /** Asset URL of the loop: mp4/webm, or a still/gif for older packs. */
       clip_url: string | null;
       label: string | null;
       duration: number | null;
+      preserve_timer?: boolean;
     }
   | { action: 'lower' };
 

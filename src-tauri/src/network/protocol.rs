@@ -72,6 +72,8 @@ pub enum CurtainPayload {
         label: Option<String>,
         #[serde(default)]
         duration: Option<f64>,
+        #[serde(default)]
+        preserve_timer: bool,
     },
     Lower,
 }
@@ -412,7 +414,8 @@ mod tests {
 
     #[test]
     fn the_curtain_still_reads_the_pre_mp4_field_name() {
-        let raw = r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","gif_url":"/a.gif"}}"#;
+        let raw =
+            r#"{"type":"curtain","clientId":"gm","payload":{"action":"raise","gif_url":"/a.gif"}}"#;
         match serde_json::from_str::<ClientMessage>(raw).unwrap() {
             ClientMessage::Curtain { payload, .. } => match payload {
                 CurtainPayload::Raise { clip_url, .. } => {

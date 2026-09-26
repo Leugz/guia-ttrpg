@@ -12,10 +12,10 @@ use crate::dice::RollResult;
 use crate::effects::TestRequest;
 use crate::history;
 use crate::models::{MapToken, SaveIndicator};
-use crate::network::protocol::{CurtainPayload, CurtainState, JukeboxPayload};
 use crate::network::protocol::{
     method, ChatEnvelope, ClientMessage, Player, ServerMessage, Target, HISTORY_LIMIT,
 };
+use crate::network::protocol::{CurtainPayload, CurtainState, JukeboxPayload};
 use crate::state::AppState;
 use crate::storage;
 
@@ -494,8 +494,6 @@ pub async fn broadcast_roster(state: &Arc<AppState>) {
     }
 }
 
-/// Stores the curtain on the session so a player who joins mid pause sees it,
-/// then tells every table at once.
 async fn set_curtain(state: &Arc<AppState>, payload: CurtainPayload) {
     let next = match payload {
         CurtainPayload::Lower => None,
@@ -503,24 +501,37 @@ async fn set_curtain(state: &Arc<AppState>, payload: CurtainPayload) {
             clip_url,
             label,
             duration,
-        } => Some(CurtainState {
-            clip_url,
-            label,
-            started_at: std::time::SystemTime::now()
+            preserve_timer,
+        } => {
+            let mut started_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_millis() as u64,
-            duration: duration.filter(|seconds| *seconds > 0.0),
-        }),
+                .as_millis() as u64;
+
+            if preserve_timer {
+                let session_lock = state.session.read().await;
+                if let Some(session) = session_lock.as_ref() {
+                    if let Some(existing) = session.curtain.as_ref() {
+                        started_at = existing.started_at;
+                    }
+                }
+            }
+
+            Some(CurtainState {
+                clip_url,
+                label,
+                started_at,
+                duration: duration.filter(|seconds| *seconds > 0.0),
+            })
+        }
     };
 
-    {
-        let mut session_lock = state.session.write().await;
-        let Some(session) = session_lock.as_mut() else {
-            return;
-        };
-        session.curtain = next.clone();
-    }
+    let mut session_lock = state.session.write().await;
+    let Some(session) = session_lock.as_mut() else {
+        return;
+    };
+    session.curtain = next.clone();
+    drop(session_lock);
 
     let message = ServerMessage::CurtainSync { state: next };
     if let Ok(payload) = serde_json::to_string(&message) {

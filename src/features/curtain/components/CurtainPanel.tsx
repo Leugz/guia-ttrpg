@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Eye, EyeOff, Film, Timer } from 'lucide-react';
-
+import { Eye, EyeOff, Film, Timer, Music, RefreshCw } from 'lucide-react';
 import { useCurtainStore } from '../curtainStore';
 import { CURTAIN_CLIPS } from '../lib/curtainCatalog';
+import { useJukeboxStore } from '../../jukebox/jukeboxStore';
+import { JUKEBOX_TRACKS } from '../../jukebox/lib/musicCatalog';
+import { getAudioDuration } from '../../jukebox/lib/getAudioDuration';
 
 const PRESET_MINUTES = [0, 5, 10, 15];
 
@@ -15,15 +17,58 @@ export function CurtainPanel() {
   const isRaised = useCurtainStore((state) => state.curtain !== null);
 
   const [label, setLabel] = useState('');
-
+  const [musicTrack, setMusicTrack] = useState<string>('');
   const minutes = lastDuration ? Math.round(lastDuration / 60) : 0;
+
+  const { play, stop, seek, setLoop } = useJukeboxStore();
 
   const pick = (url: string | null) => remember(url, lastDuration);
   const setMinutes = (value: number) =>
     remember(lastClipUrl, value > 0 ? value * 60 : null);
 
+  const handleApplyCurtain = async () => {
+    const currentCurtain = useCurtainStore.getState().curtain;
+    const curtainDuration = lastDuration || 0;
+
+    // Check if the timer changed. If it didn't change, we flag the server to preserve the old started_at timestamp
+    const timeChanged =
+      !currentCurtain || currentCurtain.duration !== (curtainDuration || null);
+    const preserveTimer = !timeChanged;
+
+    const currentTrack = useJukeboxStore.getState().currentTrack;
+    const trackChanged = musicTrack !== currentTrack;
+
+    if (musicTrack && (trackChanged || timeChanged)) {
+      try {
+        const trackDuration = await getAudioDuration(musicTrack);
+        const startPos =
+          curtainDuration > 0
+            ? Math.max(0, trackDuration - curtainDuration)
+            : 0;
+
+        setLoop(true);
+        play(musicTrack);
+
+        if (startPos > 0) {
+          seek(startPos);
+        }
+      } catch (error) {
+        console.error('Failed to load curtain audio duration', error);
+      }
+    } else if (!musicTrack && currentTrack) {
+      stop();
+    }
+
+    raise({
+      label: label.trim() || null,
+      duration: curtainDuration || null,
+      preserve_timer: preserveTimer,
+    });
+  };
+
   return (
     <div className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-black/50 p-4 backdrop-blur-lg'>
+      {/* ... [Keep Scene, Timer, Music, and Text UI inputs the exact same as previously provided] ... */}
       <div className='flex flex-col gap-2'>
         <span className='text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
           Cena da Pausa
@@ -84,6 +129,24 @@ export function CurtainPanel() {
         />
       </div>
 
+      <div className='flex flex-col gap-2'>
+        <span className='flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
+          <Music size={12} /> Trilha Sonora da Cortina
+        </span>
+        <select
+          value={musicTrack}
+          onChange={(e) => setMusicTrack(e.target.value)}
+          className='w-full rounded border border-zinc-800 bg-black px-2 py-1.5 text-xs text-zinc-300 outline-none transition-colors focus:border-[var(--theme-color)]'
+        >
+          <option value=''>-- Sem Música --</option>
+          {JUKEBOX_TRACKS.map((track) => (
+            <option key={track.id} value={track.url}>
+              {track.title}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <label className='flex flex-col gap-2'>
         <span className='text-[10px] font-bold uppercase tracking-widest text-zinc-500'>
           Recado (opcional)
@@ -97,27 +160,29 @@ export function CurtainPanel() {
         />
       </label>
 
-      {/* V opens this panel, so the curtain is raised and lowered from here. */}
-      <button
-        onClick={() =>
-          isRaised ? lower() : raise({ label: label.trim() || null })
-        }
-        className={`mt-auto flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-3 text-[11px] font-bold uppercase tracking-widest outline-none transition-colors focus:outline-none ${
-          isRaised
-            ? 'border-emerald-900/50 bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900 hover:text-white'
-            : 'border-amber-900/50 bg-amber-950/40 text-amber-400 hover:bg-amber-900 hover:text-white'
-        }`}
-      >
-        {isRaised ? (
-          <>
-            <Eye size={14} /> Abrir a cortina
-          </>
-        ) : (
-          <>
-            <EyeOff size={14} /> Fechar a cortina
-          </>
-        )}
-      </button>
+      {isRaised ? (
+        <div className='mt-auto flex w-full gap-2'>
+          <button
+            onClick={handleApplyCurtain}
+            className='flex flex-1 items-center justify-center gap-2 rounded-sm border border-blue-900/50 bg-blue-950/40 px-3 py-3 text-[11px] font-bold uppercase tracking-widest text-blue-400 outline-none transition-colors hover:bg-blue-900 hover:text-white focus:outline-none'
+          >
+            <RefreshCw size={14} /> Atualizar
+          </button>
+          <button
+            onClick={lower}
+            className='flex flex-1 items-center justify-center gap-2 rounded-sm border border-emerald-900/50 bg-emerald-950/40 px-3 py-3 text-[11px] font-bold uppercase tracking-widest text-emerald-400 outline-none transition-colors hover:bg-emerald-900 hover:text-white focus:outline-none'
+          >
+            <Eye size={14} /> Fechar
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleApplyCurtain}
+          className='mt-auto flex w-full items-center justify-center gap-2 rounded-sm border border-amber-900/50 bg-amber-950/40 px-3 py-3 text-[11px] font-bold uppercase tracking-widest text-amber-400 outline-none transition-colors hover:bg-amber-900 hover:text-white focus:outline-none'
+        >
+          <EyeOff size={14} /> Abrir a cortina
+        </button>
+      )}
     </div>
   );
 }
